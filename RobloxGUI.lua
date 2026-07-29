@@ -484,7 +484,20 @@ create("TextLabel", {
 })
 
 local wsToggle, wsGetLocked = createInlineToggle(wsRow, true)
-wsToggle(function(on) state.walkspeedLocked = on end)
+wsToggle(function(on)
+    -- Always read the current box value when toggling
+    local num = tonumber(wsBox.Text)
+    if num then
+        state.walkspeedValue = num
+    end
+    state.walkspeedLocked = on
+    -- Apply immediately
+    local char = LocalPlayer.Character
+    if char then
+        local h = char:FindFirstChildOfClass("Humanoid")
+        if h then h.WalkSpeed = state.walkspeedValue end
+    end
+end)
 
 wsBox.FocusLost:Connect(function()
     local num = tonumber(wsBox.Text)
@@ -529,7 +542,23 @@ create("TextLabel", {
 })
 
 local jhToggle, jhGetLocked = createInlineToggle(jhRow, true)
-jhToggle(function(on) state.jumpHeightLocked = on end)
+jhToggle(function(on)
+    -- Always read the current box value when toggling
+    local num = tonumber(jhBox.Text)
+    if num then
+        state.jumpHeightValue = num
+    end
+    state.jumpHeightLocked = on
+    -- Apply immediately
+    local char = LocalPlayer.Character
+    if char then
+        local h = char:FindFirstChildOfClass("Humanoid")
+        if h then
+            h.UseJumpPower = false
+            h.JumpHeight = state.jumpHeightValue
+        end
+    end
+end)
 
 jhBox.FocusLost:Connect(function()
     local num = tonumber(jhBox.Text)
