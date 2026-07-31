@@ -18,6 +18,7 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local VirtualUser = game:GetService("VirtualUser")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local TeleportService = game:GetService("TeleportService")
 local LocalPlayer = Players.LocalPlayer
 local mouse = LocalPlayer:GetMouse()
 
@@ -898,6 +899,108 @@ UserInputService.InputBegan:Connect(function(input, _processed)
             acFireToggle()
         elseif acBoundType == "mouse" and isMouse and input.UserInputType == acBoundKey then
             acFireToggle()
+        end
+    end
+end)
+
+-- ════════════════════════════════════════════════════════════
+--  REJOIN BUTTON
+-- ════════════════════════════════════════════════════════════
+local rejoinRow = rowFrame(nextOrder(), 32)
+
+local rejoinBtn = create("TextButton", {
+    Size                   = UDim2.new(1, 0, 0, 28),
+    BackgroundColor3       = Color3.fromRGB(70, 40, 120),
+    BackgroundTransparency = 0.2,
+    Text                   = "Rejoin Server",
+    TextColor3             = Color3.fromRGB(240, 240, 255),
+    TextSize               = 13,
+    Font                   = Enum.Font.GothamSemibold,
+    BorderSizePixel        = 0,
+    Parent                 = rejoinRow,
+})
+create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = rejoinBtn })
+create("UIStroke", { Color = Color3.fromRGB(90, 60, 180), Thickness = 1, Parent = rejoinBtn })
+
+-- IY-style rejoin (source: admin.lua lines 6876-6885)
+rejoinBtn.MouseButton1Click:Connect(function()
+    rejoinBtn.Text = "Rejoining..."
+    local PlaceId = game.PlaceId
+    local JobId = game.JobId
+    if #Players:GetPlayers() <= 1 then
+        -- Solo server: kick and teleport fresh
+        LocalPlayer:Kick("\nRejoining...")
+        task.wait()
+        pcall(function()
+            TeleportService:Teleport(PlaceId, LocalPlayer)
+        end)
+    else
+        -- Multiplayer: rejoin same server instance
+        pcall(function()
+            TeleportService:TeleportToPlaceInstance(PlaceId, JobId, LocalPlayer)
+        end)
+    end
+end)
+
+-- ════════════════════════════════════════════════════════════
+--  PRIVATE SERVER JOIN
+-- ════════════════════════════════════════════════════════════
+sectionLabel("Private Server", nextOrder())
+
+local psRow = rowFrame(nextOrder(), 28)
+
+local psBox = styledBox(psRow, {
+    Size            = UDim2.new(1, -75, 0, 24),
+    Position        = UDim2.new(0, 0, 0.5, -12),
+    Text            = "",
+    PlaceholderText = "Paste server link...",
+})
+
+local psBtn = create("TextButton", {
+    Size                   = UDim2.new(0, 65, 0, 24),
+    Position               = UDim2.new(1, -65, 0.5, -12),
+    BackgroundColor3       = Color3.fromRGB(70, 40, 120),
+    BackgroundTransparency = 0.2,
+    Text                   = "Join",
+    TextColor3             = Color3.fromRGB(240, 240, 255),
+    TextSize               = 12,
+    Font                   = Enum.Font.GothamSemibold,
+    BorderSizePixel        = 0,
+    Parent                 = psRow,
+})
+create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = psBtn })
+create("UIStroke", { Color = Color3.fromRGB(90, 60, 180), Thickness = 1, Parent = psBtn })
+
+psBtn.MouseButton1Click:Connect(function()
+    local link = psBox.Text
+    if link == "" then return end
+
+    -- Extract the code from the share link
+    -- Format: https://www.roblox.com/share?code=XXXXX&type=Server
+    local code = link:match("code=([^&]+)")
+    if not code then
+        psBtn.Text = "Bad link"
+        task.delay(1.5, function() psBtn.Text = "Join" end)
+        return
+    end
+
+    psBtn.Text = "Joining..."
+    local PlaceId = game.PlaceId
+
+    -- Try TeleportToPrivateServer with the share code
+    local success = pcall(function()
+        TeleportService:TeleportToPrivateServer(PlaceId, code, {LocalPlayer})
+    end)
+
+    if not success then
+        -- Fallback: try regular Teleport with code as teleportData
+        local success2 = pcall(function()
+            TeleportService:Teleport(PlaceId, LocalPlayer, { privateServerCode = code })
+        end)
+
+        if not success2 then
+            psBtn.Text = "Failed"
+            task.delay(1.5, function() psBtn.Text = "Join" end)
         end
     end
 end)
