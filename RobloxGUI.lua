@@ -591,49 +591,37 @@ local coordLiveLabel = create("TextLabel", {
     TextXAlignment = Enum.TextXAlignment.Left, Parent = coordLiveRow,
 })
 
--- Edit row: X Y Z boxes
+-- Edit row: single X, Y, Z paste box
 local coordEditRow = rowFrame(nextOrder(), 28)
 
-local function coordLabel(txt, xPos)
-    create("TextLabel", {
-        Size = UDim2.new(0, 12, 1, 0), Position = UDim2.new(0, xPos, 0, 0),
-        BackgroundTransparency = 1, Text = txt,
-        TextColor3 = Color3.fromRGB(170, 155, 220), TextSize = 12,
-        Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = coordEditRow,
-    })
+local coordBox = styledBox(coordEditRow, {
+    Size = UDim2.new(1, 0, 0, 22), Position = UDim2.new(0, 0, 0.5, -11),
+    Text = "0, 0, 0", PlaceholderText = "x, y, z",
+})
+
+-- Track whether user has edited the coord box so live update doesn't overwrite
+local coordEdited = false
+
+coordBox.FocusLost:Connect(function()
+    -- Lock the box value if the user typed/pasted something
+    local str = coordBox.Text:match("^%s*(.-)%s*$")
+    if str ~= "" then
+        coordEdited = true
+    end
+end)
+
+-- Helper to parse the single coord box
+local function parseCoordBox()
+    local str = coordBox.Text:match("^%s*(.-)%s*$")
+    if not str or str == "" then return nil, nil, nil end
+    -- Try comma-separated: "x, y, z"
+    local x, y, z = str:match("([%d%.%-]+)%s*,%s*([%d%.%-]+)%s*,%s*([%d%.%-]+)")
+    -- Fallback to space-separated: "x y z"
+    if not x then
+        x, y, z = str:match("([%d%.%-]+)%s+([%d%.%-]+)%s+([%d%.%-]+)")
+    end
+    return tonumber(x), tonumber(y), tonumber(z)
 end
-
-coordLabel("X", 0)
-local xBox = styledBox(coordEditRow, {
-    Size = UDim2.new(0, 58, 0, 22), Position = UDim2.new(0, 14, 0.5, -11), Text = "0",
-})
-coordLabel("Y", 78)
-local yBox = styledBox(coordEditRow, {
-    Size = UDim2.new(0, 58, 0, 22), Position = UDim2.new(0, 92, 0.5, -11), Text = "0",
-})
-coordLabel("Z", 156)
-local zBox = styledBox(coordEditRow, {
-    Size = UDim2.new(0, 58, 0, 22), Position = UDim2.new(0, 170, 0.5, -11), Text = "0",
-})
-
--- Track user-edited coords so the live update doesn't overwrite them
-local coordEdited = { x = false, y = false, z = false }
-local coordValues = { x = 0, y = 0, z = 0 }
-
--- When user finishes typing in a coord box, lock that value
-xBox.FocusLost:Connect(function()
-    local num = tonumber(xBox.Text)
-    if num then coordValues.x = num; coordEdited.x = true end
-end)
-yBox.FocusLost:Connect(function()
-    local num = tonumber(yBox.Text)
-    if num then coordValues.y = num; coordEdited.y = true end
-end)
-zBox.FocusLost:Connect(function()
-    local num = tonumber(zBox.Text)
-    if num then coordValues.z = num; coordEdited.z = true end
-end)
 
 -- Buttons row: Copy + Teleport
 local coordBtnRow = rowFrame(nextOrder(), 28)
@@ -674,10 +662,7 @@ copyBtn.MouseButton1Click:Connect(function()
 end)
 
 tpBtn.MouseButton1Click:Connect(function()
-    -- Read from stored values for edited axes, current box text for others
-    local nx = coordEdited.x and coordValues.x or tonumber(xBox.Text)
-    local ny = coordEdited.y and coordValues.y or tonumber(yBox.Text)
-    local nz = coordEdited.z and coordValues.z or tonumber(zBox.Text)
+    local nx, ny, nz = parseCoordBox()
     if nx and ny and nz then
         local char = LocalPlayer.Character
         if char and char:FindFirstChild("HumanoidRootPart") then
@@ -695,10 +680,8 @@ tpBtn.MouseButton1Click:Connect(function()
         tpBtn.Text = "Done!"
         task.delay(1.2, function() tpBtn.Text = "Teleport" end)
     end
-    -- Clear edited flags so live update resumes
-    coordEdited.x = false
-    coordEdited.y = false
-    coordEdited.z = false
+    -- Clear edited flag so live update resumes
+    coordEdited = false
 end)
 
 -- ════════════════════════════════════════════════════════════
@@ -1075,9 +1058,9 @@ RunService.Heartbeat:Connect(function(dt)
         coordLiveLabel.Text = string.format(
             "X: %.1f   Y: %.1f   Z: %.1f", pos.X, pos.Y, pos.Z
         )
-        if not xBox:IsFocused() and not coordEdited.x then xBox.Text = string.format("%.1f", pos.X) end
-        if not yBox:IsFocused() and not coordEdited.y then yBox.Text = string.format("%.1f", pos.Y) end
-        if not zBox:IsFocused() and not coordEdited.z then zBox.Text = string.format("%.1f", pos.Z) end
+        if not coordBox:IsFocused() and not coordEdited then
+            coordBox.Text = string.format("%.2f, %.2f, %.2f", pos.X, pos.Y, pos.Z)
+        end
     end
 end)
 
