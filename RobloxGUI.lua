@@ -1,10 +1,11 @@
---// Roblox GUI — Lucid Panel v2
+--// Roblox GUI — Lucid Panel v3
+--// Lucid Panel v3.0
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
 
 -- Script source URL for reload
-local SCRIPT_URL = "https://pastebin.com/raw/D0nxrPjq"
+local SCRIPT_URL = "https://raw.githubusercontent.com/SidDMR/lucid-panel/main/RobloxGUI.lua"
 
 -- Destroy previous instance if reloading
 pcall(function()
@@ -22,6 +23,19 @@ local TeleportService = game:GetService("TeleportService")
 local LocalPlayer = Players.LocalPlayer
 local mouse = LocalPlayer:GetMouse()
 
+-- Own executor-wide connections so reload/close cannot leave old behavior running.
+local connections = {}
+local cleanupActions = {}
+
+local function track(connection)
+    table.insert(connections, connection)
+    return connection
+end
+
+local function addCleanup(callback)
+    table.insert(cleanupActions, callback)
+end
+
 -- ============================================================
 -- STATE
 -- ============================================================
@@ -35,7 +49,8 @@ local state = {
     infJumpEnabled     = false,
     maxZoomLocked      = false,
     maxZoomValue       = 128, -- Roblox default
-    antiAfkEnabled     = false,
+    antiAfkEnabled     = true,
+    antiFlingEnabled   = true,
     autoclickEnabled   = false,
     autoclickInterval  = 0.01, -- 10 ms
 }
@@ -77,12 +92,25 @@ local mainFrame = create("Frame", {
     BackgroundTransparency = 0.4,
     BorderSizePixel        = 0,
     Active                 = true,
-    Draggable              = true,
+    Draggable              = false,
     ClipsDescendants       = true,
     Parent                 = screenGui,
 })
 
 create("UICorner", { CornerRadius = UDim.new(0, 10), Parent = mainFrame })
+
+-- Fit the fixed-size panel on smaller phone/tablet viewports.
+local panelScale = create("UIScale", { Scale = 1, Parent = mainFrame })
+local function updatePanelScale()
+    local camera = workspace.CurrentCamera
+    if not camera then return end
+    local viewport = camera.ViewportSize
+    panelScale.Scale = math.min(1, viewport.X / 340, viewport.Y / 550)
+end
+updatePanelScale()
+if workspace.CurrentCamera then
+    track(workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updatePanelScale))
+end
 
 local mainStroke = create("UIStroke", {
     Color        = Color3.fromRGB(90, 60, 180),
@@ -104,11 +132,40 @@ local titleBar = create("Frame", {
 })
 create("UICorner", { CornerRadius = UDim.new(0, 10), Parent = titleBar })
 
+-- Title-bar-only dragging works on both mouse and touch.
+local draggingPanel = false
+local dragStart
+local panelStart
+titleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        draggingPanel = true
+        dragStart = input.Position
+        panelStart = mainFrame.Position
+    end
+end)
+track(UserInputService.InputChanged:Connect(function(input)
+    if draggingPanel and (input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        mainFrame.Position = UDim2.new(
+            panelStart.X.Scale, panelStart.X.Offset + delta.X,
+            panelStart.Y.Scale, panelStart.Y.Offset + delta.Y
+        )
+    end
+end))
+track(UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        draggingPanel = false
+    end
+end))
+
 create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v2",
+    Text                   = ">>  Lucid Panel v3.0",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -177,6 +234,75 @@ create("UIListLayout", {
     Parent    = content,
 })
 
+-- Collapsible top-level categories. Controls can select a category even when
+-- their implementation appears later in this file.
+local categories = {}
+local currentSection = content
+
+local function createCategory(name, order, openByDefault)
+    local wrapper = create("Frame", {
+        Name = name .. "Category",
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
+        LayoutOrder = order,
+        Parent = content,
+    })
+    local list = create("UIListLayout", {
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 7),
+        Parent = wrapper,
+    })
+    local header = create("TextButton", {
+        Size = UDim2.new(1, 0, 0, 32),
+        BackgroundColor3 = Color3.fromRGB(38, 34, 56),
+        BorderSizePixel = 0,
+        TextColor3 = Color3.fromRGB(205, 190, 255),
+        TextSize = 14,
+        Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        LayoutOrder = 0,
+        Parent = wrapper,
+    })
+    create("UICorner", { CornerRadius = UDim.new(0, 7), Parent = header })
+    create("UIPadding", { PaddingLeft = UDim.new(0, 10), Parent = header })
+    local body = create("Frame", {
+        Name = "Body",
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
+        Visible = openByDefault,
+        LayoutOrder = 1,
+        Parent = wrapper,
+    })
+    create("UIListLayout", {
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 7),
+        Parent = body,
+    })
+    local open = openByDefault
+    local function refresh()
+        header.Text = (open and "v  " or ">  ") .. name
+        body.Visible = open
+    end
+    header.MouseButton1Click:Connect(function()
+        open = not open
+        refresh()
+    end)
+    refresh()
+    categories[name] = body
+end
+
+createCategory("Player", 1, true)
+createCategory("Teleport & Coordinates", 2, false)
+createCategory("Automation", 3, false)
+createCategory("Servers", 4, false)
+createCategory("Interface", 5, false)
+
+local function useCategory(name)
+    currentSection = categories[name]
+end
+
 -- ============================================================
 -- HELPERS
 -- ============================================================
@@ -190,7 +316,7 @@ local function sectionLabel(text, order)
         Font                   = Enum.Font.GothamSemibold,
         TextXAlignment         = Enum.TextXAlignment.Left,
         LayoutOrder            = order,
-        Parent                 = content,
+        Parent                 = currentSection,
     })
 end
 
@@ -199,7 +325,7 @@ local function rowFrame(order, height)
         Size                   = UDim2.new(1, 0, 0, height or 30),
         BackgroundTransparency = 1,
         LayoutOrder            = order,
-        Parent                 = content,
+        Parent                 = currentSection,
     })
 end
 
@@ -320,6 +446,7 @@ end
 -- ════════════════════════════════════════════════════════════
 --  SECTION 0 ─ GUI OPACITY
 -- ════════════════════════════════════════════════════════════
+useCategory("Interface")
 sectionLabel("GUI Opacity", nextOrder())
 
 local opacRow = rowFrame(nextOrder())
@@ -389,6 +516,7 @@ setOpacity(60) -- start at 60% opaque (40% transparent)
 -- ════════════════════════════════════════════════════════════
 --  SECTION 1 ─ HIP HEIGHT  (Slider + TextBox)
 -- ════════════════════════════════════════════════════════════
+useCategory("Player")
 sectionLabel("Hip Height", nextOrder())
 
 local hipRow = rowFrame(nextOrder())
@@ -581,7 +709,8 @@ end)
 -- ════════════════════════════════════════════════════════════
 --  SECTION 4 ─ COORDINATES  (X, Y, Z boxes + Copy + Teleport)
 -- ════════════════════════════════════════════════════════════
-sectionLabel("Coordinates", nextOrder())
+useCategory("Teleport & Coordinates")
+sectionLabel("Coordinate Grabber", nextOrder())
 
 -- Live display row
 local coordLiveRow = rowFrame(nextOrder(), 20)
@@ -616,10 +745,11 @@ local function parseCoordBox()
     local str = coordBox.Text:match("^%s*(.-)%s*$")
     if not str or str == "" then return nil, nil, nil end
     -- Try comma-separated: "x, y, z"
-    local x, y, z = str:match("([%d%.%-]+)%s*,%s*([%d%.%-]+)%s*,%s*([%d%.%-]+)")
+    local number = "([%+%-]?%d*%.?%d+)"
+    local x, y, z = str:match(number .. "%s*,%s*" .. number .. "%s*,%s*" .. number)
     -- Fallback to space-separated: "x y z"
     if not x then
-        x, y, z = str:match("([%d%.%-]+)%s+([%d%.%-]+)%s+([%d%.%-]+)")
+        x, y, z = str:match(number .. "%s+" .. number .. "%s+" .. number)
     end
     return tonumber(x), tonumber(y), tonumber(z)
 end
@@ -685,13 +815,80 @@ tpBtn.MouseButton1Click:Connect(function()
     coordEdited = false
 end)
 
+-- TeleportGUI B, integrated: two reusable coordinate presets with one-click
+-- capture and teleport. Inputs accept comma- or space-separated coordinates.
+sectionLabel("Teleport Presets", nextOrder())
+local function createTeleportPreset(name)
+    local row = rowFrame(nextOrder(), 58)
+    create("TextLabel", {
+        Size = UDim2.new(0, 48, 0, 22), BackgroundTransparency = 1,
+        Text = name .. ":", TextColor3 = Color3.fromRGB(190, 180, 220),
+        TextSize = 12, Font = Enum.Font.GothamSemibold,
+        TextXAlignment = Enum.TextXAlignment.Left, Parent = row,
+    })
+    local box = styledBox(row, {
+        Size = UDim2.new(1, -52, 0, 22), Position = UDim2.new(0, 52, 0, 0),
+        Text = "", PlaceholderText = "x, y, z",
+    })
+    local grab = create("TextButton", {
+        Size = UDim2.new(0.48, 0, 0, 25), Position = UDim2.new(0, 0, 0, 30),
+        BackgroundColor3 = Color3.fromRGB(50, 50, 75), BorderSizePixel = 0,
+        Text = "Grab Current", TextColor3 = Color3.fromRGB(220, 215, 240),
+        TextSize = 11, Font = Enum.Font.GothamSemibold, Parent = row,
+    })
+    local go = create("TextButton", {
+        Size = UDim2.new(0.48, 0, 0, 25), Position = UDim2.new(0.52, 0, 0, 30),
+        BackgroundColor3 = Color3.fromRGB(75, 50, 160), BorderSizePixel = 0,
+        Text = "Teleport", TextColor3 = Color3.fromRGB(235, 230, 255),
+        TextSize = 11, Font = Enum.Font.GothamSemibold, Parent = row,
+    })
+    create("UICorner", { CornerRadius = UDim.new(0, 5), Parent = grab })
+    create("UICorner", { CornerRadius = UDim.new(0, 5), Parent = go })
+
+    grab.MouseButton1Click:Connect(function()
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if root then
+            local p = root.Position
+            box.Text = string.format("%.2f, %.2f, %.2f", p.X, p.Y, p.Z)
+            grab.Text = "Captured"
+            task.delay(1, function() if grab.Parent then grab.Text = "Grab Current" end end)
+        end
+    end)
+    go.MouseButton1Click:Connect(function()
+        local text = box.Text:match("^%s*(.-)%s*$")
+        local x, y, z = text:match("([%+%-]?%d*%.?%d+)%s*,%s*([%+%-]?%d*%.?%d+)%s*,%s*([%+%-]?%d*%.?%d+)")
+        if not x then
+            x, y, z = text:match("([%+%-]?%d*%.?%d+)%s+([%+%-]?%d*%.?%d+)%s+([%+%-]?%d*%.?%d+)")
+        end
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if root and x and y and z then
+            root.CFrame = CFrame.new(tonumber(x), tonumber(y), tonumber(z))
+            go.Text = "Done"
+        else
+            go.Text = "Invalid coords"
+        end
+        task.delay(1.2, function() if go.Parent then go.Text = "Teleport" end end)
+    end)
+end
+
+createTeleportPreset("Point A")
+createTeleportPreset("Point B")
+
 -- ════════════════════════════════════════════════════════════
 --  SECTION 5 ─ NOCLIP TOGGLE
 -- ════════════════════════════════════════════════════════════
+useCategory("Player")
 sectionLabel("Noclip", nextOrder())
 
 createToggle("Enable Noclip", nextOrder(), false, function(on)
     state.noclipEnabled = on
+end)
+
+sectionLabel("Anti-Fling", nextOrder())
+createToggle("Enable Anti-Fling", nextOrder(), true, function(on)
+    state.antiFlingEnabled = on
 end)
 
 -- ════════════════════════════════════════════════════════════
@@ -714,7 +911,7 @@ end)
 
 -- IY-style: hook into JumpRequest with debounce (matches IY source lines 9789-9796)
 local infJumpDebounce = false
-UserInputService.JumpRequest:Connect(function()
+track(UserInputService.JumpRequest:Connect(function()
     if state.infJumpEnabled and not infJumpDebounce then
         infJumpDebounce = true
         local char = LocalPlayer.Character
@@ -727,7 +924,7 @@ UserInputService.JumpRequest:Connect(function()
         task.wait()
         infJumpDebounce = false
     end
-end)
+end))
 
 -- ════════════════════════════════════════════════════════════
 --  SECTION 6.5 ─ MAX ZOOM DISTANCE
@@ -784,11 +981,15 @@ end)
 -- ════════════════════════════════════════════════════════════
 --  SECTION 7 ─ ANTI-AFK TOGGLE
 -- ════════════════════════════════════════════════════════════
-sectionLabel("Anti-AFK", nextOrder())
-
-createToggle("Enable Anti-AFK", nextOrder(), false, function(on)
-    state.antiAfkEnabled = on
-end)
+useCategory("Automation")
+sectionLabel("Protection Status", nextOrder())
+local antiAfkRow = rowFrame(nextOrder(), 24)
+create("TextLabel", {
+    Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1,
+    Text = "Anti-AFK  ON", TextColor3 = Color3.fromRGB(80, 225, 125),
+    TextSize = 13, Font = Enum.Font.GothamBold,
+    TextXAlignment = Enum.TextXAlignment.Left, Parent = antiAfkRow,
+})
 
 -- ════════════════════════════════════════════════════════════
 --  SECTION 7 ─ AUTOCLICK  (10ms interval) + Keybind
@@ -858,15 +1059,17 @@ acClearBtn.MouseButton1Click:Connect(function()
 end)
 
 -- Listen for keybind assignment AND keybind press
--- NOTE: We intentionally IGNORE the 'processed' flag so every key
--- registers even when the GUI panel is focused.
-UserInputService.InputBegan:Connect(function(input, _processed)
+-- Binding capture accepts focused input; an active bind ignores processed input.
+track(UserInputService.InputBegan:Connect(function(input, processed)
     local isKey = input.UserInputType == Enum.UserInputType.Keyboard
     local isMouse = input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.MouseButton2
         or input.UserInputType == Enum.UserInputType.MouseButton3
 
     if not isKey and not isMouse then return end
+
+    -- Binding capture is deliberate; normal binds should not fire while typing.
+    if processed and not acListening then return end
 
     -- ── Listening mode: assign whatever was pressed ──
     if acListening then
@@ -901,11 +1104,12 @@ UserInputService.InputBegan:Connect(function(input, _processed)
             acFireToggle()
         end
     end
-end)
+end))
 
 -- ════════════════════════════════════════════════════════════
 --  REJOIN BUTTON
 -- ════════════════════════════════════════════════════════════
+useCategory("Servers")
 local rejoinRow = rowFrame(nextOrder(), 32)
 
 local rejoinBtn = create("TextButton", {
@@ -1011,8 +1215,8 @@ end)
 create("TextLabel", {
     Size                   = UDim2.new(1, 0, 0, 16),
     BackgroundTransparency = 1,
-    Text                   = "Lucid Panel v2  -  Stay Undetected",
-    TextColor3             = Color3.fromRGB(100, 90, 140),
+    Text                   = "Anti-AFK ON  |  Right Alt: toggle panel",
+    TextColor3             = Color3.fromRGB(80, 225, 125),
     TextSize               = 10,
     Font                   = Enum.Font.Gotham,
     TextXAlignment         = Enum.TextXAlignment.Center,
@@ -1037,6 +1241,7 @@ local function destroyPlatform()
     end
     airPlatform = nil
 end
+addCleanup(destroyPlatform)
 
 local function ensurePlatform()
     if airPlatform and airPlatform.Parent then return end
@@ -1078,14 +1283,14 @@ local function onCharacterAdded(char)
     destroyPlatform()
 end
 
-LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
+track(LocalPlayer.CharacterAdded:Connect(onCharacterAdded))
 -- Also apply to current character if already loaded
 if LocalPlayer.Character then
     task.spawn(function() onCharacterAdded(LocalPlayer.Character) end)
 end
 
 -- Single consolidated Heartbeat for all per-frame logic
-RunService.Heartbeat:Connect(function(dt)
+track(RunService.Heartbeat:Connect(function(dt)
     local char = LocalPlayer.Character
     if not char then
         destroyPlatform()
@@ -1094,6 +1299,22 @@ RunService.Heartbeat:Connect(function(dt)
 
     local h = char:FindFirstChildOfClass("Humanoid")
     local hrp = char:FindFirstChild("HumanoidRootPart")
+
+    -- Anti-fling: suppress impossible momentum without interfering with normal
+    -- running, jumping, vehicles, or deliberate teleports.
+    if hrp and state.antiFlingEnabled then
+        local linear = hrp.AssemblyLinearVelocity
+        local angular = hrp.AssemblyAngularVelocity
+        if linear.Magnitude > 250 then
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.AssemblyAngularVelocity = Vector3.zero
+        elseif linear.Magnitude > 100 then
+            hrp.AssemblyLinearVelocity = linear.Unit * 100
+        end
+        if angular.Magnitude > 100 then
+            hrp.AssemblyAngularVelocity = angular.Unit * 100
+        end
+    end
 
     -- WalkSpeed lock
     if h and state.walkspeedLocked then
@@ -1165,15 +1386,17 @@ RunService.Heartbeat:Connect(function(dt)
             coordBox.Text = string.format("%.2f, %.2f, %.2f", pos.X, pos.Y, pos.Z)
         end
     end
-end)
+end))
 
 -- Anti-AFK (Idled event + periodic fallback)
-LocalPlayer.Idled:Connect(function()
+track(LocalPlayer.Idled:Connect(function()
     if state.antiAfkEnabled then
-        VirtualUser:CaptureController()
-        VirtualUser:ClickButton2(Vector2.new())
+        pcall(function()
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new())
+        end)
     end
-end)
+end))
 
 -- Periodic anti-AFK backup: simulates input every 60s in case Idled doesn't fire
 task.spawn(function()
@@ -1190,10 +1413,11 @@ end)
 
 -- AutoClick (10ms loop — works even when alt-tabbed)
 task.spawn(function()
-    local camera = workspace.CurrentCamera
     while screenGui.Parent do
         if state.autoclickEnabled then
             local success = pcall(function()
+                local camera = workspace.CurrentCamera
+                if not camera then return end
                 local vpSize = camera.ViewportSize
                 local cx, cy = vpSize.X / 2, vpSize.Y / 2
                 VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
@@ -1210,10 +1434,23 @@ end)
 -- ════════════════════════════════════════════════════════════
 --  TOGGLE GUI VISIBILITY — Right-Alt
 -- ════════════════════════════════════════════════════════════
-UserInputService.InputBegan:Connect(function(input, processed)
+track(UserInputService.InputBegan:Connect(function(input, processed)
     if not processed and input.KeyCode == Enum.KeyCode.RightAlt then
         mainFrame.Visible = not mainFrame.Visible
     end
+end))
+
+screenGui.Destroying:Connect(function()
+    state.autoclickEnabled = false
+    state.antiAfkEnabled = false
+    for _, connection in ipairs(connections) do
+        pcall(function() connection:Disconnect() end)
+    end
+    table.clear(connections)
+    for _, callback in ipairs(cleanupActions) do
+        pcall(callback)
+    end
+    table.clear(cleanupActions)
 end)
 
-print("[Lucid Panel v2] Loaded - Right-Alt to toggle | R to reload | X to close")
+print("[Lucid Panel v3.0] Loaded - Right-Alt to toggle | R to reload | X to close")
