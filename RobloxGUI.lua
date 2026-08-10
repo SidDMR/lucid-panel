@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v3.4
+--// Lucid Panel v3.5
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -56,6 +56,8 @@ local state = {
     playerLightEnabled = false,
     playerLightRange   = 30,
     playerLightPower   = 5,
+    nightLockEnabled   = false,
+    nightClockTime     = 0,
     autoclickEnabled   = false,
     autoclickInterval  = 0.01, -- 10 ms
 }
@@ -170,7 +172,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v3.4",
+    Text                   = ">>  Lucid Panel v3.5",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -1062,6 +1064,62 @@ resetFogBtn.MouseButton1Click:Connect(function()
     fogBox.Text = tostring(originalFogEnd)
 end)
 
+-- IY night sets ClockTime to 0. Lucid also offers a guarded lock so games that
+-- continuously write daytime cannot immediately undo the client-side setting.
+local originalClockTime = Lighting.ClockTime
+local enforcingNight = false
+local function applyNightTime()
+    if enforcingNight then return end
+    enforcingNight = true
+    Lighting.ClockTime = state.nightClockTime
+    enforcingNight = false
+end
+
+sectionLabel("Night / Clock Time", nextOrder())
+local nightRow = rowFrame(nextOrder(), 30)
+local clockBox = styledBox(nightRow, {
+    Size = UDim2.new(0, 72, 0, 24), Position = UDim2.new(0, 0, 0.5, -12),
+    Text = "0", PlaceholderText = "0-24",
+})
+local applyNightBtn = lightingButton(nightRow, "Apply", 80, 82, Color3.fromRGB(75, 50, 160))
+local resetNightBtn = lightingButton(nightRow, "Reset", 170, 82, Color3.fromRGB(55, 50, 75))
+
+applyNightBtn.MouseButton1Click:Connect(function()
+    local value = tonumber(clockBox.Text)
+    if value then
+        -- ClockTime naturally wraps at 24; explicit modulo keeps the UI clear.
+        state.nightClockTime = value % 24
+        clockBox.Text = string.format("%.2f", state.nightClockTime)
+        applyNightTime()
+        applyNightBtn.Text = "Applied"
+    else
+        applyNightBtn.Text = "Invalid"
+    end
+    task.delay(1, function() if applyNightBtn.Parent then applyNightBtn.Text = "Apply" end end)
+end)
+resetNightBtn.MouseButton1Click:Connect(function()
+    state.nightClockTime = originalClockTime
+    clockBox.Text = string.format("%.2f", originalClockTime)
+    applyNightTime()
+end)
+
+createToggle("Lock Selected Night Time", nextOrder(), false, function(on)
+    state.nightLockEnabled = on
+    if on then
+        local value = tonumber(clockBox.Text)
+        if value then state.nightClockTime = value % 24 end
+        clockBox.Text = string.format("%.2f", state.nightClockTime)
+        applyNightTime()
+    end
+end)
+
+track(Lighting:GetPropertyChangedSignal("ClockTime"):Connect(function()
+    if state.nightLockEnabled and not enforcingNight
+        and math.abs(Lighting.ClockTime - state.nightClockTime) > 0.001 then
+        applyNightTime()
+    end
+end))
+
 sectionLabel("Player Light", nextOrder())
 local lightRow = rowFrame(nextOrder(), 32)
 create("TextLabel", {
@@ -1106,6 +1164,8 @@ lightRangeBox.FocusLost:Connect(readLightSettings)
 lightPowerBox.FocusLost:Connect(readLightSettings)
 
 addCleanup(function()
+    state.nightLockEnabled = false
+    Lighting.ClockTime = originalClockTime
     Lighting.FogEnd = originalFogEnd
     state.playerLightEnabled = false
     removePlayerLight()
@@ -1622,4 +1682,4 @@ screenGui.Destroying:Connect(function()
     table.clear(cleanupActions)
 end)
 
-print("[Lucid Panel v3.4] Loaded - Right-Alt to toggle | R to reload | X to close")
+print("[Lucid Panel v3.5] Loaded - Right-Alt to toggle | R to reload | X to close")
