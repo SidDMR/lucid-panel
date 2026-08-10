@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v3.6
+--// Lucid Panel v3.7
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -41,9 +41,9 @@ end
 -- STATE
 -- ============================================================
 local state = {
-    walkspeedLocked    = true,
+    walkspeedLocked    = false,
     walkspeedValue     = 16,
-    jumpHeightLocked   = true,
+    jumpHeightLocked   = false,
     jumpHeightValue    = 7.2,
     noclipEnabled      = false,
     airWalkEnabled     = false,
@@ -173,7 +173,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v3.6",
+    Text                   = ">>  Lucid Panel v3.7",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -745,34 +745,59 @@ create("TextLabel", {
     Parent = wsRow,
 })
 
-local wsToggle, wsGetLocked = createInlineToggle(wsRow, true)
-wsToggle(function(on)
-    -- Always read the current box value when toggling
-    local num = tonumber(wsBox.Text)
-    if num then
-        state.walkspeedValue = num
+local walkspeedConnection = nil
+local applyingWalkspeed = false
+
+local function applyWalkSpeed(value)
+    value = tonumber(value)
+    if not value or value ~= value or value == math.huge or value == -math.huge then
+        wsBox.Text = tostring(state.walkspeedValue)
+        return false
     end
-    state.walkspeedLocked = on
-    -- Apply immediately
+    state.walkspeedValue = value
+    wsBox.Text = tostring(value)
     local char = LocalPlayer.Character
-    if char then
-        local h = char:FindFirstChildOfClass("Humanoid")
-        if h then h.WalkSpeed = state.walkspeedValue end
+    local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        applyingWalkspeed = true
+        pcall(function() humanoid.WalkSpeed = value end)
+        applyingWalkspeed = false
     end
+    return true
+end
+
+local function bindWalkSpeedHumanoid(humanoid)
+    if walkspeedConnection then
+        walkspeedConnection:Disconnect()
+        walkspeedConnection = nil
+    end
+    if not humanoid then return end
+    walkspeedConnection = humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+        if state.walkspeedLocked and not applyingWalkspeed
+            and humanoid.WalkSpeed ~= state.walkspeedValue then
+            applyingWalkspeed = true
+            pcall(function() humanoid.WalkSpeed = state.walkspeedValue end)
+            applyingWalkspeed = false
+        end
+    end)
+end
+
+addCleanup(function()
+    if walkspeedConnection then walkspeedConnection:Disconnect() end
+    walkspeedConnection = nil
 end)
 
-wsBox.FocusLost:Connect(function()
-    local num = tonumber(wsBox.Text)
-    if num then
-        state.walkspeedValue = num
-        local char = LocalPlayer.Character
-        if char then
-            local h = char:FindFirstChildOfClass("Humanoid")
-            if h then h.WalkSpeed = num end
-        end
-    else
-        wsBox.Text = tostring(state.walkspeedValue)
-    end
+local wsToggle, wsGetLocked = createInlineToggle(wsRow, false)
+wsToggle(function(on)
+    state.walkspeedLocked = on
+    local char = LocalPlayer.Character
+    local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+    bindWalkSpeedHumanoid(humanoid)
+    applyWalkSpeed(wsBox.Text)
+end)
+
+wsBox.FocusLost:Connect(function(_enterPressed)
+    applyWalkSpeed(wsBox.Text)
 end)
 
 -- ════════════════════════════════════════════════════════════
@@ -803,7 +828,7 @@ create("TextLabel", {
     Parent = jhRow,
 })
 
-local jhToggle, jhGetLocked = createInlineToggle(jhRow, true)
+local jhToggle, jhGetLocked = createInlineToggle(jhRow, false)
 jhToggle(function(on)
     -- Always read the current box value when toggling
     local num = tonumber(jhBox.Text)
@@ -1626,6 +1651,7 @@ local function onCharacterAdded(char)
     -- Wait for humanoid to load
     local h = char:WaitForChild("Humanoid", 10)
     if not h then return end
+    bindWalkSpeedHumanoid(h)
 
     -- Re-apply WalkSpeed
     if state.walkspeedLocked then
@@ -1807,4 +1833,4 @@ screenGui.Destroying:Connect(function()
     table.clear(cleanupActions)
 end)
 
-print("[Lucid Panel v3.6] Loaded - Right-Alt to toggle | R to reload | X to close")
+print("[Lucid Panel v3.7] Loaded - Right-Alt to toggle | R to reload | X to close")
