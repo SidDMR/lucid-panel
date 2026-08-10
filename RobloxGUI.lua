@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v3.2
+--// Lucid Panel v3.4
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -170,7 +170,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v3.2",
+    Text                   = ">>  Lucid Panel v3.4",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -900,7 +900,7 @@ end)
 -- ════════════════════════════════════════════════════════════
 --  SECTION 5.5 ─ AIR WALK
 -- ════════════════════════════════════════════════════════════
-sectionLabel("Air Walk  (E ↑  Q ↓  Jump ↑)", nextOrder())
+sectionLabel("Air Walk  (E up, Q down)", nextOrder())
 
 createToggle("Enable Air Walk", nextOrder(), false, function(on)
     state.airWalkEnabled = on
@@ -1361,34 +1361,80 @@ create("TextLabel", {
 --  RUNTIME LOOPS (consolidated into single Heartbeat)
 -- ════════════════════════════════════════════════════════════
 
--- Air Walk state
+-- IY float/platform implementation adapted for Lucid lifecycle management.
 local airPlatform = nil
-local airY = 0
-local AIR_SPEED = 50
-local JUMP_BOOST = 8
-local airJumpDebounce = false
+local AIR_BASE_OFFSET = -3.1
+local airOffset = AIR_BASE_OFFSET
+local airQDown = false
+local airEDown = false
+
+local function updateAirOffset()
+    airOffset = AIR_BASE_OFFSET + (airEDown and 1.5 or 0) - (airQDown and 0.5 or 0)
+end
 
 local function destroyPlatform()
     if airPlatform and airPlatform.Parent then
         airPlatform:Destroy()
     end
     airPlatform = nil
+    airQDown, airEDown = false, false
+    updateAirOffset()
 end
 addCleanup(destroyPlatform)
 
 local function ensurePlatform()
     if airPlatform and airPlatform.Parent then return end
+    local char = LocalPlayer.Character
+    if not char then return end
+    local old = char:FindFirstChild("LucidFloatPlatform")
+    if old then old:Destroy() end
     airPlatform = Instance.new("Part")
-    airPlatform.Name = "AirWalkPlatform"
-    airPlatform.Size = Vector3.new(6, 0.2, 6)
+    airPlatform.Name = "LucidFloatPlatform"
+    airPlatform.Size = Vector3.new(2, 0.2, 1.5)
     airPlatform.Anchored = true
     airPlatform.CanCollide = true
-    airPlatform.Transparency = 0.95
-    airPlatform.Material = Enum.Material.ForceField
-    airPlatform.Color = Color3.fromRGB(120, 100, 200)
+    airPlatform.CanTouch = false
+    airPlatform.CanQuery = false
+    airPlatform.Massless = true
+    airPlatform.Transparency = 1
     airPlatform.CastShadow = false
-    airPlatform.Parent = workspace
+    airPlatform.Parent = char
 end
+
+local function repairPlatform()
+    if not state.airWalkEnabled then return end
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not char or not root then return end
+
+    if not airPlatform or airPlatform.Parent ~= char then
+        destroyPlatform()
+        ensurePlatform()
+    end
+    if not airPlatform then return end
+
+    -- Character controllers and Lucid Noclip may rewrite descendant collision
+    -- properties. Restore the float pad immediately before physics simulation.
+    airPlatform.Anchored = true
+    airPlatform.CanCollide = true
+    airPlatform.Transparency = 1
+    pcall(function() airPlatform.CollisionGroup = "Default" end)
+    airPlatform.CFrame = root.CFrame * CFrame.new(0, airOffset, 0)
+end
+
+track(RunService.Stepped:Connect(repairPlatform))
+
+track(UserInputService.InputBegan:Connect(function(input, processed)
+    if processed or not state.airWalkEnabled then return end
+    if input.KeyCode == Enum.KeyCode.Q then airQDown = true end
+    if input.KeyCode == Enum.KeyCode.E then airEDown = true end
+    updateAirOffset()
+end))
+track(UserInputService.InputEnded:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.Q then airQDown = false end
+    if input.KeyCode == Enum.KeyCode.E then airEDown = false end
+    updateAirOffset()
+end))
 
 -- Re-apply settings on respawn
 local function onCharacterAdded(char)
@@ -1479,7 +1525,7 @@ track(RunService.Heartbeat:Connect(function(dt)
     -- Noclip
     if state.noclipEnabled then
         for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
+            if part:IsA("BasePart") and part ~= airPlatform then
                 part.CanCollide = false
             end
         end
@@ -1490,28 +1536,10 @@ track(RunService.Heartbeat:Connect(function(dt)
         if not hrp or not h then
             destroyPlatform()
         else
-            if not airPlatform or not airPlatform.Parent then
-                airY = hrp.Position.Y - 3
-            end
-
-            if UserInputService:IsKeyDown(Enum.KeyCode.E) then
-                airY = airY + AIR_SPEED * dt
-            end
-            if UserInputService:IsKeyDown(Enum.KeyCode.Q) then
-                airY = airY - AIR_SPEED * dt
-            end
-
-            if h:GetState() == Enum.HumanoidStateType.Jumping then
-                if not airJumpDebounce then
-                    airJumpDebounce = true
-                    airY = airY + JUMP_BOOST
-                end
-            else
-                airJumpDebounce = false
-            end
-
             ensurePlatform()
-            airPlatform.CFrame = CFrame.new(hrp.Position.X, airY, hrp.Position.Z)
+            if airPlatform then
+                airPlatform.CFrame = hrp.CFrame * CFrame.new(0, airOffset, 0)
+            end
         end
     else
         destroyPlatform()
@@ -1594,4 +1622,4 @@ screenGui.Destroying:Connect(function()
     table.clear(cleanupActions)
 end)
 
-print("[Lucid Panel v3.2] Loaded - Right-Alt to toggle | R to reload | X to close")
+print("[Lucid Panel v3.4] Loaded - Right-Alt to toggle | R to reload | X to close")
