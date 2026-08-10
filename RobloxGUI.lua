@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v3.5
+--// Lucid Panel v3.6
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -58,6 +58,7 @@ local state = {
     playerLightPower   = 5,
     nightLockEnabled   = false,
     nightClockTime     = 0,
+    antiLagEnabled     = false,
     autoclickEnabled   = false,
     autoclickInterval  = 0.01, -- 10 ms
 }
@@ -172,7 +173,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v3.5",
+    Text                   = ">>  Lucid Panel v3.6",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -520,6 +521,130 @@ opacBox.FocusLost:Connect(function()
 end)
 
 setOpacity(60) -- start at 60% opaque (40% transparent)
+
+-- IY Anti-Lag, made reversible. We disable effects rather than deleting them
+-- and retain only the original properties required for restoration.
+sectionLabel("Performance", nextOrder())
+local antiLagSnapshots = {}
+local antiLagEnvironment = nil
+
+local function optimizeInstance(item)
+    if not state.antiLagEnabled or antiLagSnapshots[item] then return end
+    if item:IsA("BasePart") then
+        antiLagSnapshots[item] = { "BasePart", item.CastShadow, item.Material, item.Reflectance }
+        item.CastShadow = false
+        item.Material = Enum.Material.Plastic
+        item.Reflectance = 0
+    elseif item:IsA("Decal") or item:IsA("Texture") then
+        antiLagSnapshots[item] = { "Visual", item.Transparency }
+        item.Transparency = 1
+    elseif item:IsA("ParticleEmitter") or item:IsA("Trail") or item:IsA("Beam")
+        or item:IsA("Smoke") or item:IsA("Fire") or item:IsA("Sparkles") then
+        antiLagSnapshots[item] = { "Enabled", item.Enabled }
+        item.Enabled = false
+    elseif item:IsA("ForceField") then
+        antiLagSnapshots[item] = { "Visible", item.Visible }
+        item.Visible = false
+    elseif item:IsA("PostEffect") then
+        antiLagSnapshots[item] = { "Enabled", item.Enabled }
+        item.Enabled = false
+    end
+end
+
+local function enableAntiLag()
+    if antiLagEnvironment then return end
+    local terrain = workspace:FindFirstChildWhichIsA("Terrain")
+    local originalQuality = nil
+    pcall(function() originalQuality = settings().Rendering.QualityLevel end)
+    antiLagEnvironment = {
+        terrain = terrain,
+        water = terrain and { terrain.WaterWaveSize, terrain.WaterWaveSpeed,
+            terrain.WaterReflectance, terrain.WaterTransparency } or nil,
+        globalShadows = Lighting.GlobalShadows,
+        fogStart = Lighting.FogStart,
+        fogEnd = Lighting.FogEnd,
+        quality = originalQuality,
+    }
+    if terrain then
+        terrain.WaterWaveSize = 0
+        terrain.WaterWaveSpeed = 0
+        terrain.WaterReflectance = 0
+        terrain.WaterTransparency = 1
+    end
+    Lighting.GlobalShadows = false
+    Lighting.FogStart = 9e9
+    Lighting.FogEnd = 9e9
+    pcall(function() settings().Rendering.QualityLevel = 1 end)
+    task.spawn(function()
+        local count = 0
+        for _, root in ipairs({ workspace, Lighting }) do
+            for _, item in ipairs(root:GetDescendants()) do
+                if not state.antiLagEnabled then return end
+                optimizeInstance(item)
+                count = count + 1
+                if count % 500 == 0 then task.wait() end
+            end
+        end
+    end)
+end
+
+local function disableAntiLag()
+    for item, values in pairs(antiLagSnapshots) do
+        if item.Parent then
+            pcall(function()
+                if values[1] == "BasePart" then
+                    item.CastShadow, item.Material, item.Reflectance = values[2], values[3], values[4]
+                elseif values[1] == "Visual" then
+                    item.Transparency = values[2]
+                elseif values[1] == "Enabled" then
+                    item.Enabled = values[2]
+                elseif values[1] == "Visible" then
+                    item.Visible = values[2]
+                end
+            end)
+        end
+    end
+    table.clear(antiLagSnapshots)
+    local saved = antiLagEnvironment
+    antiLagEnvironment = nil
+    if saved then
+        if saved.terrain and saved.terrain.Parent and saved.water then
+            saved.terrain.WaterWaveSize = saved.water[1]
+            saved.terrain.WaterWaveSpeed = saved.water[2]
+            saved.terrain.WaterReflectance = saved.water[3]
+            saved.terrain.WaterTransparency = saved.water[4]
+        end
+        Lighting.GlobalShadows = saved.globalShadows
+        Lighting.FogStart = saved.fogStart
+        Lighting.FogEnd = saved.fogEnd
+        if saved.quality ~= nil then
+            pcall(function() settings().Rendering.QualityLevel = saved.quality end)
+        end
+    end
+end
+
+createToggle("Anti-Lag Mode", nextOrder(), false, function(on)
+    state.antiLagEnabled = on
+    if on then enableAntiLag() else disableAntiLag() end
+end)
+local antiLagInfo = rowFrame(nextOrder(), 26)
+create("TextLabel", {
+    Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1,
+    Text = "Low quality, effects off, simpler materials",
+    TextColor3 = Color3.fromRGB(125, 115, 155), TextSize = 10,
+    Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left,
+    TextWrapped = true, Parent = antiLagInfo,
+})
+track(workspace.DescendantAdded:Connect(function(item)
+    if state.antiLagEnabled then task.defer(optimizeInstance, item) end
+end))
+track(Lighting.DescendantAdded:Connect(function(item)
+    if state.antiLagEnabled then task.defer(optimizeInstance, item) end
+end))
+addCleanup(function()
+    state.antiLagEnabled = false
+    disableAntiLag()
+end)
 
 -- ════════════════════════════════════════════════════════════
 --  SECTION 1 ─ HIP HEIGHT  (Slider + TextBox)
@@ -1682,4 +1807,4 @@ screenGui.Destroying:Connect(function()
     table.clear(cleanupActions)
 end)
 
-print("[Lucid Panel v3.5] Loaded - Right-Alt to toggle | R to reload | X to close")
+print("[Lucid Panel v3.6] Loaded - Right-Alt to toggle | R to reload | X to close")
