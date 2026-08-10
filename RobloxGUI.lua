@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v3.0
+--// Lucid Panel v3.2
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -20,6 +20,7 @@ local UserInputService = game:GetService("UserInputService")
 local VirtualUser = game:GetService("VirtualUser")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local TeleportService = game:GetService("TeleportService")
+local Lighting = game:GetService("Lighting")
 local LocalPlayer = Players.LocalPlayer
 local mouse = LocalPlayer:GetMouse()
 
@@ -51,6 +52,10 @@ local state = {
     maxZoomValue       = 128, -- Roblox default
     antiAfkEnabled     = true,
     antiFlingEnabled   = true,
+    shiftLockEnabled   = false,
+    playerLightEnabled = false,
+    playerLightRange   = 30,
+    playerLightPower   = 5,
     autoclickEnabled   = false,
     autoclickInterval  = 0.01, -- 10 ms
 }
@@ -165,7 +170,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v3.0",
+    Text                   = ">>  Lucid Panel v3.2",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -297,7 +302,8 @@ createCategory("Player", 1, true)
 createCategory("Teleport & Coordinates", 2, false)
 createCategory("Automation", 3, false)
 createCategory("Servers", 4, false)
-createCategory("Interface", 5, false)
+createCategory("Lighting", 5, false)
+createCategory("Interface", 6, false)
 
 local function useCategory(name)
     currentSection = categories[name]
@@ -978,6 +984,133 @@ zoomBox.FocusLost:Connect(function()
     end
 end)
 
+-- IY enableshiftlock: keep the Roblox Shift Lock option available even when a
+-- game attempts to turn it off.
+sectionLabel("Shift Lock", nextOrder())
+createToggle("Enable Shift Lock Option", nextOrder(), false, function(on)
+    state.shiftLockEnabled = on
+    if on then
+        pcall(function() LocalPlayer.DevEnableMouseLock = true end)
+    end
+end)
+track(LocalPlayer:GetPropertyChangedSignal("DevEnableMouseLock"):Connect(function()
+    if state.shiftLockEnabled then
+        pcall(function() LocalPlayer.DevEnableMouseLock = true end)
+    end
+end))
+
+-- IY lighting commands, exposed as editable values instead of fixed toggles.
+local originalFogEnd = Lighting.FogEnd
+
+local function removePlayerLight()
+    local char = LocalPlayer.Character
+    if not char then return end
+    for _, item in ipairs(char:GetDescendants()) do
+        if item:IsA("PointLight") and item.Name == "LucidPlayerLight" then
+            item:Destroy()
+        end
+    end
+end
+
+local function applyPlayerLight()
+    removePlayerLight()
+    if not state.playerLightEnabled then return end
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    local light = create("PointLight", {
+        Name = "LucidPlayerLight",
+        Range = state.playerLightRange,
+        Brightness = state.playerLightPower,
+        Shadows = false,
+        Parent = root,
+    })
+end
+
+useCategory("Lighting")
+sectionLabel("Fog End", nextOrder())
+local fogRow = rowFrame(nextOrder(), 30)
+local fogBox = styledBox(fogRow, {
+    Size = UDim2.new(0, 105, 0, 24), Position = UDim2.new(0, 0, 0.5, -12),
+    Text = tostring(Lighting.FogEnd), PlaceholderText = "FogEnd value",
+})
+local function lightingButton(parent, text, x, width, color)
+    local button = create("TextButton", {
+        Size = UDim2.new(0, width, 0, 24), Position = UDim2.new(0, x, 0.5, -12),
+        BackgroundColor3 = color, BorderSizePixel = 0, Text = text,
+        TextColor3 = Color3.fromRGB(240, 235, 255), TextSize = 11,
+        Font = Enum.Font.GothamSemibold, Parent = parent,
+    })
+    create("UICorner", { CornerRadius = UDim.new(0, 5), Parent = button })
+    return button
+end
+local applyFogBtn = lightingButton(fogRow, "Apply", 113, 70, Color3.fromRGB(75, 50, 160))
+local resetFogBtn = lightingButton(fogRow, "Reset", 191, 70, Color3.fromRGB(55, 50, 75))
+applyFogBtn.MouseButton1Click:Connect(function()
+    local value = tonumber(fogBox.Text)
+    if value then
+        Lighting.FogEnd = math.max(0, value)
+        fogBox.Text = tostring(Lighting.FogEnd)
+        applyFogBtn.Text = "Applied"
+    else
+        applyFogBtn.Text = "Invalid"
+    end
+    task.delay(1, function() if applyFogBtn.Parent then applyFogBtn.Text = "Apply" end end)
+end)
+resetFogBtn.MouseButton1Click:Connect(function()
+    Lighting.FogEnd = originalFogEnd
+    fogBox.Text = tostring(originalFogEnd)
+end)
+
+sectionLabel("Player Light", nextOrder())
+local lightRow = rowFrame(nextOrder(), 32)
+create("TextLabel", {
+    Size = UDim2.new(0, 45, 1, 0), BackgroundTransparency = 1,
+    Text = "Radius", TextColor3 = Color3.fromRGB(210, 210, 220),
+    TextSize = 11, Font = Enum.Font.Gotham, Parent = lightRow,
+})
+local lightRangeBox = styledBox(lightRow, {
+    Size = UDim2.new(0, 48, 0, 24), Position = UDim2.new(0, 48, 0.5, -12), Text = "30",
+})
+create("TextLabel", {
+    Size = UDim2.new(0, 52, 1, 0), Position = UDim2.new(0, 102, 0, 0),
+    BackgroundTransparency = 1, Text = "Intensity", TextColor3 = Color3.fromRGB(210, 210, 220),
+    TextSize = 11, Font = Enum.Font.Gotham, Parent = lightRow,
+})
+local lightPowerBox = styledBox(lightRow, {
+    Size = UDim2.new(0, 42, 0, 24), Position = UDim2.new(0, 157, 0.5, -12), Text = "5",
+})
+local function readLightSettings()
+    local radius = tonumber(lightRangeBox.Text)
+    local power = tonumber(lightPowerBox.Text)
+    if radius then state.playerLightRange = math.max(radius, 0) end
+    if power then state.playerLightPower = math.max(power, 0) end
+    lightRangeBox.Text = tostring(state.playerLightRange)
+    lightPowerBox.Text = tostring(state.playerLightPower)
+end
+local lightActions = rowFrame(nextOrder(), 30)
+local applyLightBtn = lightingButton(lightActions, "Apply Light", 0, 128, Color3.fromRGB(75, 50, 160))
+local removeLightBtn = lightingButton(lightActions, "Remove Light", 138, 128, Color3.fromRGB(70, 45, 60))
+applyLightBtn.MouseButton1Click:Connect(function()
+    readLightSettings()
+    state.playerLightEnabled = true
+    applyPlayerLight()
+    applyLightBtn.Text = "Applied"
+    task.delay(1, function() if applyLightBtn.Parent then applyLightBtn.Text = "Apply Light" end end)
+end)
+removeLightBtn.MouseButton1Click:Connect(function()
+    state.playerLightEnabled = false
+    removePlayerLight()
+end)
+lightRangeBox.FocusLost:Connect(readLightSettings)
+lightPowerBox.FocusLost:Connect(readLightSettings)
+
+addCleanup(function()
+    Lighting.FogEnd = originalFogEnd
+    state.playerLightEnabled = false
+    removePlayerLight()
+end)
+
 -- ════════════════════════════════════════════════════════════
 --  SECTION 7 ─ ANTI-AFK TOGGLE
 -- ════════════════════════════════════════════════════════════
@@ -1281,6 +1414,14 @@ local function onCharacterAdded(char)
 
     -- Destroy old air walk platform so it re-initializes at new position
     destroyPlatform()
+
+    -- Recreate IY-style player light on the new character.
+    if state.playerLightEnabled then
+        task.spawn(function()
+            char:WaitForChild("HumanoidRootPart", 10)
+            if char == LocalPlayer.Character then applyPlayerLight() end
+        end)
+    end
 end
 
 track(LocalPlayer.CharacterAdded:Connect(onCharacterAdded))
@@ -1453,4 +1594,4 @@ screenGui.Destroying:Connect(function()
     table.clear(cleanupActions)
 end)
 
-print("[Lucid Panel v3.0] Loaded - Right-Alt to toggle | R to reload | X to close")
+print("[Lucid Panel v3.2] Loaded - Right-Alt to toggle | R to reload | X to close")
