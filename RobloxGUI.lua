@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v4.0
+--// Lucid Panel v4.1
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -199,7 +199,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v4.0",
+    Text                   = ">>  Lucid Panel v4.1",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -1944,7 +1944,6 @@ refreshFeatureStatus()
 local airPlatform = nil
 local AIR_BASE_OFFSET = -3.1
 local airPlatformY = nil
-local airCollisionArmed = false
 local airQDown = false
 local airEDown = false
 
@@ -1969,7 +1968,6 @@ local function destroyPlatform()
     end
     airPlatform = nil
     airPlatformY = nil
-    airCollisionArmed = false
     removeStaleFloatPads()
     airQDown, airEDown = false, false
 end
@@ -1987,7 +1985,7 @@ local function ensurePlatform()
     airPlatform.Name = "LucidFloatPlatform"
     airPlatform.Size = Vector3.new(2, 0.2, 1.5)
     airPlatform.Anchored = true
-    airPlatform.CanCollide = true
+    airPlatform.CanCollide = false
     airPlatform.CanTouch = false
     airPlatform.CanQuery = false
     airPlatform.Massless = true
@@ -1997,7 +1995,6 @@ local function ensurePlatform()
     -- noclip scripts commonly rewrite or move descendants of the character.
     airPlatform.Parent = workspace
     airPlatformY = root.Position.Y + AIR_BASE_OFFSET
-    airCollisionArmed = false
 end
 
 local function repairPlatform()
@@ -2015,13 +2012,9 @@ local function repairPlatform()
     -- Character controllers and Lucid Noclip may rewrite descendant collision
     -- properties. Restore the float pad immediately before physics simulation.
     airPlatform.Anchored = true
-    local humanoid = char:FindFirstChildOfClass("Humanoid")
-    -- Never wedge a collidable pad between a grounded R15 avatar and terrain.
-    -- It becomes solid only after Roblox reports that the avatar is airborne.
-    if humanoid and humanoid.FloorMaterial == Enum.Material.Air then
-        airCollisionArmed = true
-    end
-    airPlatform.CanCollide = airCollisionArmed
+    -- The pad is now a position marker only. Collidable client parts can create
+    -- enormous R15 solver impulses, so AirWalk no longer relies on collision.
+    airPlatform.CanCollide = false
     airPlatform.Transparency = 1
     pcall(function() airPlatform.CollisionGroup = "Default" end)
     if not airPlatformY then airPlatformY = root.Position.Y + AIR_BASE_OFFSET end
@@ -2558,13 +2551,6 @@ track(RunService.Heartbeat:Connect(function(dt)
         if not hrp or not h then
             destroyPlatform()
         else
-            -- Emergency guard against collision impulses. AirWalk should never
-            -- be able to turn into an unrecoverable upward launch.
-            local velocity = hrp.AssemblyLinearVelocity
-            if velocity.Y > 85 then
-                hrp.AssemblyLinearVelocity = Vector3.new(velocity.X, 0, velocity.Z)
-                hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-            end
             ensurePlatform()
             if airPlatform then
                 if not airPlatformY then airPlatformY = hrp.Position.Y + AIR_BASE_OFFSET end
@@ -2572,10 +2558,17 @@ track(RunService.Heartbeat:Connect(function(dt)
                 if verticalDirection ~= 0 then
                     local verticalStep = verticalDirection * 10 * dt
                     airPlatformY = airPlatformY + verticalStep
-                    hrp.CFrame = hrp.CFrame + Vector3.new(0, verticalStep, 0)
-                    local currentVelocity = hrp.AssemblyLinearVelocity
-                    hrp.AssemblyLinearVelocity = Vector3.new(currentVelocity.X, 0, currentVelocity.Z)
                 end
+                -- Hold the root at a deterministic height. Horizontal Roblox
+                -- movement remains untouched, while jump/gravity impulses are
+                -- removed instead of being resolved against a physical pad.
+                local heldY = airPlatformY - AIR_BASE_OFFSET
+                local currentCFrame = hrp.CFrame
+                hrp.CFrame = CFrame.new(currentCFrame.Position.X, heldY, currentCFrame.Position.Z)
+                    * currentCFrame.Rotation
+                local currentVelocity = hrp.AssemblyLinearVelocity
+                hrp.AssemblyLinearVelocity = Vector3.new(currentVelocity.X, 0, currentVelocity.Z)
+                hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
                 airPlatform.CFrame = CFrame.new(hrp.Position.X, airPlatformY, hrp.Position.Z)
             end
         end
@@ -2679,7 +2672,7 @@ if type(queueTeleport) == "function" then
 end
 
 if teleportQueueReady then
-    print("[Lucid Panel v4.0] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v4.1] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v4.0] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v4.1] Loaded, but this executor does not expose queue_on_teleport")
 end
