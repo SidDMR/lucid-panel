@@ -6,14 +6,23 @@
 
 -- Script source URL for reload
 local SCRIPT_URL = "https://raw.githubusercontent.com/SidDMR/lucid-panel/main/RobloxGUI.lua"
+if not game:IsLoaded() then game.Loaded:Wait() end
 
 -- Singleton guard: double clicks/re-execution must not duplicate event loops.
 local CoreGui = game:GetService("CoreGui")
 local sharedEnvironment = (getgenv and getgenv()) or _G
 local existingPanel = CoreGui:FindFirstChild("LucidPanel")
 if existingPanel then
-    warn("[Lucid Panel] Already running; duplicate execution ignored.")
-    return
+    local samePlace = existingPanel:GetAttribute("LucidPlaceId") == game.PlaceId
+    local sameJob = existingPanel:GetAttribute("LucidJobId") == game.JobId
+    if samePlace and sameJob and not existingPanel:GetAttribute("LucidTeleporting") then
+        existingPanel.Enabled = true
+        local existingFrame = existingPanel:FindFirstChild("MainFrame")
+        if existingFrame then existingFrame.Visible = true end
+        warn("[Lucid Panel] Already running; existing panel shown.")
+        return
+    end
+    existingPanel:Destroy()
 end
 local previousToken = sharedEnvironment.__LUCID_PANEL_ACTIVE
 if previousToken then
@@ -117,6 +126,13 @@ local screenGui = create("ScreenGui", {
     ZIndexBehavior  = Enum.ZIndexBehavior.Sibling,
     Parent          = game:GetService("CoreGui"),
 })
+screenGui:SetAttribute("LucidPlaceId", game.PlaceId)
+screenGui:SetAttribute("LucidJobId", game.JobId)
+track(LocalPlayer.OnTeleport:Connect(function(teleportState)
+    if teleportState == Enum.TeleportState.Started then
+        screenGui:SetAttribute("LucidTeleporting", true)
+    end
+end))
 
 -- ============================================================
 -- SCROLLING MAIN FRAME  (taller content now needs scroll)
@@ -2030,9 +2046,11 @@ local function initializePlayerESP()
     local mode = "off"
     local holders = {}
     local selectedPlayers = {}
+    local espTransparency = 0.78
     local running = true
     local setAll
     local setTarget
+    local setEnemy
 
     local selectRow = rowFrame(nextOrder(), 30)
     local selectBox = styledBox(selectRow, {
@@ -2059,6 +2077,29 @@ local function initializePlayerESP()
         Parent=selectedStatus,
     })
     create("UICorner", { CornerRadius=UDim.new(0,5), Parent=clearSelectedButton })
+
+    local transparencyRow = rowFrame(nextOrder(), 28)
+    create("TextLabel", {
+        Size=UDim2.new(1,-78,1,0), BackgroundTransparency=1,
+        Text="ESP transparency (0-1)", TextColor3=Color3.fromRGB(185,175,205),
+        TextSize=11, Font=Enum.Font.Gotham, TextXAlignment=Enum.TextXAlignment.Left,
+        Parent=transparencyRow,
+    })
+    local transparencyBox = styledBox(transparencyRow, {
+        Size=UDim2.new(0,70,0,24), Position=UDim2.new(1,-70,0.5,-12), Text="0.78",
+        PlaceholderText="0-1",
+    })
+    transparencyBox.FocusLost:Connect(function()
+        espTransparency=math.clamp(tonumber(transparencyBox.Text) or espTransparency,0.05,1)
+        transparencyBox.Text=string.format("%.2f",espTransparency)
+        for _, data in pairs(holders) do
+            if data.folder then
+                for _, item in ipairs(data.folder:GetChildren()) do
+                    if item:IsA("BoxHandleAdornment") then item.Transparency=espTransparency end
+                end
+            end
+        end
+    end)
 
     local function updateSelectedStatus()
         local names = {}
@@ -2091,14 +2132,16 @@ local function initializePlayerESP()
         folder.Parent = screenGui
 
         for _, part in ipairs(character:GetChildren()) do
-            if part:IsA("BasePart") then
+            -- HumanoidRootPart is invisible and overlaps the torso, which made
+            -- IY-style boxes appear nearly solid on compact R15 avatars.
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" and part.Transparency < 1 then
                 local adornment = Instance.new("BoxHandleAdornment")
                 adornment.Name = player.Name
                 adornment.Adornee = part
                 adornment.AlwaysOnTop = true
                 adornment.ZIndex = 10
                 adornment.Size = part.Size
-                adornment.Transparency = 0.3
+                adornment.Transparency = espTransparency
                 adornment.Color = player.TeamColor
                 adornment.Parent = folder
             end
@@ -2128,6 +2171,12 @@ local function initializePlayerESP()
         if mode == "all" then
             for _, player in ipairs(Players:GetPlayers()) do
                 if player ~= LocalPlayer then wanted[player] = true end
+            end
+        elseif mode == "enemy" then
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Team ~= LocalPlayer.Team then
+                    wanted[player] = true
+                end
             end
         elseif mode == "target" then
             for player in pairs(selectedPlayers) do
@@ -2173,6 +2222,7 @@ local function initializePlayerESP()
     local _, _, allSetter = createToggle("ESP All", nextOrder(), false, function(on)
         if on then
             if setTarget then setTarget(false) end
+            if setEnemy then setEnemy(false) end
             mode = "all"
         elseif mode == "all" then
             mode = "off"
@@ -2190,6 +2240,7 @@ local function initializePlayerESP()
                 return
             end
             if setAll then setAll(false) end
+            if setEnemy then setEnemy(false) end
             mode = "target"
         elseif mode == "target" then
             mode = "off"
@@ -2197,6 +2248,18 @@ local function initializePlayerESP()
         refreshESP()
     end)
     setTarget = targetSetter
+
+    local _, _, enemySetter = createToggle("ESP Enemy Team", nextOrder(), false, function(on)
+        if on then
+            if setAll then setAll(false) end
+            if setTarget then setTarget(false) end
+            mode = "enemy"
+        elseif mode == "enemy" then
+            mode = "off"
+        end
+        refreshESP()
+    end)
+    setEnemy = enemySetter
 
     task.spawn(function()
         while running and screenGui.Parent do
