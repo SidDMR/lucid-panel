@@ -558,7 +558,11 @@ local registerFavorite = (function()
                     Parent=favoritesList,
                 })
                 create("UICorner", { CornerRadius=UDim.new(0,6), Parent=favoriteEntry })
-                favoriteEntry.MouseButton1Click:Connect(trigger)
+                favoriteEntry.MouseButton1Click:Connect(function()
+                    -- Run after the GUI click releases so mouse-lock/shift-lock
+                    -- input state is identical to using the original control.
+                    task.defer(trigger)
+                end)
             else
                 favoriteCount=math.max(0,favoriteCount-1)
                 if favoriteEntry then favoriteEntry:Destroy(); favoriteEntry=nil end
@@ -2691,6 +2695,17 @@ track(RunService.Heartbeat:Connect(function(dt)
         hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
         hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
         hrp.Anchored = true
+        -- Anchored humanoids cannot use AutoRotate. Mirror the camera's flat
+        -- yaw while Roblox Shift Lock owns the mouse so facing still changes.
+        local camera = workspace.CurrentCamera
+        if camera and UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter
+            and not state.freecamEnabled then
+            local look = camera.CFrame.LookVector
+            local flatLook = Vector3.new(look.X, 0, look.Z)
+            if flatLook.Magnitude > 0.001 then
+                hrp.CFrame = CFrame.lookAt(hrp.Position, hrp.Position + flatLook.Unit)
+            end
+        end
     end
 
     -- Anti-fling: suppress impossible momentum without interfering with normal
