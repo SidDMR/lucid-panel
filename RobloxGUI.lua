@@ -30,6 +30,7 @@ sharedEnvironment.__LUCID_PANEL_ACTIVE = instanceToken
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local ContextActionService = game:GetService("ContextActionService")
 local VirtualUser = game:GetService("VirtualUser")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local TeleportService = game:GetService("TeleportService")
@@ -1943,6 +1944,8 @@ local function removeStaleFloatPads()
     end
     local oldWorkspacePad = workspace:FindFirstChild("AirWalkPlatform")
     if oldWorkspacePad and oldWorkspacePad ~= airPlatform then oldWorkspacePad:Destroy() end
+    local oldLucidPad = workspace:FindFirstChild("LucidFloatPlatform")
+    if oldLucidPad and oldLucidPad ~= airPlatform then oldLucidPad:Destroy() end
 end
 removeStaleFloatPads()
 
@@ -1977,7 +1980,9 @@ local function ensurePlatform()
     airPlatform.Massless = true
     airPlatform.Transparency = 1
     airPlatform.CastShadow = false
-    airPlatform.Parent = char
+    -- Keep the pad outside the character model. Character controllers and
+    -- noclip scripts commonly rewrite or move descendants of the character.
+    airPlatform.Parent = workspace
 end
 
 local function repairPlatform()
@@ -1986,7 +1991,7 @@ local function repairPlatform()
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not char or not root then return end
 
-    if not airPlatform or airPlatform.Parent ~= char then
+    if not airPlatform or airPlatform.Parent ~= workspace then
         destroyPlatform()
         ensurePlatform()
     end
@@ -1995,7 +2000,10 @@ local function repairPlatform()
     -- Character controllers and Lucid Noclip may rewrite descendant collision
     -- properties. Restore the float pad immediately before physics simulation.
     airPlatform.Anchored = true
-    airPlatform.CanCollide = true
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    -- Never wedge a collidable pad between a grounded R15 avatar and terrain.
+    -- It becomes solid only after Roblox reports that the avatar is airborne.
+    airPlatform.CanCollide = humanoid ~= nil and humanoid.FloorMaterial == Enum.Material.Air
     airPlatform.Transparency = 1
     pcall(function() airPlatform.CollisionGroup = "Default" end)
     airPlatform.CFrame = root.CFrame * CFrame.new(0, airOffset, 0)
@@ -2142,10 +2150,23 @@ local _, fireFreecam, setFreecam = createToggle("Freecam", nextOrder(), false, f
     local camera = workspace.CurrentCamera
     if not camera then return end
     if on then
+        if state.flyEnabled then setFly(false) end
         savedCamera = { Type=camera.CameraType, Subject=camera.CameraSubject, CFrame=camera.CFrame, FOV=camera.FieldOfView }
         freecamCFrame = camera.CFrame
         camera.CameraType = Enum.CameraType.Scriptable
+        ContextActionService:BindActionAtPriority(
+            "LucidFreecamSink",
+            function() return Enum.ContextActionResult.Sink end,
+            false,
+            Enum.ContextActionPriority.High.Value + 100,
+            Enum.PlayerActions.CharacterForward,
+            Enum.PlayerActions.CharacterBackward,
+            Enum.PlayerActions.CharacterLeft,
+            Enum.PlayerActions.CharacterRight,
+            Enum.PlayerActions.CharacterJump
+        )
     elseif savedCamera then
+        ContextActionService:UnbindAction("LucidFreecamSink")
         camera.CameraType = savedCamera.Type
         camera.CameraSubject = savedCamera.Subject
         camera.CFrame = savedCamera.CFrame
@@ -2154,6 +2175,7 @@ local _, fireFreecam, setFreecam = createToggle("Freecam", nextOrder(), false, f
     end
 end)
 addCleanup(function()
+    ContextActionService:UnbindAction("LucidFreecamSink")
     if state.freecamEnabled and savedCamera and workspace.CurrentCamera then
         local camera=workspace.CurrentCamera
         camera.CameraType=savedCamera.Type; camera.CameraSubject=savedCamera.Subject
@@ -2329,11 +2351,15 @@ local flyKeys = { W=false, A=false, S=false, D=false, Space=false, LeftControl=f
 track(UserInputService.InputBegan:Connect(function(input, processed)
     if input.KeyCode == Enum.KeyCode.End and not processed then panicReset(); return end
     if not processed and UserInputService:GetFocusedTextBox() == nil then
-        if input.KeyCode == shortcutKeys.Fly then fireFly()
+        if input.KeyCode == shortcutKeys.Fly then
+            if state.freecamEnabled then setFreecam(false) end
+            fireFly()
         elseif input.KeyCode == shortcutKeys.Noclip then fireNoclip()
         elseif input.KeyCode == shortcutKeys.Freecam then fireFreecam() end
     end
-    if flyKeys[input.KeyCode.Name] ~= nil and not processed then flyKeys[input.KeyCode.Name]=true end
+    if flyKeys[input.KeyCode.Name] ~= nil and (not processed or state.freecamEnabled) then
+        flyKeys[input.KeyCode.Name]=true
+    end
 end))
 track(UserInputService.InputEnded:Connect(function(input)
     if flyKeys[input.KeyCode.Name] ~= nil then flyKeys[input.KeyCode.Name]=false end
@@ -2510,6 +2536,13 @@ track(RunService.Heartbeat:Connect(function(dt)
         if not hrp or not h then
             destroyPlatform()
         else
+            -- Emergency guard against collision impulses. AirWalk should never
+            -- be able to turn into an unrecoverable upward launch.
+            local velocity = hrp.AssemblyLinearVelocity
+            if velocity.Y > 85 then
+                hrp.AssemblyLinearVelocity = Vector3.new(velocity.X, 0, velocity.Z)
+                hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+            end
             ensurePlatform()
             if airPlatform then
                 airPlatform.CFrame = hrp.CFrame * CFrame.new(0, airOffset, 0)
