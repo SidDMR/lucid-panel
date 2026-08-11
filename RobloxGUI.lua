@@ -2021,16 +2021,50 @@ addCleanup(function()
 end)
 
 -- IY-style player ESP: BoxHandleAdornment per body part plus an always-on-top
--- name and distance label. The targeted mode reuses Lucid's Go To resolver.
+-- name and distance label. Selected mode supports any number of chosen players.
 local function initializePlayerESP()
     useCategory("Player")
     sectionLabel("Player ESP", nextOrder())
 
     local mode = "off"
     local holders = {}
+    local selectedPlayers = {}
     local running = true
     local setAll
     local setTarget
+
+    local selectRow = rowFrame(nextOrder(), 30)
+    local selectBox = styledBox(selectRow, {
+        Size=UDim2.new(1,-38,0,26), Position=UDim2.new(0,0,0.5,-13),
+        Text="", PlaceholderText="Player name to ESP...",
+    })
+    local addSelectedButton = create("TextButton", {
+        Size=UDim2.new(0,30,0,26), Position=UDim2.new(1,-30,0.5,-13),
+        BackgroundColor3=Color3.fromRGB(70,120,80), BorderSizePixel=0, Text="+",
+        TextColor3=Color3.fromRGB(245,255,245), TextSize=18, Font=Enum.Font.GothamBold,
+        Parent=selectRow,
+    })
+    create("UICorner", { CornerRadius=UDim.new(0,6), Parent=addSelectedButton })
+    local selectedStatus = create("TextLabel", {
+        Size=UDim2.new(1,-58,0,24), BackgroundTransparency=1, Text="Selected: none",
+        TextColor3=Color3.fromRGB(175,165,195), TextSize=10, Font=Enum.Font.Gotham,
+        TextXAlignment=Enum.TextXAlignment.Left, TextTruncate=Enum.TextTruncate.AtEnd,
+        LayoutOrder=nextOrder(), Parent=currentSection,
+    })
+    local clearSelectedButton = create("TextButton", {
+        Size=UDim2.new(0,52,0,22), Position=UDim2.new(1,-52,0,0),
+        BackgroundColor3=Color3.fromRGB(75,48,62), BorderSizePixel=0, Text="Clear",
+        TextColor3=Color3.fromRGB(235,215,225), TextSize=10, Font=Enum.Font.GothamSemibold,
+        Parent=selectedStatus,
+    })
+    create("UICorner", { CornerRadius=UDim.new(0,5), Parent=clearSelectedButton })
+
+    local function updateSelectedStatus()
+        local names = {}
+        for player in pairs(selectedPlayers) do table.insert(names, player.Name) end
+        table.sort(names)
+        selectedStatus.Text = #names > 0 and ("Selected: "..table.concat(names, ", ")) or "Selected: none"
+    end
 
     local function removeESP(player)
         local data = holders[player]
@@ -2095,8 +2129,9 @@ local function initializePlayerESP()
                 if player ~= LocalPlayer then wanted[player] = true end
             end
         elseif mode == "target" then
-            local target = findGotoPlayer(gotoBox.Text)
-            if target then wanted[target] = true end
+            for player in pairs(selectedPlayers) do
+                if player.Parent == Players then wanted[player] = true end
+            end
         end
         return wanted
     end
@@ -2114,6 +2149,26 @@ local function initializePlayerESP()
         end
     end
 
+    local function addSelectedPlayer()
+        local target = findGotoPlayer(selectBox.Text)
+        if not target then
+            selectBox.Text="Player not found"
+            task.delay(1,function() if selectBox.Parent and selectBox.Text=="Player not found" then selectBox.Text="" end end)
+            return
+        end
+        selectedPlayers[target]=true
+        selectBox.Text=""
+        updateSelectedStatus()
+        if mode=="target" then refreshESP() end
+    end
+    addSelectedButton.MouseButton1Click:Connect(addSelectedPlayer)
+    selectBox.FocusLost:Connect(function(enterPressed) if enterPressed then addSelectedPlayer() end end)
+    clearSelectedButton.MouseButton1Click:Connect(function()
+        table.clear(selectedPlayers)
+        updateSelectedStatus()
+        if mode=="target" then refreshESP() end
+    end)
+
     local _, _, allSetter = createToggle("ESP All", nextOrder(), false, function(on)
         if on then
             if setTarget then setTarget(false) end
@@ -2125,12 +2180,11 @@ local function initializePlayerESP()
     end)
     setAll = allSetter
 
-    local _, _, targetSetter = createToggle("ESP GoTo Player", nextOrder(), false, function(on)
+    local _, _, targetSetter = createToggle("ESP Selected", nextOrder(), false, function(on)
         if on then
-            local target = findGotoPlayer(gotoBox.Text)
-            if not target then
-                gotoBtn.Text = "ESP target not found"
-                task.delay(1.2, function() if gotoBtn.Parent then gotoBtn.Text="Go To" end end)
+            if next(selectedPlayers) == nil then
+                selectBox.Text = "Add a player first"
+                task.delay(1.2, function() if selectBox.Parent and selectBox.Text=="Add a player first" then selectBox.Text="" end end)
                 task.defer(function() if setTarget then setTarget(false) end end)
                 return
             end
