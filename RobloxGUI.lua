@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v3.11
+--// Lucid Panel v3.12
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -61,6 +61,8 @@ local state = {
     antiLagEnabled     = false,
     clickTpEnabled     = false,
     loopGotoEnabled    = false,
+    spawnpointEnabled  = false,
+    spawnpointDelay    = 0.1,
     autoclickEnabled   = false,
     autoclickInterval  = 0.01, -- 10 ms
 }
@@ -175,7 +177,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v3.11",
+    Text                   = ">>  Lucid Panel v3.12",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -1734,6 +1736,51 @@ addCleanup(function()
     loopGotoTarget = nil
 end)
 
+sectionLabel("Custom Spawn Point", nextOrder())
+local spawnDelayRow = rowFrame(nextOrder(), 30)
+create("TextLabel", {
+    Size = UDim2.new(0, 92, 1, 0), BackgroundTransparency = 1,
+    Text = "Respawn delay:", TextColor3 = Color3.fromRGB(210, 210, 220),
+    TextSize = 11, Font = Enum.Font.Gotham,
+    TextXAlignment = Enum.TextXAlignment.Left, Parent = spawnDelayRow,
+})
+local spawnDelayBox = styledBox(spawnDelayRow, {
+    Size = UDim2.new(0, 70, 0, 24), Position = UDim2.new(0, 98, 0.5, -12),
+    Text = "0.1", PlaceholderText = "seconds",
+})
+
+local spawnpointCFrame = nil
+local fireSpawnpoint
+local _, spawnpointToggle = createToggle("Enable at current position", nextOrder(), false, function(on)
+    if on then
+        local delayValue = tonumber(spawnDelayBox.Text)
+        if not delayValue or delayValue < 0 then delayValue = 0.1 end
+        state.spawnpointDelay = delayValue
+        spawnDelayBox.Text = tostring(delayValue)
+        local character = LocalPlayer.Character
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        if not root then
+            task.defer(function() if fireSpawnpoint then fireSpawnpoint() end end)
+            return
+        end
+        spawnpointCFrame = root.CFrame
+        state.spawnpointEnabled = true
+    else
+        state.spawnpointEnabled = false
+        spawnpointCFrame = nil
+    end
+end)
+fireSpawnpoint = spawnpointToggle
+spawnDelayBox.FocusLost:Connect(function()
+    local value = tonumber(spawnDelayBox.Text)
+    if value and value >= 0 then state.spawnpointDelay = value end
+    spawnDelayBox.Text = tostring(state.spawnpointDelay)
+end)
+addCleanup(function()
+    state.spawnpointEnabled = false
+    spawnpointCFrame = nil
+end)
+
 -- ════════════════════════════════════════════════════════════
 --  CREDIT FOOTER
 -- ════════════════════════════════════════════════════════════
@@ -1859,6 +1906,23 @@ local function onCharacterAdded(char)
         task.spawn(function()
             char:WaitForChild("HumanoidRootPart", 10)
             if char == LocalPlayer.Character then applyPlayerLight() end
+        end)
+    end
+
+    -- IY spawnpoint: wait the configured delay after a new root exists, then
+    -- restore the saved CFrame if the toggle is still active.
+    if state.spawnpointEnabled and spawnpointCFrame then
+        local savedPosition = spawnpointCFrame
+        local savedDelay = state.spawnpointDelay
+        task.spawn(function()
+            local root = char:WaitForChild("HumanoidRootPart", 10)
+            if not root then return end
+            task.wait(savedDelay)
+            if state.spawnpointEnabled and spawnpointCFrame == savedPosition
+                and char == LocalPlayer.Character and root.Parent then
+                root.CFrame = savedPosition
+                clearCharacterVelocity(char)
+            end
         end)
     end
 end
@@ -2015,4 +2079,4 @@ screenGui.Destroying:Connect(function()
     table.clear(cleanupActions)
 end)
 
-print("[Lucid Panel v3.11] Loaded - Right-Alt to toggle | R to reload | X to close")
+print("[Lucid Panel v3.12] Loaded - Right-Alt to toggle | R to reload | X to close")
