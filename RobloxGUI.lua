@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v3.16
+--// Lucid Panel v3.17
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -190,7 +190,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v3.16",
+    Text                   = ">>  Lucid Panel v3.17",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -1905,6 +1905,23 @@ end
 
 track(RunService.Stepped:Connect(repairPlatform))
 
+local function enforceNoclip()
+    if not state.noclipEnabled then return end
+    local char = LocalPlayer.Character
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") and part ~= airPlatform then
+            if noclipCollisionState[part] == nil then
+                noclipCollisionState[part] = part.CanCollide
+            end
+            part.CanCollide = false
+        end
+    end
+end
+
+-- IY-style pre-physics enforcement, plus the existing Heartbeat second pass.
+track(RunService.Stepped:Connect(enforceNoclip))
+
 track(UserInputService.InputBegan:Connect(function(input, processed)
     if processed or not state.airWalkEnabled then return end
     if input.KeyCode == Enum.KeyCode.Q then airQDown = true end
@@ -2058,16 +2075,7 @@ track(RunService.Heartbeat:Connect(function(dt)
     end
 
     -- Noclip
-    if state.noclipEnabled then
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") and part ~= airPlatform then
-                if noclipCollisionState[part] == nil then
-                    noclipCollisionState[part] = part.CanCollide
-                end
-                part.CanCollide = false
-            end
-        end
-    end
+    enforceNoclip()
 
     -- Air Walk
     if state.airWalkEnabled then
@@ -2179,7 +2187,7 @@ if type(queueTeleport) == "function" then
 end
 
 if teleportQueueReady then
-    print("[Lucid Panel v3.16] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v3.17] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v3.16] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v3.17] Loaded, but this executor does not expose queue_on_teleport")
 end
