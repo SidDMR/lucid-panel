@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v3.12
+--// Lucid Panel v3.13
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -177,7 +177,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v3.12",
+    Text                   = ">>  Lucid Panel v3.13",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -684,10 +684,11 @@ local hipBox = styledBox(hipRow, {
 
 local HIP_MIN, HIP_MAX = -100, 200
 
-local function setHipHeight(value)
+local function setHipHeight(value, applyToCharacter)
     value = math.clamp(value, HIP_MIN, HIP_MAX)
-    hipBox.Text = tostring(math.floor(value + 0.5))
+    hipBox.Text = string.format("%.2f", value):gsub("%.?0+$", "")
     hipFill.Size = UDim2.new((value - HIP_MIN) / (HIP_MAX - HIP_MIN), 0, 1, 0)
+    if applyToCharacter == false then return end
     local char = LocalPlayer.Character
     if char then
         local humanoid = char:FindFirstChildOfClass("Humanoid")
@@ -720,7 +721,11 @@ hipBox.FocusLost:Connect(function()
     if num then setHipHeight(num) else hipBox.Text = "0" end
 end)
 
-setHipHeight(0)
+-- Display the game's real value without mutating it during Lucid startup.
+local initialCharacter = LocalPlayer.Character
+local initialHumanoid = initialCharacter and initialCharacter:FindFirstChildOfClass("Humanoid")
+local originalHipHeight = initialHumanoid and initialHumanoid.HipHeight or 0
+setHipHeight(originalHipHeight, false)
 
 -- ════════════════════════════════════════════════════════════
 --  SECTION 2 ─ WALKSPEED  (TextBox + Lock toggle)
@@ -1045,7 +1050,7 @@ createTeleportPreset("Point B")
 useCategory("Player")
 sectionLabel("Noclip", nextOrder())
 
-createToggle("Enable Noclip", nextOrder(), false, function(on)
+local _, fireNoclip = createToggle("Enable Noclip", nextOrder(), false, function(on)
     state.noclipEnabled = on
 end)
 
@@ -1059,7 +1064,7 @@ end)
 -- ════════════════════════════════════════════════════════════
 sectionLabel("Air Walk  (E up, Q down)", nextOrder())
 
-createToggle("Enable Air Walk", nextOrder(), false, function(on)
+local _, fireAirWalk = createToggle("Enable Air Walk", nextOrder(), false, function(on)
     state.airWalkEnabled = on
 end)
 
@@ -1875,11 +1880,44 @@ track(UserInputService.InputEnded:Connect(function(input)
     updateAirOffset()
 end))
 
+useCategory("Player")
+sectionLabel("Character Recovery", nextOrder())
+local recoveryRow = rowFrame(nextOrder(), 32)
+local recoveryBtn = create("TextButton", {
+    Size = UDim2.new(1, 0, 0, 28), BackgroundColor3 = Color3.fromRGB(85, 50, 65),
+    BorderSizePixel = 0, Text = "Recover Character",
+    TextColor3 = Color3.fromRGB(245, 225, 235), TextSize = 12,
+    Font = Enum.Font.GothamSemibold, Parent = recoveryRow,
+})
+create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = recoveryBtn })
+recoveryBtn.MouseButton1Click:Connect(function()
+    if state.airWalkEnabled then fireAirWalk() end
+    if state.noclipEnabled then fireNoclip() end
+    destroyPlatform()
+    local character = LocalPlayer.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if root then
+        root.Anchored = false
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+    end
+    if humanoid then
+        humanoid.Sit = false
+        humanoid.PlatformStand = false
+        humanoid.HipHeight = originalHipHeight
+        humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+    end
+    recoveryBtn.Text = "Recovered"
+    task.delay(1.2, function() if recoveryBtn.Parent then recoveryBtn.Text = "Recover Character" end end)
+end)
+
 -- Re-apply settings on respawn
 local function onCharacterAdded(char)
     -- Wait for humanoid to load
     local h = char:WaitForChild("Humanoid", 10)
     if not h then return end
+    originalHipHeight = h.HipHeight
     bindWalkSpeedHumanoid(h)
 
     -- Re-apply WalkSpeed
@@ -2079,4 +2117,4 @@ screenGui.Destroying:Connect(function()
     table.clear(cleanupActions)
 end)
 
-print("[Lucid Panel v3.12] Loaded - Right-Alt to toggle | R to reload | X to close")
+print("[Lucid Panel v3.13] Loaded - Right-Alt to toggle | R to reload | X to close")
