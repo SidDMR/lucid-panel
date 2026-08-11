@@ -356,6 +356,7 @@ local function createCategory(name, order, openByDefault)
     }
 end
 
+createCategory("Favorites", 0, false)
 createCategory("Player", 1, false)
 createCategory("Teleport & Coordinates", 2, false)
 createCategory("Automation", 3, false)
@@ -456,6 +457,117 @@ local function styledBox(parent, props)
     return box
 end
 
+local layoutOrder = 0
+local function nextOrder()
+    layoutOrder = layoutOrder + 1
+    return layoutOrder
+end
+
+-- Favorites live in their own function scope to stay below executor register
+-- limits. Only the registration closure remains in the root chunk.
+local registerFavorite = (function()
+    useCategory("Favorites")
+    sectionLabel("Pinned Tools", nextOrder())
+
+    local controlsRow = rowFrame(nextOrder(), 30)
+    local detachButton = create("TextButton", {
+        Size=UDim2.new(1,0,0,26), BackgroundColor3=Color3.fromRGB(65,52,95),
+        BorderSizePixel=0, Text="Detach Favorites Window", TextColor3=Color3.fromRGB(235,225,250),
+        TextSize=11, Font=Enum.Font.GothamSemibold, Parent=controlsRow,
+    })
+    create("UICorner", { CornerRadius=UDim.new(0,6), Parent=detachButton })
+
+    local attachedHost = create("Frame", {
+        Size=UDim2.new(1,0,0,0), AutomaticSize=Enum.AutomaticSize.Y,
+        BackgroundTransparency=1, LayoutOrder=nextOrder(), Parent=currentSection,
+    })
+    local favoritesList = create("Frame", {
+        Size=UDim2.new(1,0,0,0), AutomaticSize=Enum.AutomaticSize.Y,
+        BackgroundTransparency=1, Parent=attachedHost,
+    })
+    create("UIListLayout", { SortOrder=Enum.SortOrder.LayoutOrder, Padding=UDim.new(0,5), Parent=favoritesList })
+    local emptyLabel = create("TextLabel", {
+        Size=UDim2.new(1,0,0,24), BackgroundTransparency=1, Text="Star a tool to pin it here",
+        TextColor3=Color3.fromRGB(135,125,155), TextSize=11, Font=Enum.Font.Gotham,
+        LayoutOrder=-1, Parent=favoritesList,
+    })
+
+    local dock = create("Frame", {
+        Name="LucidFavoritesWindow", Size=UDim2.new(0,250,0,300),
+        Position=UDim2.new(0.5,170,0.5,-150), BackgroundColor3=Color3.fromRGB(24,22,34),
+        BackgroundTransparency=0.15, BorderSizePixel=0, Active=true, Draggable=true,
+        Visible=false, Parent=screenGui,
+    })
+    create("UICorner", { CornerRadius=UDim.new(0,9), Parent=dock })
+    create("UIStroke", { Color=Color3.fromRGB(115,85,190), Thickness=1.3, Parent=dock })
+    create("TextLabel", {
+        Size=UDim2.new(1,-38,0,34), Position=UDim2.new(0,10,0,0), BackgroundTransparency=1,
+        Text="★  Lucid Favorites", TextColor3=Color3.fromRGB(255,215,70), TextSize=14,
+        Font=Enum.Font.GothamBold, TextXAlignment=Enum.TextXAlignment.Left, Parent=dock,
+    })
+    local attachButton=create("TextButton", {
+        Size=UDim2.new(0,28,0,26), Position=UDim2.new(1,-32,0,4), BackgroundColor3=Color3.fromRGB(105,65,75),
+        BorderSizePixel=0, Text="X", TextColor3=Color3.fromRGB(255,240,245), TextSize=12,
+        Font=Enum.Font.GothamBold, Parent=dock,
+    })
+    create("UICorner", { CornerRadius=UDim.new(0,6), Parent=attachButton })
+    local dockContent=create("ScrollingFrame", {
+        Size=UDim2.new(1,-16,1,-44), Position=UDim2.new(0,8,0,38), BackgroundTransparency=1,
+        BorderSizePixel=0, ScrollBarThickness=3, AutomaticCanvasSize=Enum.AutomaticSize.Y,
+        CanvasSize=UDim2.new(), Parent=dock,
+    })
+
+    local detached=false
+    local favoriteCount=0
+    local function setDetached(value)
+        detached=value
+        if detached then
+            favoritesList.Parent=dockContent
+            dock.Visible=true
+            detachButton.Text="Favorites Detached"
+        else
+            favoritesList.Parent=attachedHost
+            dock.Visible=false
+            detachButton.Text="Detach Favorites Window"
+        end
+    end
+    detachButton.MouseButton1Click:Connect(function() setDetached(not detached) end)
+    attachButton.MouseButton1Click:Connect(function() setDetached(false) end)
+    addCleanup(function() setDetached(false) end)
+
+    return function(label, trigger, sourceRow)
+        local starred=false
+        local favoriteEntry=nil
+        local star=create("TextButton", {
+            Size=UDim2.new(0,24,0,24), Position=UDim2.new(1,-76,0.5,-12),
+            BackgroundTransparency=1, BorderSizePixel=0, Text="☆",
+            TextColor3=Color3.fromRGB(145,135,165), TextSize=18,
+            Font=Enum.Font.GothamBold, ZIndex=8, Parent=sourceRow,
+        })
+        star.MouseButton1Click:Connect(function()
+            starred=not starred
+            star.Text=starred and "★" or "☆"
+            star.TextColor3=starred and Color3.fromRGB(255,215,55) or Color3.fromRGB(145,135,165)
+            if starred then
+                favoriteCount=favoriteCount+1
+                emptyLabel.Visible=false
+                favoriteEntry=create("TextButton", {
+                    Size=UDim2.new(1,0,0,28), BackgroundColor3=Color3.fromRGB(48,42,68),
+                    BorderSizePixel=0, Text="★  "..label, TextColor3=Color3.fromRGB(245,230,170),
+                    TextSize=11, Font=Enum.Font.GothamSemibold, LayoutOrder=favoriteCount,
+                    Parent=favoritesList,
+                })
+                create("UICorner", { CornerRadius=UDim.new(0,6), Parent=favoriteEntry })
+                favoriteEntry.MouseButton1Click:Connect(trigger)
+            else
+                favoriteCount=math.max(0,favoriteCount-1)
+                if favoriteEntry then favoriteEntry:Destroy(); favoriteEntry=nil end
+                emptyLabel.Visible=favoriteCount==0
+            end
+        end)
+    end
+end)()
+
 local activeFeatures = {}
 local toggleRegistry = {}
 local statusLabelRef = nil
@@ -523,6 +635,7 @@ local function createToggle(labelText, order, default, callback)
     end
 
     btn.MouseButton1Click:Connect(fireToggle)
+    registerFavorite(labelText, fireToggle, row)
 
     toggleRegistry[labelText] = setToggle
     return function() return enabled end, fireToggle, setToggle
@@ -565,12 +678,6 @@ local function createInlineToggle(parent, default)
     end
 
     return toggle, function() return enabled end
-end
-
-local layoutOrder = 0
-local function nextOrder()
-    layoutOrder = layoutOrder + 1
-    return layoutOrder
 end
 
 -- ════════════════════════════════════════════════════════════
@@ -2132,7 +2239,9 @@ local function actionButton(textValue, callback, color)
         TextSize = 12, Font = Enum.Font.GothamSemibold, Parent = row,
     })
     create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = button })
-    button.MouseButton1Click:Connect(function() callback(button) end)
+    local function runAction() callback(button) end
+    button.MouseButton1Click:Connect(runAction)
+    registerFavorite(textValue, runAction, row)
     return button
 end
 
