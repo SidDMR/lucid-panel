@@ -2615,7 +2615,7 @@ if type(queueTeleport) == "function" then
 end
 
 if teleportQueueReady then
-    print("[Lucid Panel v3.17] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v4.0] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
     warn("[Lucid Panel v4.0] Loaded, but this executor does not expose queue_on_teleport")
 end
