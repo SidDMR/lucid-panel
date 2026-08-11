@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v3.13
+--// Lucid Panel v3.14
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -177,7 +177,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v3.13",
+    Text                   = ">>  Lucid Panel v3.14",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -1050,9 +1050,19 @@ createTeleportPreset("Point B")
 useCategory("Player")
 sectionLabel("Noclip", nextOrder())
 
+local noclipCollisionState = {}
+local function restoreNoclipCollisions()
+    for part, canCollide in pairs(noclipCollisionState) do
+        if part.Parent then part.CanCollide = canCollide end
+    end
+    table.clear(noclipCollisionState)
+end
+
 local _, fireNoclip = createToggle("Enable Noclip", nextOrder(), false, function(on)
     state.noclipEnabled = on
+    if not on then restoreNoclipCollisions() end
 end)
+addCleanup(restoreNoclipCollisions)
 
 sectionLabel("Anti-Fling", nextOrder())
 createToggle("Enable Anti-Fling", nextOrder(), false, function(on)
@@ -1812,6 +1822,19 @@ local airOffset = AIR_BASE_OFFSET
 local airQDown = false
 local airEDown = false
 
+local function removeStaleFloatPads()
+    local char = LocalPlayer.Character
+    if char then
+        for _, name in ipairs({ "LucidFloatPlatform", "AirWalkPlatform" }) do
+            local stale = char:FindFirstChild(name)
+            if stale and stale ~= airPlatform then stale:Destroy() end
+        end
+    end
+    local oldWorkspacePad = workspace:FindFirstChild("AirWalkPlatform")
+    if oldWorkspacePad and oldWorkspacePad ~= airPlatform then oldWorkspacePad:Destroy() end
+end
+removeStaleFloatPads()
+
 local function updateAirOffset()
     airOffset = AIR_BASE_OFFSET + (airEDown and 1.5 or 0) - (airQDown and 0.5 or 0)
 end
@@ -1821,6 +1844,7 @@ local function destroyPlatform()
         airPlatform:Destroy()
     end
     airPlatform = nil
+    removeStaleFloatPads()
     airQDown, airEDown = false, false
     updateAirOffset()
 end
@@ -1893,6 +1917,7 @@ create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = recoveryBtn })
 recoveryBtn.MouseButton1Click:Connect(function()
     if state.airWalkEnabled then fireAirWalk() end
     if state.noclipEnabled then fireNoclip() end
+    restoreNoclipCollisions()
     destroyPlatform()
     local character = LocalPlayer.Character
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -1917,6 +1942,8 @@ local function onCharacterAdded(char)
     -- Wait for humanoid to load
     local h = char:WaitForChild("Humanoid", 10)
     if not h then return end
+    restoreNoclipCollisions()
+    removeStaleFloatPads()
     originalHipHeight = h.HipHeight
     bindWalkSpeedHumanoid(h)
 
@@ -2021,6 +2048,9 @@ track(RunService.Heartbeat:Connect(function(dt)
     if state.noclipEnabled then
         for _, part in ipairs(char:GetDescendants()) do
             if part:IsA("BasePart") and part ~= airPlatform then
+                if noclipCollisionState[part] == nil then
+                    noclipCollisionState[part] = part.CanCollide
+                end
                 part.CanCollide = false
             end
         end
@@ -2117,4 +2147,4 @@ screenGui.Destroying:Connect(function()
     table.clear(cleanupActions)
 end)
 
-print("[Lucid Panel v3.13] Loaded - Right-Alt to toggle | R to reload | X to close")
+print("[Lucid Panel v3.14] Loaded - Right-Alt to toggle | R to reload | X to close")
