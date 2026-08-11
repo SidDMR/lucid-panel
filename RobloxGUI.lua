@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v3.14
+--// Lucid Panel v3.16
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -7,12 +7,25 @@
 -- Script source URL for reload
 local SCRIPT_URL = "https://raw.githubusercontent.com/SidDMR/lucid-panel/main/RobloxGUI.lua"
 
--- Destroy previous instance if reloading
-pcall(function()
-    if game:GetService("CoreGui"):FindFirstChild("LucidPanel") then
-        game:GetService("CoreGui"):FindFirstChild("LucidPanel"):Destroy()
+-- Singleton guard: double clicks/re-execution must not duplicate event loops.
+local CoreGui = game:GetService("CoreGui")
+local sharedEnvironment = (getgenv and getgenv()) or _G
+local existingPanel = CoreGui:FindFirstChild("LucidPanel")
+if existingPanel then
+    warn("[Lucid Panel] Already running; duplicate execution ignored.")
+    return
+end
+local previousToken = sharedEnvironment.__LUCID_PANEL_ACTIVE
+if previousToken then
+    if previousToken.PlaceId == game.PlaceId and previousToken.JobId == game.JobId then
+        warn("[Lucid Panel] A load is already active; duplicate execution ignored.")
+        return
     end
-end)
+    -- A shared executor environment may survive teleport; the old token does not.
+    sharedEnvironment.__LUCID_PANEL_ACTIVE = nil
+end
+local instanceToken = { PlaceId = game.PlaceId, JobId = game.JobId }
+sharedEnvironment.__LUCID_PANEL_ACTIVE = instanceToken
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -177,7 +190,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v3.14",
+    Text                   = ">>  Lucid Panel v3.16",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -305,7 +318,7 @@ local function createCategory(name, order, openByDefault)
     categories[name] = body
 end
 
-createCategory("Player", 1, true)
+createCategory("Player", 1, false)
 createCategory("Teleport & Coordinates", 2, false)
 createCategory("Automation", 3, false)
 createCategory("Servers", 4, false)
@@ -2145,6 +2158,28 @@ screenGui.Destroying:Connect(function()
         pcall(callback)
     end
     table.clear(cleanupActions)
+    if sharedEnvironment.__LUCID_PANEL_ACTIVE == instanceToken then
+        sharedEnvironment.__LUCID_PANEL_ACTIVE = nil
+    end
 end)
 
-print("[Lucid Panel v3.14] Loaded - Right-Alt to toggle | R to reload | X to close")
+-- Executor-supported teleport persistence. The newly loaded copy queues itself
+-- again, so this also works across multi-place teleport chains.
+local queueTeleport = queue_on_teleport
+    or queueonteleport
+    or (syn and syn.queue_on_teleport)
+    or (fluxus and fluxus.queue_on_teleport)
+local teleportBootstrap = string.format(
+    "loadstring(game:HttpGet(%q, true))()",
+    SCRIPT_URL
+)
+local teleportQueueReady = false
+if type(queueTeleport) == "function" then
+    teleportQueueReady = pcall(queueTeleport, teleportBootstrap)
+end
+
+if teleportQueueReady then
+    print("[Lucid Panel v3.16] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+else
+    warn("[Lucid Panel v3.16] Loaded, but this executor does not expose queue_on_teleport")
+end
