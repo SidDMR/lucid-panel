@@ -73,6 +73,8 @@ local state = {
     playerLightPower   = 5,
     nightLockEnabled   = false,
     nightClockTime     = 0,
+    fogEndLocked       = false,
+    fogEndValue        = Lighting.FogEnd,
     antiLagEnabled     = false,
     clickTpEnabled     = false,
     loopGotoEnabled    = false,
@@ -1391,6 +1393,7 @@ applyFogBtn.MouseButton1Click:Connect(function()
     local value = tonumber(fogBox.Text)
     if value then
         Lighting.FogEnd = math.max(0, value)
+        state.fogEndValue = Lighting.FogEnd
         fogBox.Text = tostring(Lighting.FogEnd)
         applyFogBtn.Text = "Applied"
     else
@@ -1400,7 +1403,17 @@ applyFogBtn.MouseButton1Click:Connect(function()
 end)
 resetFogBtn.MouseButton1Click:Connect(function()
     Lighting.FogEnd = originalFogEnd
+    state.fogEndValue = originalFogEnd
     fogBox.Text = tostring(originalFogEnd)
+end)
+createToggle("Lock FogEnd", nextOrder(), false, function(on)
+    state.fogEndLocked = on
+    if on then
+        local value = tonumber(fogBox.Text)
+        if value then state.fogEndValue = math.max(0, value) end
+        Lighting.FogEnd = state.fogEndValue
+        fogBox.Text = tostring(state.fogEndValue)
+    end
 end)
 
 -- IY night sets ClockTime to 0. Lucid also offers a guarded lock so games that
@@ -1930,7 +1943,8 @@ refreshFeatureStatus()
 -- IY float/platform implementation adapted for Lucid lifecycle management.
 local airPlatform = nil
 local AIR_BASE_OFFSET = -3.1
-local airOffset = AIR_BASE_OFFSET
+local airPlatformY = nil
+local airCollisionArmed = false
 local airQDown = false
 local airEDown = false
 
@@ -1949,18 +1963,15 @@ local function removeStaleFloatPads()
 end
 removeStaleFloatPads()
 
-local function updateAirOffset()
-    airOffset = AIR_BASE_OFFSET + (airEDown and 1.5 or 0) - (airQDown and 0.5 or 0)
-end
-
 local function destroyPlatform()
     if airPlatform and airPlatform.Parent then
         airPlatform:Destroy()
     end
     airPlatform = nil
+    airPlatformY = nil
+    airCollisionArmed = false
     removeStaleFloatPads()
     airQDown, airEDown = false, false
-    updateAirOffset()
 end
 addCleanup(destroyPlatform)
 
@@ -1968,6 +1979,8 @@ local function ensurePlatform()
     if airPlatform and airPlatform.Parent then return end
     local char = LocalPlayer.Character
     if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
     local old = char:FindFirstChild("LucidFloatPlatform")
     if old then old:Destroy() end
     airPlatform = Instance.new("Part")
@@ -1983,6 +1996,8 @@ local function ensurePlatform()
     -- Keep the pad outside the character model. Character controllers and
     -- noclip scripts commonly rewrite or move descendants of the character.
     airPlatform.Parent = workspace
+    airPlatformY = root.Position.Y + AIR_BASE_OFFSET
+    airCollisionArmed = false
 end
 
 local function repairPlatform()
@@ -2003,10 +2018,14 @@ local function repairPlatform()
     local humanoid = char:FindFirstChildOfClass("Humanoid")
     -- Never wedge a collidable pad between a grounded R15 avatar and terrain.
     -- It becomes solid only after Roblox reports that the avatar is airborne.
-    airPlatform.CanCollide = humanoid ~= nil and humanoid.FloorMaterial == Enum.Material.Air
+    if humanoid and humanoid.FloorMaterial == Enum.Material.Air then
+        airCollisionArmed = true
+    end
+    airPlatform.CanCollide = airCollisionArmed
     airPlatform.Transparency = 1
     pcall(function() airPlatform.CollisionGroup = "Default" end)
-    airPlatform.CFrame = root.CFrame * CFrame.new(0, airOffset, 0)
+    if not airPlatformY then airPlatformY = root.Position.Y + AIR_BASE_OFFSET end
+    airPlatform.CFrame = CFrame.new(root.Position.X, airPlatformY, root.Position.Z)
 end
 
 track(RunService.Stepped:Connect(repairPlatform))
@@ -2029,15 +2048,13 @@ end
 track(RunService.Stepped:Connect(enforceNoclip))
 
 track(UserInputService.InputBegan:Connect(function(input, processed)
-    if processed or not state.airWalkEnabled then return end
+    if not state.airWalkEnabled or UserInputService:GetFocusedTextBox() then return end
     if input.KeyCode == Enum.KeyCode.Q then airQDown = true end
     if input.KeyCode == Enum.KeyCode.E then airEDown = true end
-    updateAirOffset()
 end))
 track(UserInputService.InputEnded:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.Q then airQDown = false end
     if input.KeyCode == Enum.KeyCode.E then airEDown = false end
-    updateAirOffset()
 end))
 
 useCategory("Player")
@@ -2528,6 +2545,11 @@ track(RunService.Heartbeat:Connect(function(dt)
         LocalPlayer.CameraMaxZoomDistance = state.maxZoomValue
     end
 
+    -- Client-side FogEnd lock for games that continuously overwrite Lighting.
+    if state.fogEndLocked and Lighting.FogEnd ~= state.fogEndValue then
+        Lighting.FogEnd = state.fogEndValue
+    end
+
     -- Noclip
     enforceNoclip()
 
@@ -2545,7 +2567,16 @@ track(RunService.Heartbeat:Connect(function(dt)
             end
             ensurePlatform()
             if airPlatform then
-                airPlatform.CFrame = hrp.CFrame * CFrame.new(0, airOffset, 0)
+                if not airPlatformY then airPlatformY = hrp.Position.Y + AIR_BASE_OFFSET end
+                local verticalDirection = (airEDown and 1 or 0) - (airQDown and 1 or 0)
+                if verticalDirection ~= 0 then
+                    local verticalStep = verticalDirection * 10 * dt
+                    airPlatformY = airPlatformY + verticalStep
+                    hrp.CFrame = hrp.CFrame + Vector3.new(0, verticalStep, 0)
+                    local currentVelocity = hrp.AssemblyLinearVelocity
+                    hrp.AssemblyLinearVelocity = Vector3.new(currentVelocity.X, 0, currentVelocity.Z)
+                end
+                airPlatform.CFrame = CFrame.new(hrp.Position.X, airPlatformY, hrp.Position.Z)
             end
         end
     else
