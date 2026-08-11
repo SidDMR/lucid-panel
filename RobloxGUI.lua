@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v3.17
+--// Lucid Panel v4.0
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -34,6 +34,7 @@ local VirtualUser = game:GetService("VirtualUser")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local TeleportService = game:GetService("TeleportService")
 local Lighting = game:GetService("Lighting")
+local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 local mouse = LocalPlayer:GetMouse()
 
@@ -76,6 +77,11 @@ local state = {
     loopGotoEnabled    = false,
     spawnpointEnabled  = false,
     spawnpointDelay    = 0.1,
+    flyEnabled         = false,
+    flySpeed           = 50,
+    freecamEnabled     = false,
+    fovLocked          = false,
+    fovValue           = 70,
     autoclickEnabled   = false,
     autoclickInterval  = 0.01, -- 10 ms
 }
@@ -190,13 +196,23 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v3.17",
+    Text                   = ">>  Lucid Panel v4.0",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
     TextXAlignment         = Enum.TextXAlignment.Left,
     Parent                 = titleBar,
 })
+
+-- Minimize button
+local minimized = false
+local minimizeBtn = create("TextButton", {
+    Size = UDim2.new(0, 28, 0, 28), Position = UDim2.new(1, -96, 0, 4),
+    BackgroundColor3 = Color3.fromRGB(85, 75, 120), BackgroundTransparency = 0.35,
+    Text = "-", TextColor3 = Color3.fromRGB(255, 255, 255), TextSize = 17,
+    Font = Enum.Font.GothamBold, BorderSizePixel = 0, Parent = titleBar,
+})
+create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = minimizeBtn })
 
 -- Reload button (green R)
 local reloadBtn = create("TextButton", {
@@ -252,6 +268,12 @@ local content = create("ScrollingFrame", {
     AutomaticCanvasSize       = Enum.AutomaticSize.Y,
     Parent                    = mainFrame,
 })
+minimizeBtn.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    content.Visible = not minimized
+    mainFrame.Size = minimized and UDim2.new(0, 310, 0, 36) or UDim2.new(0, 310, 0, 520)
+    minimizeBtn.Text = minimized and "+" or "-"
+end)
 
 create("UIListLayout", {
     SortOrder = Enum.SortOrder.LayoutOrder,
@@ -262,6 +284,7 @@ create("UIListLayout", {
 -- Collapsible top-level categories. Controls can select a category even when
 -- their implementation appears later in this file.
 local categories = {}
+local categoryMeta = {}
 local currentSection = content
 
 local function createCategory(name, order, openByDefault)
@@ -316,6 +339,15 @@ local function createCategory(name, order, openByDefault)
     end)
     refresh()
     categories[name] = body
+    categoryMeta[name] = {
+        wrapper = wrapper,
+        body = body,
+        header = header,
+        setOpen = function(value)
+            open = value
+            refresh()
+        end,
+    }
 end
 
 createCategory("Player", 1, false)
@@ -323,8 +355,53 @@ createCategory("Teleport & Coordinates", 2, false)
 createCategory("Automation", 3, false)
 createCategory("Servers", 4, false)
 createCategory("Lighting", 5, false)
-createCategory("Misc", 6, false)
-createCategory("Interface", 7, false)
+createCategory("Camera", 6, false)
+createCategory("Waypoints", 7, false)
+createCategory("Diagnostics", 8, false)
+createCategory("Misc", 9, false)
+createCategory("Interface", 10, false)
+
+local searchRow = create("Frame", {
+    Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1,
+    LayoutOrder = -20, Parent = content,
+})
+local searchBox = create("TextBox", {
+    Size = UDim2.new(1, -94, 0, 26), BackgroundColor3 = Color3.fromRGB(38, 36, 52),
+    BorderSizePixel = 0, Text = "", PlaceholderText = "Search tools...",
+    TextColor3 = Color3.fromRGB(230, 225, 245), PlaceholderColor3 = Color3.fromRGB(120, 110, 150),
+    TextSize = 12, Font = Enum.Font.Gotham, ClearTextOnFocus = false, Parent = searchRow,
+})
+create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = searchBox })
+local collapseBtn = create("TextButton", {
+    Size = UDim2.new(0, 86, 0, 26), Position = UDim2.new(1, -86, 0, 0),
+    BackgroundColor3 = Color3.fromRGB(50, 45, 70), BorderSizePixel = 0,
+    Text = "Expand all", TextColor3 = Color3.fromRGB(205, 195, 235),
+    TextSize = 10, Font = Enum.Font.GothamSemibold, Parent = searchRow,
+})
+create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = collapseBtn })
+local allExpanded = false
+collapseBtn.MouseButton1Click:Connect(function()
+    allExpanded = not allExpanded
+    for _, meta in pairs(categoryMeta) do meta.setOpen(allExpanded) end
+    collapseBtn.Text = allExpanded and "Collapse all" or "Expand all"
+end)
+local function categoryMatches(name, body, query)
+    if name:lower():find(query, 1, true) then return true end
+    for _, item in ipairs(body:GetDescendants()) do
+        if item:IsA("TextLabel") or item:IsA("TextButton") or item:IsA("TextBox") then
+            local searchable = (item.Text .. " " .. (item:IsA("TextBox") and item.PlaceholderText or "")):lower()
+            if searchable:find(query, 1, true) then return true end
+        end
+    end
+    return false
+end
+searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+    local query = searchBox.Text:lower():match("^%s*(.-)%s*$")
+    for name, meta in pairs(categoryMeta) do
+        meta.wrapper.Visible = query == "" or categoryMatches(name, meta.body, query)
+        if query ~= "" and meta.wrapper.Visible then meta.setOpen(true) end
+    end
+end)
 
 local function useCategory(name)
     currentSection = categories[name]
@@ -373,6 +450,19 @@ local function styledBox(parent, props)
     return box
 end
 
+local activeFeatures = {}
+local toggleRegistry = {}
+local statusLabelRef = nil
+local function refreshFeatureStatus()
+    if not statusLabelRef then return end
+    local enabled = { "Anti-AFK" }
+    for name, on in pairs(activeFeatures) do
+        if on then table.insert(enabled, name) end
+    end
+    table.sort(enabled)
+    statusLabelRef.Text = table.concat(enabled, "  •  ")
+end
+
 local function createToggle(labelText, order, default, callback)
     local row = rowFrame(order)
 
@@ -413,16 +503,23 @@ local function createToggle(labelText, order, default, callback)
         Parent                 = toggleBg,
     })
 
-    local function fireToggle()
-        enabled = not enabled
+    local function setToggle(value)
+        enabled = value == true
         toggleBg.BackgroundColor3 = enabled and Color3.fromRGB(80, 200, 120) or Color3.fromRGB(60, 60, 70)
         knob.Position = enabled and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
+        activeFeatures[labelText] = enabled
+        refreshFeatureStatus()
         if callback then callback(enabled) end
+    end
+
+    local function fireToggle()
+        setToggle(not enabled)
     end
 
     btn.MouseButton1Click:Connect(fireToggle)
 
-    return function() return enabled end, fireToggle
+    toggleRegistry[labelText] = setToggle
+    return function() return enabled end, fireToggle, setToggle
 end
 
 local function createInlineToggle(parent, default)
@@ -1812,10 +1909,10 @@ end)
 -- ════════════════════════════════════════════════════════════
 --  CREDIT FOOTER
 -- ════════════════════════════════════════════════════════════
-create("TextLabel", {
+statusLabelRef = create("TextLabel", {
     Size                   = UDim2.new(1, 0, 0, 16),
     BackgroundTransparency = 1,
-    Text                   = "Anti-AFK ON  |  Right Alt: toggle panel",
+    Text                   = "Anti-AFK",
     TextColor3             = Color3.fromRGB(80, 225, 125),
     TextSize               = 10,
     Font                   = Enum.Font.Gotham,
@@ -1823,6 +1920,7 @@ create("TextLabel", {
     LayoutOrder            = 999,
     Parent                 = content,
 })
+refreshFeatureStatus()
 
 -- ════════════════════════════════════════════════════════════
 --  RUNTIME LOOPS (consolidated into single Heartbeat)
@@ -1965,6 +2063,308 @@ recoveryBtn.MouseButton1Click:Connect(function()
     end
     recoveryBtn.Text = "Recovered"
     task.delay(1.2, function() if recoveryBtn.Parent then recoveryBtn.Text = "Recover Character" end end)
+end)
+
+-- ============================================================
+-- V4 GENERAL TOOLKIT
+-- ============================================================
+local function actionButton(textValue, callback, color)
+    local row = rowFrame(nextOrder(), 32)
+    local button = create("TextButton", {
+        Size = UDim2.new(1, 0, 0, 28), BackgroundColor3 = color or Color3.fromRGB(62, 52, 92),
+        BorderSizePixel = 0, Text = textValue, TextColor3 = Color3.fromRGB(235, 230, 245),
+        TextSize = 12, Font = Enum.Font.GothamSemibold, Parent = row,
+    })
+    create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = button })
+    button.MouseButton1Click:Connect(function() callback(button) end)
+    return button
+end
+
+-- Fly uses camera-relative movement without inserting permanent character parts.
+useCategory("Player")
+sectionLabel("Movement+", nextOrder())
+local flySpeedRow = rowFrame(nextOrder())
+create("TextLabel", { Size = UDim2.new(0.65, 0, 1, 0), BackgroundTransparency = 1,
+    Text = "Fly speed", TextColor3 = Color3.fromRGB(210,210,220), TextSize = 13,
+    Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = flySpeedRow })
+local flySpeedBox = styledBox(flySpeedRow, { Size = UDim2.new(0,70,0,24), Position = UDim2.new(1,-70,0.5,-12), Text = "50" })
+flySpeedBox.FocusLost:Connect(function()
+    state.flySpeed = math.clamp(tonumber(flySpeedBox.Text) or state.flySpeed, 1, 500)
+    flySpeedBox.Text = tostring(state.flySpeed)
+end)
+local _, fireFly, setFly = createToggle("Fly", nextOrder(), false, function(on)
+    state.flyEnabled = on
+    local h = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if h and not on then h.PlatformStand = false end
+end)
+sectionLabel("Player Utilities", nextOrder())
+local spectatingPlayer = nil
+actionButton("Spectate GoTo Player", function(button)
+    local target = findGotoPlayer(gotoBox.Text)
+    local camera = workspace.CurrentCamera
+    local humanoid = target and target.Character and target.Character:FindFirstChildOfClass("Humanoid")
+    if camera and humanoid then camera.CameraSubject=humanoid; spectatingPlayer=target; button.Text="Watching "..target.Name
+    else button.Text="Player not found" end
+end)
+actionButton("Stop Spectating", function()
+    spectatingPlayer=nil
+    local camera=workspace.CurrentCamera; local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if camera and humanoid then camera.CameraSubject=humanoid; camera.CameraType=Enum.CameraType.Custom end
+end)
+actionButton("Copy GoTo Player ID", function(button)
+    local target=findGotoPlayer(gotoBox.Text)
+    if target and setclipboard then setclipboard(tostring(target.UserId)); button.Text="Copied "..target.Name.." ID"
+    else button.Text="Player/clipboard unavailable" end
+end)
+
+-- Camera controls preserve the previous camera before Freecam takes ownership.
+useCategory("Camera")
+sectionLabel("Camera Tools", nextOrder())
+local fovRow = rowFrame(nextOrder())
+create("TextLabel", { Size=UDim2.new(0.55,0,1,0), BackgroundTransparency=1, Text="Field of view",
+    TextColor3=Color3.fromRGB(210,210,220), TextSize=13, Font=Enum.Font.Gotham,
+    TextXAlignment=Enum.TextXAlignment.Left, Parent=fovRow })
+local fovBox = styledBox(fovRow, { Size=UDim2.new(0,70,0,24), Position=UDim2.new(1,-70,0.5,-12), Text="70" })
+fovBox.FocusLost:Connect(function()
+    state.fovValue = math.clamp(tonumber(fovBox.Text) or state.fovValue, 1, 120)
+    fovBox.Text = tostring(state.fovValue)
+    if workspace.CurrentCamera then workspace.CurrentCamera.FieldOfView = state.fovValue end
+end)
+createToggle("Lock FOV", nextOrder(), false, function(on) state.fovLocked = on end)
+local savedCamera = nil
+local freecamCFrame = nil
+local _, fireFreecam, setFreecam = createToggle("Freecam", nextOrder(), false, function(on)
+    state.freecamEnabled = on
+    local camera = workspace.CurrentCamera
+    if not camera then return end
+    if on then
+        savedCamera = { Type=camera.CameraType, Subject=camera.CameraSubject, CFrame=camera.CFrame, FOV=camera.FieldOfView }
+        freecamCFrame = camera.CFrame
+        camera.CameraType = Enum.CameraType.Scriptable
+    elseif savedCamera then
+        camera.CameraType = savedCamera.Type
+        camera.CameraSubject = savedCamera.Subject
+        camera.CFrame = savedCamera.CFrame
+        if not state.fovLocked then camera.FieldOfView = savedCamera.FOV end
+        savedCamera, freecamCFrame = nil, nil
+    end
+end)
+addCleanup(function()
+    if state.freecamEnabled and savedCamera and workspace.CurrentCamera then
+        local camera=workspace.CurrentCamera
+        camera.CameraType=savedCamera.Type; camera.CameraSubject=savedCamera.Subject
+        camera.CFrame=savedCamera.CFrame; camera.FieldOfView=savedCamera.FOV
+    end
+end)
+actionButton("First Person", function() LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson end)
+actionButton("Third Person / Restore", function()
+    LocalPlayer.CameraMode = Enum.CameraMode.Classic
+    if state.freecamEnabled then setFreecam(false) end
+    local camera = workspace.CurrentCamera
+    local h = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if camera and h then camera.CameraType = Enum.CameraType.Custom; camera.CameraSubject = h end
+end)
+
+-- In-memory waypoints are intentionally per-place and do not move between games.
+useCategory("Waypoints")
+sectionLabel("Named Waypoints", nextOrder())
+local waypointRow = rowFrame(nextOrder())
+local waypointBox = styledBox(waypointRow, { Size=UDim2.new(1,0,0,26), Text="Home", PlaceholderText="Waypoint name" })
+local waypoints = {}
+actionButton("Save / Update Waypoint", function(button)
+    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local name = waypointBox.Text:match("^%s*(.-)%s*$")
+    if root and name ~= "" then waypoints[name] = root.CFrame; button.Text = "Saved: "..name
+        task.delay(1, function() if button.Parent then button.Text="Save / Update Waypoint" end end) end
+end)
+actionButton("Go To Waypoint", function(button)
+    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local point = waypoints[waypointBox.Text:match("^%s*(.-)%s*$")]
+    if root and point then root.CFrame = point; clearCharacterVelocity(LocalPlayer.Character)
+    else button.Text="Waypoint not found"; task.delay(1, function() if button.Parent then button.Text="Go To Waypoint" end end) end
+end)
+actionButton("Delete Waypoint", function(button)
+    waypoints[waypointBox.Text:match("^%s*(.-)%s*$")] = nil
+    button.Text="Deleted"; task.delay(1, function() if button.Parent then button.Text="Delete Waypoint" end end)
+end)
+
+-- Lighting presets remain fully editable through the existing lighting values.
+useCategory("Lighting")
+sectionLabel("Comfort Presets", nextOrder())
+local originalComfort = { Brightness=Lighting.Brightness, Exposure=Lighting.ExposureCompensation,
+    Ambient=Lighting.Ambient, OutdoorAmbient=Lighting.OutdoorAmbient, ClockTime=Lighting.ClockTime }
+local function setComfort(clock, brightness, exposure, ambient)
+    Lighting.ClockTime=clock; Lighting.Brightness=brightness; Lighting.ExposureCompensation=exposure
+    Lighting.Ambient=ambient; Lighting.OutdoorAmbient=ambient
+end
+actionButton("Migraine Comfort", function() setComfort(0, 1, -1, Color3.fromRGB(55,55,75)) end)
+actionButton("Evening", function() setComfort(19, 1.5, -0.35, Color3.fromRGB(85,70,85)) end)
+actionButton("Overcast", function() setComfort(12, 1, -0.5, Color3.fromRGB(90,90,95)) end)
+actionButton("Restore Lighting", function()
+    for property, value in pairs(originalComfort) do Lighting[property] = value end
+end)
+local brightEffectState = {}
+createToggle("Disable Bright Effects", nextOrder(), false, function(on)
+    for _, effect in ipairs(Lighting:GetChildren()) do
+        if effect:IsA("BloomEffect") or effect:IsA("SunRaysEffect") or effect:IsA("ColorCorrectionEffect")
+            or effect:IsA("DepthOfFieldEffect") or effect:IsA("BlurEffect") then
+            if on then
+                if brightEffectState[effect] == nil then brightEffectState[effect]=effect.Enabled end
+                effect.Enabled=false
+            elseif brightEffectState[effect] ~= nil then
+                effect.Enabled=brightEffectState[effect]; brightEffectState[effect]=nil
+            end
+        end
+    end
+end)
+addCleanup(function()
+    for effect, enabled in pairs(brightEffectState) do
+        if effect and effect.Parent then effect.Enabled=enabled end
+    end
+end)
+
+-- Server utilities.
+useCategory("Servers")
+sectionLabel("Server Utilities", nextOrder())
+local jobRow = rowFrame(nextOrder())
+local jobIdBox = styledBox(jobRow, { Size=UDim2.new(1,0,0,26), Text="", PlaceholderText="Paste Job ID..." })
+actionButton("Copy Job ID", function(button)
+    if setclipboard then setclipboard(game.JobId); button.Text="Copied Job ID" else button.Text=game.JobId end
+end)
+actionButton("Join Job ID", function(button)
+    local id = jobIdBox.Text:match("^%s*(.-)%s*$")
+    if id == "" then button.Text="Paste a Job ID above"; return end
+    TeleportService:TeleportToPlaceInstance(game.PlaceId, id, LocalPlayer)
+end)
+actionButton("Server Hop", function(button)
+    button.Text = "Finding server..."
+    task.spawn(function()
+        local ok, data = pcall(function()
+            return HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Asc&limit=100"))
+        end)
+        if ok and data and data.data then
+            for _, server in ipairs(data.data) do
+                if server.id ~= game.JobId and server.playing < server.maxPlayers then
+                    TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id, LocalPlayer); return
+                end
+            end
+        end
+        button.Text="No server found"; task.delay(1.5,function() if button.Parent then button.Text="Server Hop" end end)
+    end)
+end)
+
+-- Profiles save only portable settings; character positions are deliberately excluded.
+useCategory("Interface")
+sectionLabel("Profile & Safety", nextOrder())
+local profilePath = "LucidPanel/profile.json"
+actionButton("Save Default Profile", function(button)
+    if not writefile then button.Text="File API unavailable"; return end
+    pcall(function() if makefolder and (not isfolder or not isfolder("LucidPanel")) then makefolder("LucidPanel") end end)
+    local payload = { values={ walkspeedValue=state.walkspeedValue, jumpHeightValue=state.jumpHeightValue,
+        maxZoomValue=state.maxZoomValue, flySpeed=state.flySpeed, fovValue=state.fovValue }, toggles={} }
+    for name, enabled in pairs(activeFeatures) do payload.toggles[name]=enabled end
+    local ok = pcall(writefile, profilePath, HttpService:JSONEncode(payload))
+    button.Text = ok and "Profile saved" or "Save failed"
+end)
+actionButton("Load Default Profile", function(button)
+    if not readfile or (isfile and not isfile(profilePath)) then button.Text="No saved profile"; return end
+    local ok, payload = pcall(function() return HttpService:JSONDecode(readfile(profilePath)) end)
+    if not ok then button.Text="Profile invalid"; return end
+    for key,value in pairs(payload.values or {}) do if state[key] ~= nil then state[key]=value end end
+    flySpeedBox.Text=tostring(state.flySpeed); fovBox.Text=tostring(state.fovValue)
+    for name,value in pairs(payload.toggles or {}) do if toggleRegistry[name] then toggleRegistry[name](value) end end
+    button.Text="Profile loaded"
+end)
+
+-- Panic is also bound to End. It turns off intrusive features and repairs physics.
+local function panicReset()
+    for name, setter in pairs(toggleRegistry) do
+        if name ~= "Enable at current position" then pcall(setter, false) end
+    end
+    state.flyEnabled=false; state.freecamEnabled=false; state.noclipEnabled=false; state.airWalkEnabled=false
+    restoreNoclipCollisions(); destroyPlatform()
+    local char=LocalPlayer.Character; local h=char and char:FindFirstChildOfClass("Humanoid")
+    local root=char and char:FindFirstChild("HumanoidRootPart")
+    if h then h.PlatformStand=false; h.Sit=false; h:ChangeState(Enum.HumanoidStateType.GettingUp) end
+    if root then root.Anchored=false; root.AssemblyLinearVelocity=Vector3.zero; root.AssemblyAngularVelocity=Vector3.zero end
+end
+actionButton("PANIC / Reset Features [End]", function(button)
+    panicReset(); button.Text="Reset complete"; task.delay(1,function() if button.Parent then button.Text="PANIC / Reset Features [End]" end end)
+end, Color3.fromRGB(145,50,65))
+sectionLabel("Quick Keybinds", nextOrder())
+local shortcutKeys = { Fly=Enum.KeyCode.F, Noclip=Enum.KeyCode.N, Freecam=Enum.KeyCode.P }
+local shortcutRow = rowFrame(nextOrder(), 32)
+local shortcutBoxes = {}
+for index, name in ipairs({"Fly","Noclip","Freecam"}) do
+    local box = styledBox(shortcutRow, { Size=UDim2.new(0.31,0,0,26), Position=UDim2.new((index-1)*0.345,0,0,0),
+        Text=name..":"..shortcutKeys[name].Name, PlaceholderText=name.." key" })
+    shortcutBoxes[name]=box
+    box.FocusLost:Connect(function()
+        local requested=box.Text:match(":?(%w+)$")
+        local key=requested and Enum.KeyCode[requested]
+        if key and key ~= Enum.KeyCode.Unknown and key ~= Enum.KeyCode.RightAlt and key ~= Enum.KeyCode.End then
+            shortcutKeys[name]=key
+        end
+        box.Text=name..":"..shortcutKeys[name].Name
+    end)
+end
+
+-- Live diagnostics and a copyable report.
+useCategory("Diagnostics")
+sectionLabel("Live Character Report", nextOrder())
+local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,82), BackgroundColor3=Color3.fromRGB(35,33,48),
+    BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
+    Font=Enum.Font.Code, TextWrapped=true, TextXAlignment=Enum.TextXAlignment.Left,
+    TextYAlignment=Enum.TextYAlignment.Top, LayoutOrder=nextOrder(), Parent=currentSection })
+create("UICorner", { CornerRadius=UDim.new(0,6), Parent=diagnosticsLabel })
+actionButton("Copy Diagnostic Report", function(button)
+    if setclipboard then setclipboard(diagnosticsLabel.Text); button.Text="Report copied" else button.Text="Clipboard unavailable" end
+end)
+
+local flyKeys = { W=false, A=false, S=false, D=false, Space=false, LeftControl=false }
+track(UserInputService.InputBegan:Connect(function(input, processed)
+    if input.KeyCode == Enum.KeyCode.End and not processed then panicReset(); return end
+    if not processed and UserInputService:GetFocusedTextBox() == nil then
+        if input.KeyCode == shortcutKeys.Fly then fireFly()
+        elseif input.KeyCode == shortcutKeys.Noclip then fireNoclip()
+        elseif input.KeyCode == shortcutKeys.Freecam then fireFreecam() end
+    end
+    if flyKeys[input.KeyCode.Name] ~= nil and not processed then flyKeys[input.KeyCode.Name]=true end
+end))
+track(UserInputService.InputEnded:Connect(function(input)
+    if flyKeys[input.KeyCode.Name] ~= nil then flyKeys[input.KeyCode.Name]=false end
+end))
+
+track(RunService.RenderStepped:Connect(function(dt)
+    local camera=workspace.CurrentCamera
+    local direction=Vector3.zero
+    if camera then
+        direction = direction + camera.CFrame.LookVector*((flyKeys.W and 1 or 0)-(flyKeys.S and 1 or 0))
+        direction = direction + camera.CFrame.RightVector*((flyKeys.D and 1 or 0)-(flyKeys.A and 1 or 0))
+        direction = direction + Vector3.new(0,1,0)*((flyKeys.Space and 1 or 0)-(flyKeys.LeftControl and 1 or 0))
+    end
+    if state.flyEnabled then
+        local char=LocalPlayer.Character; local root=char and char:FindFirstChild("HumanoidRootPart")
+        local h=char and char:FindFirstChildOfClass("Humanoid")
+        if root then root.AssemblyLinearVelocity=Vector3.zero; root.CFrame=root.CFrame + direction*state.flySpeed*dt end
+        if h then h.PlatformStand=true end
+    elseif state.freecamEnabled and camera and freecamCFrame then
+        freecamCFrame = freecamCFrame + direction*state.flySpeed*dt
+        camera.CFrame=freecamCFrame
+    end
+    if state.fovLocked and camera then camera.FieldOfView=state.fovValue end
+end))
+
+task.spawn(function()
+    while screenGui.Parent do
+        local char=LocalPlayer.Character; local h=char and char:FindFirstChildOfClass("Humanoid")
+        local root=char and char:FindFirstChild("HumanoidRootPart")
+        local rig=h and h.RigType.Name or "None"; local speed=root and math.floor(root.AssemblyLinearVelocity.Magnitude+0.5) or 0
+        diagnosticsLabel.Text=string.format("Place: %s\nRig: %s | State: %s\nWalkSpeed: %s | HipHeight: %s | Velocity: %s\nActive: %s",
+            tostring(game.PlaceId), rig, h and h:GetState().Name or "None", h and tostring(h.WalkSpeed) or "-",
+            h and string.format("%.2f",h.HipHeight) or "-", speed, statusLabelRef and statusLabelRef.Text or "Anti-AFK")
+        task.wait(0.5)
+    end
 end)
 
 -- Re-apply settings on respawn
