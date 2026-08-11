@@ -62,6 +62,9 @@ local state = {
     jumpHeightValue    = 7.2,
     noclipEnabled      = false,
     airWalkEnabled     = false,
+    freezeEnabled      = false,
+    freezeRoot         = nil,
+    freezeWasAnchored  = false,
     infJumpEnabled     = false,
     maxZoomLocked      = false,
     maxZoomValue       = 128, -- Roblox default
@@ -1190,6 +1193,37 @@ sectionLabel("Air Walk  (E up, Q down)", nextOrder())
 local _, fireAirWalk = createToggle("Enable Air Walk", nextOrder(), false, function(on)
     state.airWalkEnabled = on
 end)
+
+-- IY freeze used on self: anchor the character root and restore its prior
+-- anchored state when disabled instead of blindly forcing it false.
+sectionLabel("Freeze Self", nextOrder())
+local function setSelfFrozen(on)
+    if not on then
+        local previousRoot = state.freezeRoot
+        if previousRoot and previousRoot.Parent then
+            previousRoot.Anchored = state.freezeWasAnchored
+        end
+        state.freezeEnabled = false
+        state.freezeRoot = nil
+        state.freezeWasAnchored = false
+        return
+    end
+
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    if state.freezeRoot ~= root then
+        state.freezeRoot = root
+        state.freezeWasAnchored = root.Anchored
+    end
+    state.freezeEnabled = true
+    root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+    root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+    root.Anchored = true
+end
+
+createToggle("Freeze Me", nextOrder(), false, setSelfFrozen)
+addCleanup(function() setSelfFrozen(false) end)
 
 -- ════════════════════════════════════════════════════════════
 --  SECTION 6 ─ INFINITE JUMP
@@ -2441,6 +2475,18 @@ local function onCharacterAdded(char)
     originalHipHeight = h.HipHeight
     bindWalkSpeedHumanoid(h)
 
+    -- A new root replaces the old anchored instance after respawn.
+    if state.freezeEnabled then
+        state.freezeRoot = nil
+        state.freezeWasAnchored = false
+        task.spawn(function()
+            local root = char:WaitForChild("HumanoidRootPart", 10)
+            if root and char == LocalPlayer.Character and state.freezeEnabled then
+                setSelfFrozen(true)
+            end
+        end)
+    end
+
     -- Re-apply WalkSpeed
     if state.walkspeedLocked then
         h.WalkSpeed = state.walkspeedValue
@@ -2502,6 +2548,17 @@ track(RunService.Heartbeat:Connect(function(dt)
 
     local h = char:FindFirstChildOfClass("Humanoid")
     local hrp = char:FindFirstChild("HumanoidRootPart")
+
+    -- IY-style freeze enforcement. Some games attempt to unanchor the root.
+    if state.freezeEnabled and hrp then
+        if state.freezeRoot ~= hrp then
+            state.freezeRoot = hrp
+            state.freezeWasAnchored = hrp.Anchored
+        end
+        hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+        hrp.Anchored = true
+    end
 
     -- Anti-fling: suppress impossible momentum without interfering with normal
     -- running, jumping, vehicles, or deliberate teleports.
