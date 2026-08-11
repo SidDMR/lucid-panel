@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v3.8
+--// Lucid Panel v3.10
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -60,6 +60,7 @@ local state = {
     nightClockTime     = 0,
     antiLagEnabled     = false,
     clickTpEnabled     = false,
+    loopGotoEnabled    = false,
     autoclickEnabled   = false,
     autoclickInterval  = 0.01, -- 10 ms
 }
@@ -174,7 +175,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v3.8",
+    Text                   = ">>  Lucid Panel v3.10",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -307,7 +308,8 @@ createCategory("Teleport & Coordinates", 2, false)
 createCategory("Automation", 3, false)
 createCategory("Servers", 4, false)
 createCategory("Lighting", 5, false)
-createCategory("Interface", 6, false)
+createCategory("Misc", 6, false)
+createCategory("Interface", 7, false)
 
 local function useCategory(name)
     currentSection = categories[name]
@@ -1611,6 +1613,127 @@ psBtn.MouseButton1Click:Connect(function()
     end
 end)
 
+-- IY goto, exposed in a small Misc section for future general utilities.
+useCategory("Misc")
+sectionLabel("Go To Player", nextOrder())
+local gotoRow = rowFrame(nextOrder(), 30)
+local gotoBox = styledBox(gotoRow, {
+    Size = UDim2.new(1, -82, 0, 24), Position = UDim2.new(0, 0, 0.5, -12),
+    Text = "", PlaceholderText = "Username or display name",
+})
+local gotoBtn = create("TextButton", {
+    Size = UDim2.new(0, 72, 0, 24), Position = UDim2.new(1, -72, 0.5, -12),
+    BackgroundColor3 = Color3.fromRGB(75, 50, 160), BorderSizePixel = 0,
+    Text = "Go To", TextColor3 = Color3.fromRGB(240, 235, 255),
+    TextSize = 11, Font = Enum.Font.GothamSemibold, Parent = gotoRow,
+})
+create("UICorner", { CornerRadius = UDim.new(0, 5), Parent = gotoBtn })
+
+local function findGotoPlayer(query)
+    query = query:match("^%s*(.-)%s*$"):lower()
+    if query == "" then return nil end
+    local candidates = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then table.insert(candidates, player) end
+    end
+    for _, player in ipairs(candidates) do
+        if player.Name:lower() == query or player.DisplayName:lower() == query then return player end
+    end
+    for _, player in ipairs(candidates) do
+        if player.Name:lower():sub(1, #query) == query
+            or player.DisplayName:lower():sub(1, #query) == query then return player end
+    end
+    for _, player in ipairs(candidates) do
+        if player.Name:lower():find(query, 1, true)
+            or player.DisplayName:lower():find(query, 1, true) then return player end
+    end
+    return nil
+end
+
+local gotoBusy = false
+local function goToRequestedPlayer()
+    if gotoBusy then return end
+    local target = findGotoPlayer(gotoBox.Text)
+    local targetCharacter = target and target.Character
+    local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+    if not targetRoot then
+        gotoBtn.Text = "Not found"
+        task.delay(1.2, function() if gotoBtn.Parent then gotoBtn.Text = "Go To" end end)
+        return
+    end
+    gotoBusy = true
+    task.spawn(function()
+        local character = LocalPlayer.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        if root then
+            if humanoid and humanoid.SeatPart then
+                humanoid.Sit = false
+                task.wait(0.1)
+            end
+            if root.Parent and targetRoot.Parent then
+                root.CFrame = targetRoot:GetPivot() + Vector3.new(3, 1, 0)
+                clearCharacterVelocity(character)
+                gotoBtn.Text = "Done"
+            end
+        end
+        task.delay(1, function() if gotoBtn.Parent then gotoBtn.Text = "Go To" end end)
+        gotoBusy = false
+    end)
+end
+
+gotoBtn.MouseButton1Click:Connect(goToRequestedPlayer)
+gotoBox.FocusLost:Connect(function(enterPressed)
+    if enterPressed then goToRequestedPlayer() end
+end)
+
+local loopGotoTarget = nil
+local loopGotoGeneration = 0
+local fireLoopGoto
+local _, loopGotoToggle = createToggle("Loop Go To (uses player above)", nextOrder(), false, function(on)
+    if on then
+        local target = findGotoPlayer(gotoBox.Text)
+        if not target then
+            gotoBtn.Text = "Not found"
+            task.delay(1.2, function() if gotoBtn.Parent then gotoBtn.Text = "Go To" end end)
+            task.defer(function() if fireLoopGoto then fireLoopGoto() end end)
+            return
+        end
+        loopGotoTarget = target
+        state.loopGotoEnabled = true
+        loopGotoGeneration = loopGotoGeneration + 1
+        local generation = loopGotoGeneration
+        task.spawn(function()
+            local character = LocalPlayer.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            if humanoid and humanoid.SeatPart then
+                humanoid.Sit = false
+                task.wait(0.1)
+            end
+            while state.loopGotoEnabled and generation == loopGotoGeneration and screenGui.Parent do
+                character = LocalPlayer.Character
+                local root = character and character:FindFirstChild("HumanoidRootPart")
+                local targetCharacter = loopGotoTarget and loopGotoTarget.Character
+                local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+                if root and targetRoot then
+                    root.CFrame = targetRoot.CFrame + Vector3.new(3, 1, 0)
+                end
+                RunService.Heartbeat:Wait()
+            end
+        end)
+    else
+        state.loopGotoEnabled = false
+        loopGotoTarget = nil
+        loopGotoGeneration = loopGotoGeneration + 1
+    end
+end)
+fireLoopGoto = loopGotoToggle
+addCleanup(function()
+    state.loopGotoEnabled = false
+    loopGotoGeneration = loopGotoGeneration + 1
+    loopGotoTarget = nil
+end)
+
 -- ════════════════════════════════════════════════════════════
 --  CREDIT FOOTER
 -- ════════════════════════════════════════════════════════════
@@ -1892,4 +2015,4 @@ screenGui.Destroying:Connect(function()
     table.clear(cleanupActions)
 end)
 
-print("[Lucid Panel v3.8] Loaded - Right-Alt to toggle | R to reload | X to close")
+print("[Lucid Panel v3.10] Loaded - Right-Alt to toggle | R to reload | X to close")
