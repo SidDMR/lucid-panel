@@ -2020,6 +2020,154 @@ addCleanup(function()
     loopGotoTarget = nil
 end)
 
+-- IY-style player ESP: BoxHandleAdornment per body part plus an always-on-top
+-- name and distance label. The targeted mode reuses Lucid's Go To resolver.
+local function initializePlayerESP()
+    useCategory("Player")
+    sectionLabel("Player ESP", nextOrder())
+
+    local mode = "off"
+    local holders = {}
+    local running = true
+    local setAll
+    local setTarget
+
+    local function removeESP(player)
+        local data = holders[player]
+        if data and data.folder then data.folder:Destroy() end
+        holders[player] = nil
+    end
+
+    local function clearESP()
+        for player in pairs(holders) do removeESP(player) end
+    end
+
+    local function addESP(player)
+        if player == LocalPlayer then return end
+        local character = player.Character
+        local head = character and character:FindFirstChild("Head")
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        if not character or not head or not root or not humanoid then return end
+
+        removeESP(player)
+        local folder = Instance.new("Folder")
+        folder.Name = player.Name.."_LucidESP"
+        folder.Parent = screenGui
+
+        for _, part in ipairs(character:GetChildren()) do
+            if part:IsA("BasePart") then
+                local adornment = Instance.new("BoxHandleAdornment")
+                adornment.Name = player.Name
+                adornment.Adornee = part
+                adornment.AlwaysOnTop = true
+                adornment.ZIndex = 10
+                adornment.Size = part.Size
+                adornment.Transparency = 0.3
+                adornment.Color = player.TeamColor
+                adornment.Parent = folder
+            end
+        end
+
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = player.Name
+        billboard.Adornee = head
+        billboard.Size = UDim2.new(0,180,0,60)
+        billboard.StudsOffset = Vector3.new(0,2.5,0)
+        billboard.AlwaysOnTop = true
+        billboard.Parent = folder
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1,0,1,0)
+        label.BackgroundTransparency = 1
+        label.Font = Enum.Font.SourceSansSemibold
+        label.TextSize = 17
+        label.TextColor3 = Color3.new(1,1,1)
+        label.TextStrokeTransparency = 0
+        label.TextYAlignment = Enum.TextYAlignment.Bottom
+        label.Parent = billboard
+        holders[player] = { folder=folder, character=character, root=root, label=label }
+    end
+
+    local function wantedPlayers()
+        local wanted = {}
+        if mode == "all" then
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer then wanted[player] = true end
+            end
+        elseif mode == "target" then
+            local target = findGotoPlayer(gotoBox.Text)
+            if target then wanted[target] = true end
+        end
+        return wanted
+    end
+
+    local function refreshESP()
+        local wanted = wantedPlayers()
+        for player in pairs(holders) do
+            if not wanted[player] then removeESP(player) end
+        end
+        for player in pairs(wanted) do
+            local data = holders[player]
+            if not data or data.character ~= player.Character or not data.folder.Parent then
+                addESP(player)
+            end
+        end
+    end
+
+    local _, _, allSetter = createToggle("ESP All", nextOrder(), false, function(on)
+        if on then
+            if setTarget then setTarget(false) end
+            mode = "all"
+        elseif mode == "all" then
+            mode = "off"
+        end
+        refreshESP()
+    end)
+    setAll = allSetter
+
+    local _, _, targetSetter = createToggle("ESP GoTo Player", nextOrder(), false, function(on)
+        if on then
+            local target = findGotoPlayer(gotoBox.Text)
+            if not target then
+                gotoBtn.Text = "ESP target not found"
+                task.delay(1.2, function() if gotoBtn.Parent then gotoBtn.Text="Go To" end end)
+                task.defer(function() if setTarget then setTarget(false) end end)
+                return
+            end
+            if setAll then setAll(false) end
+            mode = "target"
+        elseif mode == "target" then
+            mode = "off"
+        end
+        refreshESP()
+    end)
+    setTarget = targetSetter
+
+    task.spawn(function()
+        while running and screenGui.Parent do
+            if mode ~= "off" then
+                refreshESP()
+                local localRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                for player, data in pairs(holders) do
+                    if data.label and data.root and data.root.Parent then
+                        local distance = localRoot and math.floor((localRoot.Position-data.root.Position).Magnitude) or 0
+                        data.label.Text = "Name: "..player.Name.." | Distance: "..distance
+                    end
+                end
+            end
+            task.wait(0.35)
+        end
+    end)
+
+    addCleanup(function()
+        running=false
+        mode="off"
+        clearESP()
+    end)
+end
+
+initializePlayerESP()
+
 sectionLabel("Custom Spawn Point", nextOrder())
 local spawnDelayRow = rowFrame(nextOrder(), 30)
 create("TextLabel", {
