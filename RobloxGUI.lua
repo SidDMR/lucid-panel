@@ -365,8 +365,7 @@ createCategory("Lighting", 5, false)
 createCategory("Camera", 6, false)
 createCategory("Waypoints", 7, false)
 createCategory("Diagnostics", 8, false)
-createCategory("Misc", 9, false)
-createCategory("Interface", 10, false)
+createCategory("Interface", 9, false)
 
 local searchRow = create("Frame", {
     Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1,
@@ -1429,6 +1428,7 @@ track(LocalPlayer:GetPropertyChangedSignal("DevEnableMouseLock"):Connect(functio
     end
 end))
 
+useCategory("Teleport & Coordinates")
 sectionLabel("Click Teleport", nextOrder())
 createToggle("Left Alt + Click TP", nextOrder(), false, function(on)
     state.clickTpEnabled = on
@@ -1899,8 +1899,8 @@ psBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- IY goto, exposed in a small Misc section for future general utilities.
-useCategory("Misc")
+-- IY goto, grouped with Lucid's other character/location teleport tools.
+useCategory("Teleport & Coordinates")
 sectionLabel("Go To Player", nextOrder())
 local gotoRow = rowFrame(nextOrder(), 30)
 local gotoBox = styledBox(gotoRow, {
@@ -1969,6 +1969,7 @@ local function goToRequestedPlayer()
 end
 
 gotoBtn.MouseButton1Click:Connect(goToRequestedPlayer)
+registerFavorite("Go To Player", goToRequestedPlayer, gotoRow)
 gotoBox.FocusLost:Connect(function(enterPressed)
     if enterPressed then goToRequestedPlayer() end
 end)
