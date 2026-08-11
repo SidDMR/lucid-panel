@@ -2068,6 +2068,10 @@ end)
 -- ============================================================
 -- V4 GENERAL TOOLKIT
 -- ============================================================
+-- Keep the large optional toolkit in its own function scope. Many executor
+-- compilers retain Lua's per-function local/register limit; putting every UI
+-- control in the root chunk makes loadstring return nil before Lucid starts.
+local function initializeV4Toolkit()
 local function actionButton(textValue, callback, color)
     local row = rowFrame(nextOrder(), 32)
     local button = create("TextButton", {
@@ -2387,6 +2391,9 @@ task.spawn(function()
         task.wait(1)
     end
 end)
+end
+
+initializeV4Toolkit()
 
 -- Re-apply settings on respawn
 local function onCharacterAdded(char)
