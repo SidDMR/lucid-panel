@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v3.7
+--// Lucid Panel v3.8
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -59,6 +59,7 @@ local state = {
     nightLockEnabled   = false,
     nightClockTime     = 0,
     antiLagEnabled     = false,
+    clickTpEnabled     = false,
     autoclickEnabled   = false,
     autoclickInterval  = 0.01, -- 10 ms
 }
@@ -173,7 +174,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v3.7",
+    Text                   = ">>  Lucid Panel v3.8",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -1151,6 +1152,64 @@ track(LocalPlayer:GetPropertyChangedSignal("DevEnableMouseLock"):Connect(functio
     end
 end))
 
+sectionLabel("Click Teleport", nextOrder())
+createToggle("Left Alt + Click TP", nextOrder(), false, function(on)
+    state.clickTpEnabled = on
+end)
+
+local clickTpBusy = false
+local function pointerInsidePanel()
+    if not mainFrame.Visible then return false end
+    local pointer = UserInputService:GetMouseLocation()
+    local topLeft = mainFrame.AbsolutePosition
+    local size = mainFrame.AbsoluteSize
+    return pointer.X >= topLeft.X and pointer.X <= topLeft.X + size.X
+        and pointer.Y >= topLeft.Y and pointer.Y <= topLeft.Y + size.Y
+end
+
+local function clearCharacterVelocity(character)
+    for _, item in ipairs(character:GetDescendants()) do
+        if item:IsA("BasePart") then
+            pcall(function()
+                item.AssemblyLinearVelocity = Vector3.zero
+                item.AssemblyAngularVelocity = Vector3.zero
+            end)
+        end
+    end
+end
+
+track(mouse.Button1Down:Connect(function()
+    if not state.clickTpEnabled or clickTpBusy then return end
+    if not UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt) then return end
+    if UserInputService:GetFocusedTextBox() or pointerInsidePanel() then return end
+    if not mouse.Target then return end
+
+    clickTpBusy = true
+    task.spawn(function()
+        pcall(function()
+            local character = LocalPlayer.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+            if not character or not root then return end
+
+            if humanoid and humanoid.SeatPart then
+                humanoid.Sit = false
+                task.wait(0.1)
+                if character ~= LocalPlayer.Character or not root.Parent then return end
+            end
+
+            local hitPosition = mouse.Hit.Position
+            local previous = root.Position
+            local height = humanoid and humanoid.HipHeight > 0 and (humanoid.HipHeight + 1) or 4
+            local facing = CFrame.new(hitPosition, Vector3.new(previous.X, hitPosition.Y, previous.Z))
+                * CFrame.Angles(0, math.pi, 0)
+            root.CFrame = facing + Vector3.new(0, height, 0)
+            clearCharacterVelocity(character)
+        end)
+        clickTpBusy = false
+    end)
+end))
+
 -- IY lighting commands, exposed as editable values instead of fixed toggles.
 local originalFogEnd = Lighting.FogEnd
 
@@ -1833,4 +1892,4 @@ screenGui.Destroying:Connect(function()
     table.clear(cleanupActions)
 end)
 
-print("[Lucid Panel v3.7] Loaded - Right-Alt to toggle | R to reload | X to close")
+print("[Lucid Panel v3.8] Loaded - Right-Alt to toggle | R to reload | X to close")
