@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v3.10
+--// Lucid Panel v3.11
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -51,7 +51,7 @@ local state = {
     maxZoomLocked      = false,
     maxZoomValue       = 128, -- Roblox default
     antiAfkEnabled     = true,
-    antiFlingEnabled   = true,
+    antiFlingEnabled   = false,
     shiftLockEnabled   = false,
     playerLightEnabled = false,
     playerLightRange   = 30,
@@ -175,7 +175,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v3.10",
+    Text                   = ">>  Lucid Panel v3.11",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -1048,7 +1048,7 @@ createToggle("Enable Noclip", nextOrder(), false, function(on)
 end)
 
 sectionLabel("Anti-Fling", nextOrder())
-createToggle("Enable Anti-Fling", nextOrder(), true, function(on)
+createToggle("Enable Anti-Fling", nextOrder(), false, function(on)
     state.antiFlingEnabled = on
 end)
 
@@ -2015,4 +2015,4 @@ screenGui.Destroying:Connect(function()
     table.clear(cleanupActions)
 end)
 
-print("[Lucid Panel v3.10] Loaded - Right-Alt to toggle | R to reload | X to close")
+print("[Lucid Panel v3.11] Loaded - Right-Alt to toggle | R to reload | X to close")
