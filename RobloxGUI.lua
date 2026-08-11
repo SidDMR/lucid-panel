@@ -2335,9 +2335,14 @@ track(UserInputService.InputEnded:Connect(function(input)
     if flyKeys[input.KeyCode.Name] ~= nil then flyKeys[input.KeyCode.Name]=false end
 end))
 
+local renderWarningShown = false
 track(RunService.RenderStepped:Connect(function(dt)
+    -- Keep the v4 render path completely dormant until a camera/movement
+    -- feature is explicitly enabled. This avoids permanent per-frame work.
+    if not state.flyEnabled and not state.freecamEnabled and not state.fovLocked then return end
+    local ok, err = pcall(function()
     local camera=workspace.CurrentCamera
-    local direction=Vector3.zero
+    local direction=Vector3.new(0,0,0)
     if camera then
         direction = direction + camera.CFrame.LookVector*((flyKeys.W and 1 or 0)-(flyKeys.S and 1 or 0))
         direction = direction + camera.CFrame.RightVector*((flyKeys.D and 1 or 0)-(flyKeys.A and 1 or 0))
@@ -2353,17 +2358,33 @@ track(RunService.RenderStepped:Connect(function(dt)
         camera.CFrame=freecamCFrame
     end
     if state.fovLocked and camera then camera.FieldOfView=state.fovValue end
+    end)
+    if not ok and not renderWarningShown then
+        renderWarningShown=true
+        warn("[Lucid v4 / Render] "..tostring(err))
+    end
 end))
 
 task.spawn(function()
+    local diagnosticsFailed=false
     while screenGui.Parent do
-        local char=LocalPlayer.Character; local h=char and char:FindFirstChildOfClass("Humanoid")
-        local root=char and char:FindFirstChild("HumanoidRootPart")
-        local rig=h and h.RigType.Name or "None"; local speed=root and math.floor(root.AssemblyLinearVelocity.Magnitude+0.5) or 0
-        diagnosticsLabel.Text=string.format("Place: %s\nRig: %s | State: %s\nWalkSpeed: %s | HipHeight: %s | Velocity: %s\nActive: %s",
-            tostring(game.PlaceId), rig, h and h:GetState().Name or "None", h and tostring(h.WalkSpeed) or "-",
-            h and string.format("%.2f",h.HipHeight) or "-", speed, statusLabelRef and statusLabelRef.Text or "Anti-AFK")
-        task.wait(0.5)
+        if diagnosticsFailed then break end
+        local ok, err=pcall(function()
+            local char=LocalPlayer.Character; local h=char and char:FindFirstChildOfClass("Humanoid")
+            local root=char and char:FindFirstChild("HumanoidRootPart")
+            local rig=h and tostring(h.RigType):gsub("Enum.HumanoidRigType.","") or "None"
+            local humanoidState=h and tostring(h:GetState()):gsub("Enum.HumanoidStateType.","") or "None"
+            local speed=root and math.floor(root.AssemblyLinearVelocity.Magnitude+0.5) or 0
+            diagnosticsLabel.Text=string.format("Place: %s\nRig: %s | State: %s\nWalkSpeed: %s | HipHeight: %s | Velocity: %s\nActive: %s",
+                tostring(game.PlaceId), rig, humanoidState, h and tostring(h.WalkSpeed) or "-",
+                h and string.format("%.2f",h.HipHeight) or "-", speed, statusLabelRef and statusLabelRef.Text or "Anti-AFK")
+        end)
+        if not ok then
+            diagnosticsLabel.Text="Diagnostics unavailable\n"..tostring(err)
+            warn("[Lucid v4 / Diagnostics] "..tostring(err))
+            diagnosticsFailed=true
+        end
+        task.wait(1)
     end
 end)
 
@@ -2589,5 +2610,5 @@ end
 if teleportQueueReady then
     print("[Lucid Panel v3.17] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v3.17] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v4.0] Loaded, but this executor does not expose queue_on_teleport")
 end
