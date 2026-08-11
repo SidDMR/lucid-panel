@@ -2189,15 +2189,26 @@ end)
 createToggle("Lock FOV", nextOrder(), false, function(on) state.fovLocked = on end)
 local savedCamera = nil
 local freecamCFrame = nil
+local freecamYaw = 0
+local freecamPitch = 0
 local _, fireFreecam, setFreecam = createToggle("Freecam", nextOrder(), false, function(on)
     state.freecamEnabled = on
     local camera = workspace.CurrentCamera
     if not camera then return end
     if on then
         if state.flyEnabled then setFly(false) end
-        savedCamera = { Type=camera.CameraType, Subject=camera.CameraSubject, CFrame=camera.CFrame, FOV=camera.FieldOfView }
+        savedCamera = {
+            Type=camera.CameraType, Subject=camera.CameraSubject,
+            CFrame=camera.CFrame, FOV=camera.FieldOfView,
+            MouseBehavior=UserInputService.MouseBehavior,
+            MouseIconEnabled=UserInputService.MouseIconEnabled,
+        }
         freecamCFrame = camera.CFrame
+        local pitch, yaw = freecamCFrame:ToOrientation()
+        freecamPitch, freecamYaw = pitch, yaw
         camera.CameraType = Enum.CameraType.Scriptable
+        UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+        UserInputService.MouseIconEnabled = false
         ContextActionService:BindActionAtPriority(
             "LucidFreecamSink",
             function() return Enum.ContextActionResult.Sink end,
@@ -2215,6 +2226,8 @@ local _, fireFreecam, setFreecam = createToggle("Freecam", nextOrder(), false, f
         camera.CameraSubject = savedCamera.Subject
         camera.CFrame = savedCamera.CFrame
         if not state.fovLocked then camera.FieldOfView = savedCamera.FOV end
+        UserInputService.MouseBehavior = savedCamera.MouseBehavior
+        UserInputService.MouseIconEnabled = savedCamera.MouseIconEnabled
         savedCamera, freecamCFrame = nil, nil
     end
 end)
@@ -2224,6 +2237,8 @@ addCleanup(function()
         local camera=workspace.CurrentCamera
         camera.CameraType=savedCamera.Type; camera.CameraSubject=savedCamera.Subject
         camera.CFrame=savedCamera.CFrame; camera.FieldOfView=savedCamera.FOV
+        UserInputService.MouseBehavior=savedCamera.MouseBehavior
+        UserInputService.MouseIconEnabled=savedCamera.MouseIconEnabled
     end
 end)
 actionButton("First Person", function() LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson end)
@@ -2417,6 +2432,15 @@ track(RunService.RenderStepped:Connect(function(dt)
     local ok, err = pcall(function()
     local camera=workspace.CurrentCamera
     local direction=Vector3.new(0,0,0)
+    if state.freecamEnabled and camera and freecamCFrame then
+        local mouseDelta = UserInputService:GetMouseDelta()
+        freecamYaw = freecamYaw - mouseDelta.X * 0.0025
+        freecamPitch = math.clamp(freecamPitch - mouseDelta.Y * 0.0025, math.rad(-89), math.rad(89))
+        freecamCFrame = CFrame.new(freecamCFrame.Position)
+            * CFrame.fromOrientation(freecamPitch, freecamYaw, 0)
+        camera.CFrame = freecamCFrame
+        UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+    end
     if camera then
         direction = direction + camera.CFrame.LookVector*((flyKeys.W and 1 or 0)-(flyKeys.S and 1 or 0))
         direction = direction + camera.CFrame.RightVector*((flyKeys.D and 1 or 0)-(flyKeys.A and 1 or 0))
