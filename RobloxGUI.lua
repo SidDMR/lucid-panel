@@ -512,6 +512,7 @@ local function createCategory(name, order, openByDefault)
         header = header,
         dock = dock,
         setDetached = setDetached,
+        isOpen = function() return open end,
         setOpen = function(value)
             open = value
             refresh()
@@ -3583,6 +3584,10 @@ actionButton("Save Named Profile", function(button)
             width=window.Size.X.Offset,height=window.Size.Y.Offset,
             pinned=detachable.isPinned(),detached=detachable.isDetached()}
     end
+    payload.categories={}
+    for name,meta in pairs(categoryMeta) do
+        if meta.isOpen then payload.categories[name]=meta.isOpen() end
+    end
     payload.waypointsByPlace=payload.waypointsByPlace or {}
     local savedWaypoints={}
     for name, point in pairs(waypoints) do
@@ -3625,6 +3630,10 @@ loadNamedProfile = function(button)
         and type(interface.yScale)=="number" and type(interface.yOffset)=="number" then
         mainFrame.Position=UDim2.new(interface.xScale,interface.xOffset,interface.yScale,interface.yOffset)
     end
+    for name,isOpen in pairs(payload.categories or {}) do
+        local meta=categoryMeta[name]
+        if meta and meta.setOpen and type(isOpen)=="boolean" then meta.setOpen(isOpen) end
+    end
     for _,detachable in ipairs(detachableWindows or {}) do
         local saved=(payload.windows or {})[detachable.window.Name]
         if type(saved)=="table" then
@@ -3651,14 +3660,14 @@ loadNamedProfile = function(button)
         end
     end
     refreshWaypointDropdown()
-    -- Restore the complete saved feature state. Reset first so callbacks clean
-    -- up the live state, then enable the saved set in a deterministic order.
+    -- Apply only changed feature states. Replaying every callback (especially
+    -- ESP, lighting and physics features) causes a large load-time stall.
     local toggleNames={}
     for name in pairs(toggleRegistry or {}) do table.insert(toggleNames,name) end
     table.sort(toggleNames)
-    for _,name in ipairs(toggleNames) do pcall(toggleRegistry[name],false) end
     for _,name in ipairs(toggleNames) do
-        if (payload.toggles or {})[name]==true then pcall(toggleRegistry[name],true) end
+        local desired=(payload.toggles or {})[name]==true
+        if activeFeatures[name]~=desired then pcall(toggleRegistry[name],desired) end
     end
     button.Text="Profile loaded — settings restored"
 end
