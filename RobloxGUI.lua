@@ -26,11 +26,16 @@ if existingPanel then
 end
 local previousToken = sharedEnvironment.__LUCID_PANEL_ACTIVE
 if previousToken then
-    if previousToken.PlaceId == game.PlaceId and previousToken.JobId == game.JobId then
-        warn("[Lucid Panel] A load is already active; duplicate execution ignored.")
+    local previousGui = previousToken.Gui
+    if previousGui and previousGui.Parent and previousToken.PlaceId == game.PlaceId and previousToken.JobId == game.JobId then
+        previousGui.Enabled = true
+        local previousFrame = previousGui:FindFirstChild("MainFrame")
+        if previousFrame then previousFrame.Visible = true end
+        warn("[Lucid Panel] Already running; existing panel shown.")
         return
     end
-    -- A shared executor environment may survive teleport; the old token does not.
+    -- Executor environments can outlive a destroyed GUI or a failed startup.
+    -- With no live GUI behind it, the token is stale and must not block a rerun.
     sharedEnvironment.__LUCID_PANEL_ACTIVE = nil
 end
 local instanceToken = { PlaceId = game.PlaceId, JobId = game.JobId }
@@ -174,6 +179,7 @@ local screenGui = create("ScreenGui", {
     ZIndexBehavior  = Enum.ZIndexBehavior.Sibling,
     Parent          = game:GetService("CoreGui"),
 })
+instanceToken.Gui = screenGui
 screenGui:SetAttribute("LucidPlaceId", game.PlaceId)
 screenGui:SetAttribute("LucidJobId", game.JobId)
 track(LocalPlayer.OnTeleport:Connect(function(teleportState)
