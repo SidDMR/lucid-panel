@@ -462,8 +462,9 @@ createCategory("Servers", 4, false)
 createCategory("Lighting", 5, false)
 createCategory("Camera", 6, false)
 createCategory("Waypoints", 7, false)
-createCategory("Diagnostics", 8, false)
-createCategory("Interface", 9, false)
+createCategory("Emotes", 8, false)
+createCategory("Diagnostics", 9, false)
+createCategory("Interface", 10, false)
 
 local searchRow = create("Frame", {
     Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1,
@@ -3078,6 +3079,106 @@ addCleanup(function()
         if effect and effect.Parent then effect.Enabled=enabled end
     end
 end)
+
+-- Marketplace emote browser. Roblox's catalog API identifies emote
+-- animations as asset type 61; only currently on-sale results are requested.
+useCategory("Emotes")
+sectionLabel("Marketplace Emote Browser", nextOrder())
+local emoteSearchRow=rowFrame(nextOrder(),30)
+local emoteSearchBox=styledBox(emoteSearchRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="Search on-sale emotes..."})
+local emoteSearchButton=create("TextButton",{Size=UDim2.new(0,64,0,26),Position=UDim2.new(1,-64,0,0),
+    BackgroundColor3=Color3.fromRGB(75,50,160),BorderSizePixel=0,Text="Search",TextColor3=Color3.new(1,1,1),
+    TextSize=10,Font=Enum.Font.GothamSemibold,Parent=emoteSearchRow})
+create("UICorner",{CornerRadius=UDim.new(0,6),Parent=emoteSearchButton})
+local emoteSpeedRow=rowFrame(nextOrder(),28)
+create("TextLabel",{Size=UDim2.new(1,-78,1,0),BackgroundTransparency=1,Text="Playback speed (0.1-5)",
+    TextColor3=Color3.fromRGB(195,185,215),TextSize=11,Font=Enum.Font.Gotham,
+    TextXAlignment=Enum.TextXAlignment.Left,Parent=emoteSpeedRow})
+local emoteSpeedBox=styledBox(emoteSpeedRow,{Size=UDim2.new(0,70,0,24),Position=UDim2.new(1,-70,0.5,-12),Text="1"})
+local emoteSpeed=1
+local emoteTrack=nil
+local emoteAnimation=nil
+local currentEmoteName=nil
+emoteSpeedBox.FocusLost:Connect(function()
+    emoteSpeed=math.clamp(tonumber(emoteSpeedBox.Text) or emoteSpeed,0.1,5)
+    emoteSpeedBox.Text=string.format("%.1f",emoteSpeed)
+    if emoteTrack then pcall(function() emoteTrack:AdjustSpeed(emoteSpeed) end) end
+end)
+local emoteStatus=create("TextLabel",{Size=UDim2.new(1,0,0,22),BackgroundTransparency=1,
+    Text="Search to load emotes",TextColor3=Color3.fromRGB(160,150,180),TextSize=10,
+    Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=nextOrder(),Parent=currentSection})
+local emoteResults=create("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
+    BackgroundTransparency=1,LayoutOrder=nextOrder(),Parent=currentSection})
+create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,4),Parent=emoteResults})
+local emoteCursor=nil
+local emoteQuery=""
+local emoteLoading=false
+local function stopEmote()
+    if emoteTrack then pcall(function() emoteTrack:Stop(0.15) end) end
+    if emoteAnimation then emoteAnimation:Destroy() end
+    emoteTrack=nil; emoteAnimation=nil; currentEmoteName=nil
+    emoteStatus.Text="Emote stopped"
+end
+local stopEmoteButton=actionButton("Stop Current Emote",function() stopEmote() end,Color3.fromRGB(85,48,62))
+local function playEmote(assetId,name)
+    stopEmote()
+    local character=LocalPlayer.Character
+    local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+    local animator=humanoid and humanoid:FindFirstChildOfClass("Animator")
+    if not animator and humanoid then animator=Instance.new("Animator"); animator.Parent=humanoid end
+    if not animator then emoteStatus.Text="Character Animator unavailable"; return end
+    local animation=Instance.new("Animation"); animation.AnimationId="rbxassetid://"..tostring(assetId)
+    local ok,track=pcall(function() return animator:LoadAnimation(animation) end)
+    if not ok or not track then animation:Destroy(); emoteStatus.Text="This emote could not load"; return end
+    emoteAnimation=animation; emoteTrack=track; currentEmoteName=name
+    track.Priority=Enum.AnimationPriority.Action4; track.Looped=true
+    track:Play(0.15,1,emoteSpeed); track:AdjustSpeed(emoteSpeed)
+    emoteStatus.Text="Playing: "..name.."  |  "..string.format("%.1fx",emoteSpeed)
+end
+local function clearEmoteResults()
+    for _,child in ipairs(emoteResults:GetChildren()) do if child:IsA("GuiObject") then child:Destroy() end end
+end
+local function loadEmoteResults(append)
+    if emoteLoading then return end
+    emoteLoading=true; emoteSearchButton.Text="Loading"
+    if not append then emoteCursor=nil; clearEmoteResults() end
+    local url="https://catalog.roblox.com/v1/search/items/details?assetTypes=61&salesTypeFilter=1&limit=30"
+    if emoteQuery~="" then url=url.."&keyword="..HttpService:UrlEncode(emoteQuery) end
+    if append and emoteCursor then url=url.."&cursor="..HttpService:UrlEncode(emoteCursor) end
+    local ok,data=pcall(function() return HttpService:JSONDecode(game:HttpGet(url)) end)
+    if ok and data and type(data.data)=="table" then
+        for _,item in ipairs(data.data) do
+            local id=item.id or item.assetId
+            if id then
+                local name=tostring(item.name or ("Emote "..id))
+                local button=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(45,40,62),
+                    BorderSizePixel=0,Text=name,TextColor3=Color3.fromRGB(230,225,240),TextSize=11,
+                    Font=Enum.Font.Gotham,Parent=emoteResults})
+                create("UICorner",{CornerRadius=UDim.new(0,5),Parent=button})
+                button.MouseButton1Click:Connect(function() playEmote(id,name) end)
+            end
+        end
+        emoteCursor=data.nextPageCursor
+        emoteStatus.Text=#data.data>0 and "Click an emote to loop it" or "No on-sale emotes found"
+    else
+        emoteStatus.Text="Catalog request unavailable in this executor/game"
+    end
+    emoteLoading=false; emoteSearchButton.Text="Search"
+end
+emoteSearchButton.MouseButton1Click:Connect(function()
+    emoteQuery=emoteSearchBox.Text:match("^%s*(.-)%s*$"); loadEmoteResults(false)
+end)
+emoteSearchBox.FocusLost:Connect(function(enterPressed)
+    if enterPressed then emoteQuery=emoteSearchBox.Text:match("^%s*(.-)%s*$"); loadEmoteResults(false) end
+end)
+actionButton("Load More Emotes",function(button)
+    if emoteCursor then loadEmoteResults(true) else button.Text="No more results"; task.delay(1,function() if button.Parent then button.Text="Load More Emotes" end end) end
+end)
+task.defer(function() loadEmoteResults(false) end)
+track(LocalPlayer.CharacterAdded:Connect(function()
+    if currentEmoteName then stopEmote() end
+end))
+addCleanup(stopEmote)
 
 -- Server utilities.
 useCategory("Servers")
