@@ -51,6 +51,11 @@ local mouse = LocalPlayer:GetMouse()
 -- Own executor-wide connections so reload/close cannot leave old behavior running.
 local connections = {}
 local cleanupActions = {}
+local detachableWindows = {}
+
+local function registerDetachableWindow(window, isPinned, isDetached)
+    table.insert(detachableWindows, {window=window, isPinned=isPinned, isDetached=isDetached})
+end
 
 local function track(connection)
     table.insert(connections, connection)
@@ -534,6 +539,17 @@ local registerFavorite = (function()
         Font=Enum.Font.GothamBold, Parent=dock,
     })
     create("UICorner", { CornerRadius=UDim.new(0,6), Parent=attachButton })
+    local pinned=false
+    local pinButton=create("TextButton",{
+        Size=UDim2.new(0,28,0,26),Position=UDim2.new(1,-64,0,4),BackgroundColor3=Color3.fromRGB(65,58,85),
+        BorderSizePixel=0,Text="Pin",TextColor3=Color3.fromRGB(220,210,235),TextSize=9,
+        Font=Enum.Font.GothamSemibold,Parent=dock,
+    })
+    create("UICorner",{CornerRadius=UDim.new(0,6),Parent=pinButton})
+    pinButton.MouseButton1Click:Connect(function()
+        pinned=not pinned; pinButton.Text=pinned and "ON" or "Pin"
+        pinButton.BackgroundColor3=pinned and Color3.fromRGB(150,115,45) or Color3.fromRGB(65,58,85)
+    end)
     local dockContent=create("ScrollingFrame", {
         Size=UDim2.new(1,-16,1,-44), Position=UDim2.new(0,8,0,38), BackgroundTransparency=1,
         BorderSizePixel=0, ScrollBarThickness=3, AutomaticCanvasSize=Enum.AutomaticSize.Y,
@@ -557,6 +573,7 @@ local registerFavorite = (function()
     detachButton.MouseButton1Click:Connect(function() setDetached(not detached) end)
     attachButton.MouseButton1Click:Connect(function() setDetached(false) end)
     addCleanup(function() setDetached(false) end)
+    registerDetachableWindow(dock,function() return pinned end,function() return detached end)
 
     return function(label, trigger, sourceRow)
         local starred=false
@@ -1976,6 +1993,18 @@ end)
 local gotoApi={}
 local function initializeTeleportAndESP()
 useCategory("Teleport & Coordinates")
+local teleportCategory=categories["Teleport & Coordinates"]
+local detachGotoRow=rowFrame(nextOrder(),30)
+local detachGotoButton=create("TextButton",{Size=UDim2.new(1,0,0,26),BackgroundColor3=Color3.fromRGB(65,52,95),
+    BorderSizePixel=0,Text="Detach Go To Window",TextColor3=Color3.fromRGB(235,225,250),
+    TextSize=11,Font=Enum.Font.GothamSemibold,Parent=detachGotoRow})
+create("UICorner",{CornerRadius=UDim.new(0,6),Parent=detachGotoButton})
+local gotoAttachedHost=create("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
+    BackgroundTransparency=1,LayoutOrder=nextOrder(),Parent=currentSection})
+local gotoTools=create("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
+    BackgroundTransparency=1,Parent=gotoAttachedHost})
+create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,7),Parent=gotoTools})
+currentSection=gotoTools
 sectionLabel("Go To Player", nextOrder())
 local gotoRow = rowFrame(nextOrder(), 30)
 local gotoBox = styledBox(gotoRow, {
@@ -2138,6 +2167,42 @@ end)
 
 -- IY-style player ESP: BoxHandleAdornment per body part plus an always-on-top
 -- name and distance label. Selected mode supports any number of chosen players.
+currentSection=teleportCategory
+local gotoDock=create("Frame",{Name="LucidGotoWindow",Size=UDim2.new(0,285,0,290),
+    Position=UDim2.new(0.5,-460,0.5,-145),BackgroundColor3=Color3.fromRGB(24,22,34),
+    BackgroundTransparency=0.12,BorderSizePixel=0,Active=true,Draggable=true,Visible=false,Parent=screenGui})
+create("UICorner",{CornerRadius=UDim.new(0,9),Parent=gotoDock})
+create("UIStroke",{Color=Color3.fromRGB(115,85,190),Thickness=1.3,Parent=gotoDock})
+create("TextLabel",{Size=UDim2.new(1,-76,0,34),Position=UDim2.new(0,10,0,0),BackgroundTransparency=1,
+    Text="Lucid Go To",TextColor3=Color3.fromRGB(210,190,255),TextSize=14,Font=Enum.Font.GothamBold,
+    TextXAlignment=Enum.TextXAlignment.Left,Parent=gotoDock})
+local gotoPin=false
+local gotoPinButton=create("TextButton",{Size=UDim2.new(0,32,0,26),Position=UDim2.new(1,-68,0,4),
+    BackgroundColor3=Color3.fromRGB(65,58,85),BorderSizePixel=0,Text="Pin",TextColor3=Color3.fromRGB(225,215,235),
+    TextSize=9,Font=Enum.Font.GothamSemibold,Parent=gotoDock})
+local gotoAttachButton=create("TextButton",{Size=UDim2.new(0,28,0,26),Position=UDim2.new(1,-32,0,4),
+    BackgroundColor3=Color3.fromRGB(105,65,75),BorderSizePixel=0,Text="X",TextColor3=Color3.new(1,1,1),
+    TextSize=11,Font=Enum.Font.GothamBold,Parent=gotoDock})
+create("UICorner",{CornerRadius=UDim.new(0,6),Parent=gotoPinButton}); create("UICorner",{CornerRadius=UDim.new(0,6),Parent=gotoAttachButton})
+local gotoDockContent=create("ScrollingFrame",{Size=UDim2.new(1,-16,1,-44),Position=UDim2.new(0,8,0,38),
+    BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=3,AutomaticCanvasSize=Enum.AutomaticSize.Y,
+    CanvasSize=UDim2.new(),Parent=gotoDock})
+local gotoDetached=false
+local function setGotoDetached(value)
+    gotoDetached=value
+    gotoTools.Parent=value and gotoDockContent or gotoAttachedHost
+    gotoDock.Visible=value
+    detachGotoButton.Text=value and "Go To Detached" or "Detach Go To Window"
+end
+detachGotoButton.MouseButton1Click:Connect(function() setGotoDetached(not gotoDetached) end)
+gotoAttachButton.MouseButton1Click:Connect(function() setGotoDetached(false) end)
+gotoPinButton.MouseButton1Click:Connect(function()
+    gotoPin=not gotoPin; gotoPinButton.Text=gotoPin and "ON" or "Pin"
+    gotoPinButton.BackgroundColor3=gotoPin and Color3.fromRGB(150,115,45) or Color3.fromRGB(65,58,85)
+end)
+registerDetachableWindow(gotoDock,function() return gotoPin end,function() return gotoDetached end)
+addCleanup(function() setGotoDetached(false) end)
+
 local function initializePlayerESP()
     useCategory("Player")
     sectionLabel("Player ESP", nextOrder())
@@ -3508,6 +3573,11 @@ end)
 track(UserInputService.InputBegan:Connect(function(input, processed)
     if not processed and input.KeyCode == Enum.KeyCode.RightAlt then
         mainFrame.Visible = not mainFrame.Visible
+        for _,detachable in ipairs(detachableWindows) do
+            if detachable.window and detachable.window.Parent and detachable.isDetached() then
+                detachable.window.Visible=detachable.isPinned() or mainFrame.Visible
+            end
+        end
     end
 end))
 
