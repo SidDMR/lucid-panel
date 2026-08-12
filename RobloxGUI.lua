@@ -52,6 +52,8 @@ local mouse = LocalPlayer:GetMouse()
 local connections = {}
 local cleanupActions = {}
 local detachableWindows = {}
+local create
+local track
 
 local function registerDetachableWindow(window, isPinned, isDetached, setPinned, setDetached)
     table.insert(detachableWindows, {window=window, isPinned=isPinned, isDetached=isDetached,
@@ -84,7 +86,7 @@ local function makeResizableWindow(window, minimumWidth, minimumHeight)
     return handle
 end
 
-local function track(connection)
+track = function(connection)
     table.insert(connections, connection)
     return connection
 end
@@ -150,7 +152,7 @@ local state = {
 -- ============================================================
 -- UTILITY: create Instance with properties
 -- ============================================================
-local function create(className, props)
+create = function(className, props)
     local inst = Instance.new(className)
     for k, v in pairs(props) do
         if k ~= "Parent" then
