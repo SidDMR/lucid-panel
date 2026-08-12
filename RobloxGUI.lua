@@ -53,8 +53,9 @@ local connections = {}
 local cleanupActions = {}
 local detachableWindows = {}
 
-local function registerDetachableWindow(window, isPinned, isDetached)
-    table.insert(detachableWindows, {window=window, isPinned=isPinned, isDetached=isDetached})
+local function registerDetachableWindow(window, isPinned, isDetached, setPinned, setDetached)
+    table.insert(detachableWindows, {window=window, isPinned=isPinned, isDetached=isDetached,
+        setPinned=setPinned,setDetached=setDetached})
 end
 
 local function track(connection)
@@ -385,12 +386,12 @@ local function createCategory(name, order, openByDefault)
     create("UICorner", { CornerRadius=UDim.new(0,9), Parent=dock })
     create("UIStroke", { Color=Color3.fromRGB(115,85,190), Thickness=1.3, Parent=dock })
     create("TextLabel", {
-        Size=UDim2.new(1,-82,0,34), Position=UDim2.new(0,10,0,0), BackgroundTransparency=1,
+        Size=UDim2.new(1,-116,0,34), Position=UDim2.new(0,10,0,0), BackgroundTransparency=1,
         Text=name, TextColor3=Color3.fromRGB(210,190,255), TextSize=13,
         Font=Enum.Font.GothamBold, TextXAlignment=Enum.TextXAlignment.Left, Parent=dock,
     })
     local pinButton=create("TextButton", {
-        Size=UDim2.new(0,34,0,26), Position=UDim2.new(1,-70,0,4),
+        Size=UDim2.new(0,34,0,26), Position=UDim2.new(1,-106,0,4),
         BackgroundColor3=Color3.fromRGB(65,58,85), BorderSizePixel=0, Text="Pin",
         TextColor3=Color3.fromRGB(225,215,235), TextSize=9, Font=Enum.Font.GothamSemibold,
         Parent=dock,
@@ -400,8 +401,12 @@ local function createCategory(name, order, openByDefault)
         BackgroundColor3=Color3.fromRGB(105,65,75), BorderSizePixel=0, Text="X",
         TextColor3=Color3.new(1,1,1), TextSize=11, Font=Enum.Font.GothamBold, Parent=dock,
     })
+    local collapseDockButton=create("TextButton",{Size=UDim2.new(0,28,0,26),Position=UDim2.new(1,-68,0,4),
+        BackgroundColor3=Color3.fromRGB(65,58,85),BorderSizePixel=0,Text="-",TextColor3=Color3.new(1,1,1),
+        TextSize=14,Font=Enum.Font.GothamBold,Parent=dock})
     create("UICorner", { CornerRadius=UDim.new(0,6), Parent=pinButton })
     create("UICorner", { CornerRadius=UDim.new(0,6), Parent=attachButton })
+    create("UICorner", { CornerRadius=UDim.new(0,6), Parent=collapseDockButton })
     local dockContent=create("ScrollingFrame", {
         Size=UDim2.new(1,-16,1,-44), Position=UDim2.new(0,8,0,38),
         BackgroundTransparency=1, BorderSizePixel=0, ScrollBarThickness=3,
@@ -432,12 +437,21 @@ local function createCategory(name, order, openByDefault)
     end
     detachButton.MouseButton1Click:Connect(function() setDetached(not detached) end)
     attachButton.MouseButton1Click:Connect(function() setDetached(false) end)
-    pinButton.MouseButton1Click:Connect(function()
-        pinned=not pinned
+    local function setPinned(value)
+        pinned=value==true
         pinButton.Text=pinned and "ON" or "Pin"
         pinButton.BackgroundColor3=pinned and Color3.fromRGB(150,115,45) or Color3.fromRGB(65,58,85)
+    end
+    pinButton.MouseButton1Click:Connect(function() setPinned(not pinned) end)
+    local dockExpanded=true
+    local expandedSize=dock.Size
+    collapseDockButton.MouseButton1Click:Connect(function()
+        dockExpanded=not dockExpanded
+        dockContent.Visible=dockExpanded
+        dock.Size=dockExpanded and expandedSize or UDim2.new(0,expandedSize.X.Offset,0,34)
+        collapseDockButton.Text=dockExpanded and "-" or "+"
     end)
-    registerDetachableWindow(dock,function() return pinned end,function() return detached end)
+    registerDetachableWindow(dock,function() return pinned end,function() return detached end,setPinned,setDetached)
     addCleanup(function() if dock.Parent then setDetached(false) end end)
     refresh()
     categories[name] = body
@@ -592,7 +606,7 @@ local registerFavorite = (function()
     })
 
     local dock = create("Frame", {
-        Name="LucidFavoritesWindow", Size=UDim2.new(0,250,0,300),
+        Name="LucidPinnedFavoritesWindow", Size=UDim2.new(0,250,0,300),
         Position=UDim2.new(0.5,170,0.5,-150), BackgroundColor3=Color3.fromRGB(24,22,34),
         BackgroundTransparency=0.15, BorderSizePixel=0, Active=true, Draggable=true,
         Visible=false, Parent=screenGui,
@@ -600,7 +614,7 @@ local registerFavorite = (function()
     create("UICorner", { CornerRadius=UDim.new(0,9), Parent=dock })
     create("UIStroke", { Color=Color3.fromRGB(115,85,190), Thickness=1.3, Parent=dock })
     create("TextLabel", {
-        Size=UDim2.new(1,-38,0,34), Position=UDim2.new(0,10,0,0), BackgroundTransparency=1,
+        Size=UDim2.new(1,-104,0,34), Position=UDim2.new(0,10,0,0), BackgroundTransparency=1,
         Text="★  Lucid Favorites", TextColor3=Color3.fromRGB(255,215,70), TextSize=14,
         Font=Enum.Font.GothamBold, TextXAlignment=Enum.TextXAlignment.Left, Parent=dock,
     })
@@ -612,15 +626,20 @@ local registerFavorite = (function()
     create("UICorner", { CornerRadius=UDim.new(0,6), Parent=attachButton })
     local pinned=false
     local pinButton=create("TextButton",{
-        Size=UDim2.new(0,28,0,26),Position=UDim2.new(1,-64,0,4),BackgroundColor3=Color3.fromRGB(65,58,85),
+        Size=UDim2.new(0,28,0,26),Position=UDim2.new(1,-96,0,4),BackgroundColor3=Color3.fromRGB(65,58,85),
         BorderSizePixel=0,Text="Pin",TextColor3=Color3.fromRGB(220,210,235),TextSize=9,
         Font=Enum.Font.GothamSemibold,Parent=dock,
     })
     create("UICorner",{CornerRadius=UDim.new(0,6),Parent=pinButton})
-    pinButton.MouseButton1Click:Connect(function()
-        pinned=not pinned; pinButton.Text=pinned and "ON" or "Pin"
+    local function setPinned(value)
+        pinned=value==true; pinButton.Text=pinned and "ON" or "Pin"
         pinButton.BackgroundColor3=pinned and Color3.fromRGB(150,115,45) or Color3.fromRGB(65,58,85)
-    end)
+    end
+    pinButton.MouseButton1Click:Connect(function() setPinned(not pinned) end)
+    local dockCollapse=create("TextButton",{Size=UDim2.new(0,28,0,26),Position=UDim2.new(1,-64,0,4),
+        BackgroundColor3=Color3.fromRGB(65,58,85),BorderSizePixel=0,Text="-",TextColor3=Color3.new(1,1,1),
+        TextSize=14,Font=Enum.Font.GothamBold,Parent=dock})
+    create("UICorner",{CornerRadius=UDim.new(0,6),Parent=dockCollapse})
     local dockContent=create("ScrollingFrame", {
         Size=UDim2.new(1,-16,1,-44), Position=UDim2.new(0,8,0,38), BackgroundTransparency=1,
         BorderSizePixel=0, ScrollBarThickness=3, AutomaticCanvasSize=Enum.AutomaticSize.Y,
@@ -644,7 +663,13 @@ local registerFavorite = (function()
     detachButton.MouseButton1Click:Connect(function() setDetached(not detached) end)
     attachButton.MouseButton1Click:Connect(function() setDetached(false) end)
     addCleanup(function() setDetached(false) end)
-    registerDetachableWindow(dock,function() return pinned end,function() return detached end)
+    local dockExpanded=true
+    dockCollapse.MouseButton1Click:Connect(function()
+        dockExpanded=not dockExpanded; dockContent.Visible=dockExpanded
+        dock.Size=dockExpanded and UDim2.new(0,250,0,300) or UDim2.new(0,250,0,34)
+        dockCollapse.Text=dockExpanded and "-" or "+"
+    end)
+    registerDetachableWindow(dock,function() return pinned end,function() return detached end,setPinned,setDetached)
 
     return function(label, trigger, sourceRow)
         local starred=false
@@ -2244,17 +2269,21 @@ local gotoDock=create("Frame",{Name="LucidGotoWindow",Size=UDim2.new(0,285,0,290
     BackgroundTransparency=0.12,BorderSizePixel=0,Active=true,Draggable=true,Visible=false,Parent=screenGui})
 create("UICorner",{CornerRadius=UDim.new(0,9),Parent=gotoDock})
 create("UIStroke",{Color=Color3.fromRGB(115,85,190),Thickness=1.3,Parent=gotoDock})
-create("TextLabel",{Size=UDim2.new(1,-76,0,34),Position=UDim2.new(0,10,0,0),BackgroundTransparency=1,
+create("TextLabel",{Size=UDim2.new(1,-112,0,34),Position=UDim2.new(0,10,0,0),BackgroundTransparency=1,
     Text="Lucid Go To",TextColor3=Color3.fromRGB(210,190,255),TextSize=14,Font=Enum.Font.GothamBold,
     TextXAlignment=Enum.TextXAlignment.Left,Parent=gotoDock})
 local gotoPin=false
-local gotoPinButton=create("TextButton",{Size=UDim2.new(0,32,0,26),Position=UDim2.new(1,-68,0,4),
+local gotoPinButton=create("TextButton",{Size=UDim2.new(0,32,0,26),Position=UDim2.new(1,-104,0,4),
     BackgroundColor3=Color3.fromRGB(65,58,85),BorderSizePixel=0,Text="Pin",TextColor3=Color3.fromRGB(225,215,235),
     TextSize=9,Font=Enum.Font.GothamSemibold,Parent=gotoDock})
 local gotoAttachButton=create("TextButton",{Size=UDim2.new(0,28,0,26),Position=UDim2.new(1,-32,0,4),
     BackgroundColor3=Color3.fromRGB(105,65,75),BorderSizePixel=0,Text="X",TextColor3=Color3.new(1,1,1),
     TextSize=11,Font=Enum.Font.GothamBold,Parent=gotoDock})
 create("UICorner",{CornerRadius=UDim.new(0,6),Parent=gotoPinButton}); create("UICorner",{CornerRadius=UDim.new(0,6),Parent=gotoAttachButton})
+local gotoCollapseButton=create("TextButton",{Size=UDim2.new(0,28,0,26),Position=UDim2.new(1,-68,0,4),
+    BackgroundColor3=Color3.fromRGB(65,58,85),BorderSizePixel=0,Text="-",TextColor3=Color3.new(1,1,1),
+    TextSize=14,Font=Enum.Font.GothamBold,Parent=gotoDock})
+create("UICorner",{CornerRadius=UDim.new(0,6),Parent=gotoCollapseButton})
 local gotoDockContent=create("ScrollingFrame",{Size=UDim2.new(1,-16,1,-44),Position=UDim2.new(0,8,0,38),
     BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=3,AutomaticCanvasSize=Enum.AutomaticSize.Y,
     CanvasSize=UDim2.new(),Parent=gotoDock})
@@ -2267,11 +2296,18 @@ local function setGotoDetached(value)
 end
 detachGotoButton.MouseButton1Click:Connect(function() setGotoDetached(not gotoDetached) end)
 gotoAttachButton.MouseButton1Click:Connect(function() setGotoDetached(false) end)
-gotoPinButton.MouseButton1Click:Connect(function()
-    gotoPin=not gotoPin; gotoPinButton.Text=gotoPin and "ON" or "Pin"
+local function setGotoPinned(value)
+    gotoPin=value==true; gotoPinButton.Text=gotoPin and "ON" or "Pin"
     gotoPinButton.BackgroundColor3=gotoPin and Color3.fromRGB(150,115,45) or Color3.fromRGB(65,58,85)
+end
+gotoPinButton.MouseButton1Click:Connect(function() setGotoPinned(not gotoPin) end)
+local gotoDockExpanded=true
+gotoCollapseButton.MouseButton1Click:Connect(function()
+    gotoDockExpanded=not gotoDockExpanded; gotoDockContent.Visible=gotoDockExpanded
+    gotoDock.Size=gotoDockExpanded and UDim2.new(0,285,0,290) or UDim2.new(0,285,0,34)
+    gotoCollapseButton.Text=gotoDockExpanded and "-" or "+"
 end)
-registerDetachableWindow(gotoDock,function() return gotoPin end,function() return gotoDetached end)
+registerDetachableWindow(gotoDock,function() return gotoPin end,function() return gotoDetached end,setGotoPinned,setGotoDetached)
 addCleanup(function() setGotoDetached(false) end)
 
 local function initializePlayerESP()
@@ -3127,12 +3163,31 @@ local function playEmote(assetId,name)
     local animator=humanoid and humanoid:FindFirstChildOfClass("Animator")
     if not animator and humanoid then animator=Instance.new("Animator"); animator.Parent=humanoid end
     if not animator then emoteStatus.Text="Character Animator unavailable"; return end
-    local animation=Instance.new("Animation"); animation.AnimationId="rbxassetid://"..tostring(assetId)
-    local ok,track=pcall(function() return animator:LoadAnimation(animation) end)
-    if not ok or not track then animation:Destroy(); emoteStatus.Text="This emote could not load"; return end
-    emoteAnimation=animation; emoteTrack=track; currentEmoteName=name
-    track.Priority=Enum.AnimationPriority.Action4; track.Looped=true
-    track:Play(0.15,1,emoteSpeed); track:AdjustSpeed(emoteSpeed)
+    local emoteKey="Lucid_"..tostring(assetId)
+    local track=nil
+    local tracksBefore={}
+    for _,playing in ipairs(animator:GetPlayingAnimationTracks()) do tracksBefore[playing]=true end
+    local nativeOk=pcall(function()
+        local description=humanoid:FindFirstChildOfClass("HumanoidDescription") or humanoid.HumanoidDescription
+        description:AddEmote(emoteKey,tonumber(assetId))
+        humanoid:PlayEmote(emoteKey)
+    end)
+    if nativeOk then
+        task.wait(0.15)
+        local newest=nil
+        for _,playing in ipairs(animator:GetPlayingAnimationTracks()) do
+            if not tracksBefore[playing] and (not newest or playing.Priority.Value>=newest.Priority.Value) then newest=playing end
+        end
+        track=newest
+    end
+    if not track then
+        local animation=Instance.new("Animation"); animation.AnimationId="rbxassetid://"..tostring(assetId)
+        local ok,loaded=pcall(function() return animator:LoadAnimation(animation) end)
+        if not ok or not loaded then animation:Destroy(); emoteStatus.Text="This emote could not load"; return end
+        emoteAnimation=animation; track=loaded; track:Play(0.15,1,emoteSpeed)
+    end
+    emoteTrack=track; currentEmoteName=name
+    track.Priority=Enum.AnimationPriority.Action4; track.Looped=true; track:AdjustSpeed(emoteSpeed)
     emoteStatus.Text="Playing: "..name.."  |  "..string.format("%.1fx",emoteSpeed)
 end
 local function clearEmoteResults()
@@ -3142,7 +3197,7 @@ local function loadEmoteResults(append)
     if emoteLoading then return end
     emoteLoading=true; emoteSearchButton.Text="Loading"
     if not append then emoteCursor=nil; clearEmoteResults() end
-    local url="https://catalog.roblox.com/v1/search/items/details?assetTypes=61&salesTypeFilter=1&limit=30"
+    local url="https://catalog.roblox.com/v1/search/items/details?taxonomy=ioNxAT977DFP2hMnAJbsbF&salesTypeFilter=1&limit=30"
     if emoteQuery~="" then url=url.."&keyword="..HttpService:UrlEncode(emoteQuery) end
     if append and emoteCursor then url=url.."&cursor="..HttpService:UrlEncode(emoteCursor) end
     local ok,data=pcall(function() return HttpService:JSONDecode(game:HttpGet(url)) end)
@@ -3258,6 +3313,13 @@ actionButton("Save Named Profile", function(button)
     payload.interface={opacity=1-mainFrame.BackgroundTransparency,
         xScale=mainFrame.Position.X.Scale,xOffset=mainFrame.Position.X.Offset,
         yScale=mainFrame.Position.Y.Scale,yOffset=mainFrame.Position.Y.Offset}
+    payload.windows={}
+    for _,detachable in ipairs(detachableWindows) do
+        local window=detachable.window
+        payload.windows[window.Name]={xScale=window.Position.X.Scale,xOffset=window.Position.X.Offset,
+            yScale=window.Position.Y.Scale,yOffset=window.Position.Y.Offset,
+            pinned=detachable.isPinned(),detached=detachable.isDetached()}
+    end
     payload.waypointsByPlace=payload.waypointsByPlace or {}
     local savedWaypoints={}
     for name, point in pairs(waypoints) do
@@ -3287,6 +3349,17 @@ actionButton("Load Named Profile", function(button)
     if type(interface.xScale)=="number" and type(interface.xOffset)=="number"
         and type(interface.yScale)=="number" and type(interface.yOffset)=="number" then
         mainFrame.Position=UDim2.new(interface.xScale,interface.xOffset,interface.yScale,interface.yOffset)
+    end
+    for _,detachable in ipairs(detachableWindows) do
+        local saved=(payload.windows or {})[detachable.window.Name]
+        if type(saved)=="table" then
+            if type(saved.xScale)=="number" and type(saved.xOffset)=="number"
+                and type(saved.yScale)=="number" and type(saved.yOffset)=="number" then
+                detachable.window.Position=UDim2.new(saved.xScale,saved.xOffset,saved.yScale,saved.yOffset)
+            end
+            if detachable.setPinned then detachable.setPinned(saved.pinned==true) end
+            if detachable.setDetached then detachable.setDetached(saved.detached==true) end
+        end
     end
     table.clear(waypoints)
     local savedWaypoints=(payload.waypointsByPlace or {})[tostring(game.PlaceId)] or {}
