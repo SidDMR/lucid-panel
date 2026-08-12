@@ -529,8 +529,9 @@ createCategory("Lighting", 5, false)
 createCategory("Camera", 6, false)
 createCategory("Waypoints", 7, false)
 createCategory("Emotes", 8, false)
-createCategory("Diagnostics", 9, false)
-createCategory("Interface", 10, false)
+createCategory("Misc", 9, false)
+createCategory("Diagnostics", 10, false)
+createCategory("Interface", 11, false)
 
 local searchRow = create("Frame", {
     Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1,
@@ -3747,6 +3748,53 @@ for _, name in ipairs({"Fly","Noclip","Freecam"}) do
         end
         box.Text=shortcutKeys[name] and shortcutKeys[name].Name or "Unbound"
     end)
+end
+
+-- Place-specific obstacle cleanup for Climb Scary Worm Tower 3.
+if game.PlaceId==136070094363960 then
+    useCategory("Misc")
+    sectionLabel("Climb Scary Worm Tower 3",nextOrder())
+    local removeBananaPeels=false
+    local removeLandmines=false
+    local removeAllObstacles=false
+
+    local function isInsideObstacles(object)
+        local obstacles=workspace:FindFirstChild("Obstacles")
+        return obstacles and object~=obstacles and object:IsDescendantOf(obstacles)
+    end
+    local function shouldRemoveObstacle(object)
+        if removeAllObstacles and isInsideObstacles(object) then return true end
+        local lowerName=object.Name:lower()
+        if removeBananaPeels and lowerName:find("banana peel",1,true) then return true end
+        if removeLandmines and (lowerName:find("landmine",1,true) or lowerName:find("land mine",1,true)) then return true end
+        return false
+    end
+    local function removeMatchingObstacle(object)
+        if object and object.Parent and shouldRemoveObstacle(object) then
+            pcall(function() object:Destroy() end)
+        end
+    end
+    local function sweepObstacles()
+        for _,object in ipairs(workspace:GetDescendants()) do removeMatchingObstacle(object) end
+    end
+
+    createToggle("Remove Banana Peels",nextOrder(),false,function(on)
+        removeBananaPeels=on
+        if on then task.defer(sweepObstacles) end
+    end)
+    createToggle("Remove Landmines",nextOrder(),false,function(on)
+        removeLandmines=on
+        if on then task.defer(sweepObstacles) end
+    end)
+    createToggle("Remove All Workspace Obstacles",nextOrder(),false,function(on)
+        removeAllObstacles=on
+        if on then task.defer(sweepObstacles) end
+    end)
+    track(workspace.DescendantAdded:Connect(function(object)
+        if removeBananaPeels or removeLandmines or removeAllObstacles then
+            task.defer(removeMatchingObstacle,object)
+        end
+    end))
 end
 
 -- Live diagnostics and a copyable report.
