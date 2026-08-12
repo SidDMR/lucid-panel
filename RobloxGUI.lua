@@ -3800,6 +3800,28 @@ end
 -- Live diagnostics and a copyable report.
 useCategory("Diagnostics")
 sectionLabel("Explorer", nextOrder())
+local function unloadDexPlusPlus()
+    local containers={CoreGui,LocalPlayer:FindFirstChildOfClass("PlayerGui")}
+    if type(gethui)=="function" then
+        local ok,hiddenUi=pcall(gethui)
+        if ok and hiddenUi then table.insert(containers,hiddenUi) end
+    end
+    local removed=0
+    local visited={}
+    for _,container in ipairs(containers) do
+        if container and not visited[container] then
+            visited[container]=true
+            for _,gui in ipairs(container:GetChildren()) do
+                if gui.Name:sub(1,5)=="_DPP_" then
+                    removed=removed+1
+                    pcall(function() gui:Destroy() end)
+                end
+            end
+        end
+    end
+    sharedEnvironment.__LUCID_DEX_LOADING=nil
+    return removed
+end
 actionButton("Launch Dex++ Explorer", function(button)
     if sharedEnvironment.__LUCID_DEX_LOADING then
         button.Text="Dex++ is already loading"
@@ -3810,24 +3832,32 @@ actionButton("Launch Dex++ Explorer", function(button)
         button.Text="Executor has no loadstring"
         return
     end
-    sharedEnvironment.__LUCID_DEX_LOADING=true
+    local loadToken={}
+    sharedEnvironment.__LUCID_DEX_LOADING=loadToken
     button.Text="Loading Dex++..."
     task.spawn(function()
         local fetched, source=pcall(function()
             return game:HttpGet("https://github.com/AZYsGithub/DexPlusPlus/releases/latest/download/out.lua")
         end)
         local launched=false
-        if fetched and type(source)=="string" and #source>0 then
+        if sharedEnvironment.__LUCID_DEX_LOADING==loadToken and fetched and type(source)=="string" and #source>0 then
             local compiled, dexChunk=pcall(loadstring,source)
             if compiled and type(dexChunk)=="function" then launched=pcall(dexChunk) end
         end
-        sharedEnvironment.__LUCID_DEX_LOADING=nil
+        if sharedEnvironment.__LUCID_DEX_LOADING==loadToken then
+            sharedEnvironment.__LUCID_DEX_LOADING=nil
+        end
         if button.Parent then
             button.Text=launched and "Dex++ launched" or "Dex++ failed to load"
             task.delay(1.5,function() if button.Parent then button.Text="Launch Dex++ Explorer" end end)
         end
     end)
 end,Color3.fromRGB(70,52,115))
+actionButton("Unload Dex++",function(button)
+    local removed=unloadDexPlusPlus()
+    button.Text=removed>0 and ("Dex++ unloaded ("..removed..")") or "Dex++ is not running"
+    task.delay(1.5,function() if button.Parent then button.Text="Unload Dex++" end end)
+end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
     Text="Lucid Panel v4.3 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
