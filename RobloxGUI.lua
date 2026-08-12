@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v4.1
+--// Lucid Panel v4.2
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -80,6 +80,10 @@ local state = {
     maxZoomValue       = 128, -- Roblox default
     antiAfkEnabled     = true,
     antiFlingEnabled   = false,
+    antiFlingLinear    = 250,
+    antiFlingAngular   = 100,
+    antiPushStrength   = "Normal",
+    physicsBypass      = false,
     shiftLockEnabled   = false,
     playerLightEnabled = false,
     playerLightRange   = 30,
@@ -100,6 +104,8 @@ local state = {
     fovValue           = 70,
     autoclickEnabled   = false,
     autoclickInterval  = 0.01, -- 10 ms
+    espTransparency   = 0.78,
+    favoriteNames     = {},
 }
 
 -- ============================================================
@@ -219,7 +225,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v4.1",
+    Text                   = ">>  Lucid Panel v4.2",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -481,6 +487,7 @@ end
 
 -- Favorites live in their own function scope to stay below executor register
 -- limits. Only the registration closure remains in the root chunk.
+local favoriteRegistry = {}
 local registerFavorite = (function()
     useCategory("Favorites")
     sectionLabel("Pinned Tools", nextOrder())
@@ -560,8 +567,10 @@ local registerFavorite = (function()
             TextColor3=Color3.fromRGB(145,135,165), TextSize=18,
             Font=Enum.Font.GothamBold, ZIndex=8, Parent=sourceRow,
         })
-        star.MouseButton1Click:Connect(function()
+        local function setStar(value)
+            if starred==value then return end
             starred=not starred
+            state.favoriteNames[label]=starred or nil
             star.Text=starred and "★" or "☆"
             star.TextColor3=starred and Color3.fromRGB(255,215,55) or Color3.fromRGB(145,135,165)
             if starred then
@@ -584,7 +593,10 @@ local registerFavorite = (function()
                 if favoriteEntry then favoriteEntry:Destroy(); favoriteEntry=nil end
                 emptyLabel.Visible=favoriteCount==0
             end
-        end)
+        end
+        star.MouseButton1Click:Connect(function() setStar(not starred) end)
+        favoriteRegistry[label]=setStar
+        if state.favoriteNames[label] then task.defer(function() setStar(true) end) end
     end
 end)()
 
@@ -1311,6 +1323,17 @@ sectionLabel("Anti-Fling", nextOrder())
 createToggle("Enable Anti-Fling", nextOrder(), false, function(on)
     state.antiFlingEnabled = on
 end)
+local flingSettingsRow=rowFrame(nextOrder(),30)
+local flingLinearBox=styledBox(flingSettingsRow,{Size=UDim2.new(0,112,0,24),Text="250",PlaceholderText="Linear limit"})
+local flingAngularBox=styledBox(flingSettingsRow,{Size=UDim2.new(0,112,0,24),Position=UDim2.new(1,-112,0,0),Text="100",PlaceholderText="Angular limit"})
+flingLinearBox.FocusLost:Connect(function()
+    state.antiFlingLinear=math.clamp(tonumber(flingLinearBox.Text) or state.antiFlingLinear,25,1000)
+    flingLinearBox.Text=tostring(state.antiFlingLinear)
+end)
+flingAngularBox.FocusLost:Connect(function()
+    state.antiFlingAngular=math.clamp(tonumber(flingAngularBox.Text) or state.antiFlingAngular,10,1000)
+    flingAngularBox.Text=tostring(state.antiFlingAngular)
+end)
 
 -- ════════════════════════════════════════════════════════════
 --  SECTION 5.5 ─ AIR WALK
@@ -1364,6 +1387,26 @@ createToggle("Mobile Freeze / Anti Push", nextOrder(), false, function(on)
         root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
     end
 end)
+local antiPushStrengthButton=create("TextButton",{
+    Size=UDim2.new(1,0,0,26),BackgroundColor3=Color3.fromRGB(54,46,76),BorderSizePixel=0,
+    Text="Anti Push Strength: Normal",TextColor3=Color3.fromRGB(225,215,240),TextSize=11,
+    Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection,
+})
+create("UICorner",{CornerRadius=UDim.new(0,6),Parent=antiPushStrengthButton})
+antiPushStrengthButton.MouseButton1Click:Connect(function()
+    local nextStrength={Light="Normal",Normal="Strict",Strict="Light"}
+    state.antiPushStrength=nextStrength[state.antiPushStrength]
+    antiPushStrengthButton.Text="Anti Push Strength: "..state.antiPushStrength
+end)
+create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
+    Text="Hold B to temporarily bypass physics protection",TextColor3=Color3.fromRGB(155,145,175),
+    TextSize=10,Font=Enum.Font.Gotham,LayoutOrder=nextOrder(),Parent=currentSection})
+track(UserInputService.InputBegan:Connect(function(input,processed)
+    if not processed and input.KeyCode==Enum.KeyCode.B then state.physicsBypass=true end
+end))
+track(UserInputService.InputEnded:Connect(function(input)
+    if input.KeyCode==Enum.KeyCode.B then state.physicsBypass=false end
+end))
 
 -- ════════════════════════════════════════════════════════════
 --  SECTION 6 ─ INFINITE JUMP
@@ -1930,6 +1973,8 @@ psBtn.MouseButton1Click:Connect(function()
 end)
 
 -- IY goto, grouped with Lucid's other character/location teleport tools.
+local gotoApi={}
+local function initializeTeleportAndESP()
 useCategory("Teleport & Coordinates")
 sectionLabel("Go To Player", nextOrder())
 local gotoRow = rowFrame(nextOrder(), 30)
@@ -1965,11 +2010,26 @@ local function findGotoPlayer(query)
     end
     return nil
 end
+gotoApi.find=findGotoPlayer
+gotoApi.box=gotoBox
 
 local gotoBusy = false
+local gotoOffset=Vector3.new(3,1,0)
+local previousTeleportCFrame=nil
+local recentGotoPlayers={}
+local gotoOffsetRow=rowFrame(nextOrder(),28)
+create("TextLabel",{Size=UDim2.new(0,78,1,0),BackgroundTransparency=1,Text="Offset X,Y,Z",
+    TextColor3=Color3.fromRGB(185,175,205),TextSize=10,Font=Enum.Font.Gotham,
+    TextXAlignment=Enum.TextXAlignment.Left,Parent=gotoOffsetRow})
+local gotoOffsetBox=styledBox(gotoOffsetRow,{Size=UDim2.new(1,-84,0,24),Position=UDim2.new(0,84,0.5,-12),Text="3, 1, 0"})
+gotoOffsetBox.FocusLost:Connect(function()
+    local x,y,z=gotoOffsetBox.Text:match("^%s*([%+%-%.%d]+)%s*,%s*([%+%-%.%d]+)%s*,%s*([%+%-%.%d]+)%s*$")
+    if tonumber(x) and tonumber(y) and tonumber(z) then gotoOffset=Vector3.new(tonumber(x),tonumber(y),tonumber(z)) end
+    gotoOffsetBox.Text=string.format("%g, %g, %g",gotoOffset.X,gotoOffset.Y,gotoOffset.Z)
+end)
 local function goToRequestedPlayer()
     if gotoBusy then return end
-    local target = findGotoPlayer(gotoBox.Text)
+    local target = gotoApi.find(gotoApi.box.Text)
     local targetCharacter = target and target.Character
     local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
     if not targetRoot then
@@ -1988,8 +2048,11 @@ local function goToRequestedPlayer()
                 task.wait(0.1)
             end
             if root.Parent and targetRoot.Parent then
-                root.CFrame = targetRoot:GetPivot() + Vector3.new(3, 1, 0)
+                previousTeleportCFrame=root.CFrame
+                root.CFrame = targetRoot:GetPivot() + gotoOffset
                 clearCharacterVelocity(character)
+                table.insert(recentGotoPlayers,1,target.Name)
+                while #recentGotoPlayers>5 do table.remove(recentGotoPlayers) end
                 gotoBtn.Text = "Done"
             end
         end
@@ -2002,6 +2065,28 @@ gotoBtn.MouseButton1Click:Connect(goToRequestedPlayer)
 registerFavorite("Go To Player", goToRequestedPlayer, gotoRow)
 gotoBox.FocusLost:Connect(function(enterPressed)
     if enterPressed then goToRequestedPlayer() end
+end)
+local returnRow=rowFrame(nextOrder(),30)
+local returnButton=create("TextButton",{Size=UDim2.new(1,0,0,26),BackgroundColor3=Color3.fromRGB(62,52,92),
+    BorderSizePixel=0,Text="Return to Previous Position",TextColor3=Color3.fromRGB(235,230,245),
+    TextSize=11,Font=Enum.Font.GothamSemibold,Parent=returnRow})
+create("UICorner",{CornerRadius=UDim.new(0,6),Parent=returnButton})
+local function returnPreviousPosition()
+    local root=LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if root and previousTeleportCFrame then
+        local current=root.CFrame; root.CFrame=previousTeleportCFrame; previousTeleportCFrame=current
+        clearCharacterVelocity(LocalPlayer.Character)
+    else
+        returnButton.Text="No previous position"; task.delay(1,function() if returnButton.Parent then returnButton.Text="Return to Previous Position" end end)
+    end
+end
+returnButton.MouseButton1Click:Connect(returnPreviousPosition)
+registerFavorite("Return Position",returnPreviousPosition,returnRow)
+local recentGotoLabel=create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
+    Text="Recent players appear after Go To",TextColor3=Color3.fromRGB(145,135,165),TextSize=10,
+    Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=nextOrder(),Parent=currentSection})
+gotoBox:GetPropertyChangedSignal("Text"):Connect(function()
+    if gotoBox.Text=="" and #recentGotoPlayers>0 then recentGotoLabel.Text="Recent: "..table.concat(recentGotoPlayers,", ") end
 end)
 
 local loopGotoTarget = nil
@@ -2033,7 +2118,7 @@ local _, loopGotoToggle = createToggle("Loop Go To (uses player above)", nextOrd
                 local targetCharacter = loopGotoTarget and loopGotoTarget.Character
                 local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
                 if root and targetRoot then
-                    root.CFrame = targetRoot.CFrame + Vector3.new(3, 1, 0)
+                    root.CFrame = targetRoot.CFrame + gotoOffset
                 end
                 RunService.Heartbeat:Wait()
             end
@@ -2060,7 +2145,11 @@ local function initializePlayerESP()
     local mode = "off"
     local holders = {}
     local selectedPlayers = {}
-    local espTransparency = 0.78
+    local espTransparency = state.espTransparency
+    local espMaxDistance=5000
+    local espShowDetails=true
+    local espHideDead=true
+    local espUseHighlight=false
     local running = true
     local setAll
     local setTarget
@@ -2068,16 +2157,20 @@ local function initializePlayerESP()
 
     local selectRow = rowFrame(nextOrder(), 30)
     local selectBox = styledBox(selectRow, {
-        Size=UDim2.new(1,-38,0,26), Position=UDim2.new(0,0,0.5,-13),
+        Size=UDim2.new(1,-72,0,26), Position=UDim2.new(0,0,0.5,-13),
         Text="", PlaceholderText="Player name to ESP...",
     })
     local addSelectedButton = create("TextButton", {
-        Size=UDim2.new(0,30,0,26), Position=UDim2.new(1,-30,0.5,-13),
+        Size=UDim2.new(0,30,0,26), Position=UDim2.new(1,-64,0.5,-13),
         BackgroundColor3=Color3.fromRGB(70,120,80), BorderSizePixel=0, Text="+",
         TextColor3=Color3.fromRGB(245,255,245), TextSize=18, Font=Enum.Font.GothamBold,
         Parent=selectRow,
     })
     create("UICorner", { CornerRadius=UDim.new(0,6), Parent=addSelectedButton })
+    local removeSelectedButton=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-30,0.5,-13),
+        BackgroundColor3=Color3.fromRGB(120,65,70),BorderSizePixel=0,Text="-",TextColor3=Color3.new(1,1,1),
+        TextSize=18,Font=Enum.Font.GothamBold,Parent=selectRow})
+    create("UICorner",{CornerRadius=UDim.new(0,6),Parent=removeSelectedButton})
     local selectedStatus = create("TextLabel", {
         Size=UDim2.new(1,-58,0,24), BackgroundTransparency=1, Text="Selected: none",
         TextColor3=Color3.fromRGB(175,165,195), TextSize=10, Font=Enum.Font.Gotham,
@@ -2105,6 +2198,7 @@ local function initializePlayerESP()
     })
     transparencyBox.FocusLost:Connect(function()
         espTransparency=math.clamp(tonumber(transparencyBox.Text) or espTransparency,0.05,1)
+        state.espTransparency=espTransparency
         transparencyBox.Text=string.format("%.2f",espTransparency)
         for _, data in pairs(holders) do
             if data.folder then
@@ -2113,6 +2207,15 @@ local function initializePlayerESP()
                 end
             end
         end
+    end)
+    local distanceRow=rowFrame(nextOrder(),28)
+    create("TextLabel",{Size=UDim2.new(1,-78,1,0),BackgroundTransparency=1,Text="Maximum distance",
+        TextColor3=Color3.fromRGB(185,175,205),TextSize=11,Font=Enum.Font.Gotham,
+        TextXAlignment=Enum.TextXAlignment.Left,Parent=distanceRow})
+    local distanceBox=styledBox(distanceRow,{Size=UDim2.new(0,70,0,24),Position=UDim2.new(1,-70,0.5,-12),Text="5000"})
+    distanceBox.FocusLost:Connect(function()
+        espMaxDistance=math.clamp(tonumber(distanceBox.Text) or espMaxDistance,25,100000)
+        distanceBox.Text=tostring(espMaxDistance)
     end)
 
     local function updateSelectedStatus()
@@ -2145,10 +2248,17 @@ local function initializePlayerESP()
         folder.Name = player.Name.."_LucidESP"
         folder.Parent = screenGui
 
+        if espUseHighlight then
+            local highlight=Instance.new("Highlight"); highlight.Name=player.Name
+            highlight.Adornee=character; highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
+            highlight.FillColor=player.TeamColor.Color; highlight.OutlineColor=Color3.new(1,1,1)
+            highlight.FillTransparency=espTransparency; highlight.OutlineTransparency=math.clamp(espTransparency-0.15,0,1)
+            highlight.Parent=folder
+        end
         for _, part in ipairs(character:GetChildren()) do
             -- HumanoidRootPart is invisible and overlaps the torso, which made
             -- IY-style boxes appear nearly solid on compact R15 avatars.
-            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" and part.Transparency < 1 then
+            if not espUseHighlight and part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" and part.Transparency < 1 then
                 local adornment = Instance.new("BoxHandleAdornment")
                 adornment.Name = player.Name
                 adornment.Adornee = part
@@ -2182,19 +2292,26 @@ local function initializePlayerESP()
 
     local function wantedPlayers()
         local wanted = {}
+        local localRoot=LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local function eligible(player)
+            local char=player.Character; local root=char and char:FindFirstChild("HumanoidRootPart")
+            local hum=char and char:FindFirstChildOfClass("Humanoid")
+            if not root or (espHideDead and (not hum or hum.Health<=0)) then return false end
+            return not localRoot or (localRoot.Position-root.Position).Magnitude<=espMaxDistance
+        end
         if mode == "all" then
             for _, player in ipairs(Players:GetPlayers()) do
-                if player ~= LocalPlayer then wanted[player] = true end
+                if player ~= LocalPlayer and eligible(player) then wanted[player] = true end
             end
         elseif mode == "enemy" then
             for _, player in ipairs(Players:GetPlayers()) do
-                if player ~= LocalPlayer and player.Team ~= LocalPlayer.Team then
+                if player ~= LocalPlayer and player.Team ~= LocalPlayer.Team and eligible(player) then
                     wanted[player] = true
                 end
             end
         elseif mode == "target" then
             for player in pairs(selectedPlayers) do
-                if player.Parent == Players then wanted[player] = true end
+                if player.Parent == Players and eligible(player) then wanted[player] = true end
             end
         end
         return wanted
@@ -2226,6 +2343,10 @@ local function initializePlayerESP()
         if mode=="target" then refreshESP() end
     end
     addSelectedButton.MouseButton1Click:Connect(addSelectedPlayer)
+    removeSelectedButton.MouseButton1Click:Connect(function()
+        local target=findGotoPlayer(selectBox.Text)
+        if target then selectedPlayers[target]=nil; selectBox.Text=""; updateSelectedStatus(); refreshESP() end
+    end)
     selectBox.FocusLost:Connect(function(enterPressed) if enterPressed then addSelectedPlayer() end end)
     clearSelectedButton.MouseButton1Click:Connect(function()
         table.clear(selectedPlayers)
@@ -2274,6 +2395,11 @@ local function initializePlayerESP()
         refreshESP()
     end)
     setEnemy = enemySetter
+    createToggle("ESP Show Health/Distance",nextOrder(),true,function(on) espShowDetails=on end)
+    createToggle("ESP Hide Dead",nextOrder(),true,function(on) espHideDead=on; refreshESP() end)
+    createToggle("ESP Highlight Mode",nextOrder(),false,function(on)
+        espUseHighlight=on; clearESP(); refreshESP()
+    end)
 
     task.spawn(function()
         while running and screenGui.Parent do
@@ -2283,7 +2409,9 @@ local function initializePlayerESP()
                 for player, data in pairs(holders) do
                     if data.label and data.root and data.root.Parent then
                         local distance = localRoot and math.floor((localRoot.Position-data.root.Position).Magnitude) or 0
-                        data.label.Text = "Name: "..player.Name.." | Distance: "..distance
+                        local humanoid=player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+                        local health=humanoid and math.floor(humanoid.Health+0.5) or 0
+                        data.label.Text=espShowDetails and (player.Name.." | "..distance.." studs | HP "..health) or player.Name
                     end
                 end
             end
@@ -2299,7 +2427,11 @@ local function initializePlayerESP()
 end
 
 initializePlayerESP()
+end
 
+initializeTeleportAndESP()
+
+useCategory("Teleport & Coordinates")
 sectionLabel("Custom Spawn Point", nextOrder())
 local spawnDelayRow = rowFrame(nextOrder(), 30)
 create("TextLabel", {
@@ -2549,7 +2681,7 @@ end)
 sectionLabel("Player Utilities", nextOrder())
 local spectatingPlayer = nil
 actionButton("Spectate GoTo Player", function(button)
-    local target = findGotoPlayer(gotoBox.Text)
+    local target = gotoApi.find(gotoApi.box.Text)
     local camera = workspace.CurrentCamera
     local humanoid = target and target.Character and target.Character:FindFirstChildOfClass("Humanoid")
     if camera and humanoid then camera.CameraSubject=humanoid; spectatingPlayer=target; button.Text="Watching "..target.Name
@@ -2561,7 +2693,7 @@ actionButton("Stop Spectating", function()
     if camera and humanoid then camera.CameraSubject=humanoid; camera.CameraType=Enum.CameraType.Custom end
 end)
 actionButton("Copy GoTo Player ID", function(button)
-    local target=findGotoPlayer(gotoBox.Text)
+    local target=gotoApi.find(gotoApi.box.Text)
     if target and setclipboard then setclipboard(tostring(target.UserId)); button.Text="Copied "..target.Name.." ID"
     else button.Text="Player/clipboard unavailable" end
 end)
@@ -2649,11 +2781,22 @@ sectionLabel("Named Waypoints", nextOrder())
 local waypointRow = rowFrame(nextOrder())
 local waypointBox = styledBox(waypointRow, { Size=UDim2.new(1,0,0,26), Text="Home", PlaceholderText="Waypoint name" })
 local waypoints = {}
+local waypointMarkers={}
+local waypointMarkersEnabled=false
+local waypointSortNearest=false
+local lastSelectedWaypoint=nil
+local pendingOverwrite=nil
 local refreshWaypointDropdown = function() end
 actionButton("Save / Update Waypoint", function(button)
     local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     local name = waypointBox.Text:match("^%s*(.-)%s*$")
-    if root and name ~= "" then waypoints[name] = root.CFrame; refreshWaypointDropdown(); button.Text = "Saved: "..name
+    if root and name ~= "" then
+        if waypoints[name] and pendingOverwrite~=name then
+            pendingOverwrite=name; button.Text="Click again to overwrite: "..name
+            task.delay(2.5,function() if pendingOverwrite==name then pendingOverwrite=nil end end)
+            return
+        end
+        pendingOverwrite=nil; waypoints[name] = root.CFrame; refreshWaypointDropdown(); button.Text = "Saved: "..name
         task.delay(1, function() if button.Parent then button.Text="Save / Update Waypoint" end end) end
 end)
 actionButton("Go To Waypoint", function(button)
@@ -2686,12 +2829,20 @@ registerFavorite("Quick Waypoint List", function()
     setWaypointDropdownOpen(true)
 end, waypointDropdownRow)
 refreshWaypointDropdown=function()
+    for _,marker in pairs(waypointMarkers) do marker:Destroy() end
+    table.clear(waypointMarkers)
     for _, child in ipairs(waypointDropdown:GetChildren()) do
         if child:IsA("TextButton") or child:IsA("TextLabel") then child:Destroy() end
     end
     local names={}
     for name in pairs(waypoints) do table.insert(names,name) end
-    table.sort(names,function(a,b) return a:lower()<b:lower() end)
+    local sortRoot=LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    table.sort(names,function(a,b)
+        if waypointSortNearest and sortRoot then
+            return (sortRoot.Position-waypoints[a].Position).Magnitude < (sortRoot.Position-waypoints[b].Position).Magnitude
+        end
+        return a:lower()<b:lower()
+    end)
     if #names==0 then
         create("TextLabel", { Size=UDim2.new(1,0,0,24), BackgroundTransparency=1,
             Text="No saved waypoints", TextColor3=Color3.fromRGB(140,130,155), TextSize=10,
@@ -2699,21 +2850,59 @@ refreshWaypointDropdown=function()
         return
     end
     for index,name in ipairs(names) do
-        local entry=create("TextButton", { Size=UDim2.new(1,0,0,26), BackgroundColor3=Color3.fromRGB(44,39,60),
-            BorderSizePixel=0, Text="Teleport: "..name, TextColor3=Color3.fromRGB(225,220,235),
-            TextSize=11, Font=Enum.Font.Gotham, LayoutOrder=index, Parent=waypointDropdown })
-        create("UICorner", { CornerRadius=UDim.new(0,5), Parent=entry })
-        entry.MouseButton1Click:Connect(function()
+        local entry=create("Frame",{Size=UDim2.new(1,0,0,28),BackgroundTransparency=1,LayoutOrder=index,Parent=waypointDropdown})
+        local rootNow=LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local distance=rootNow and math.floor((rootNow.Position-waypoints[name].Position).Magnitude) or 0
+        local go=create("TextButton", { Size=UDim2.new(1,-34,0,26), BackgroundColor3=Color3.fromRGB(44,39,60),
+            BorderSizePixel=0, Text=name.."  ("..distance.." studs)", TextColor3=Color3.fromRGB(225,220,235),
+            TextSize=11, Font=Enum.Font.Gotham, Parent=entry })
+        create("UICorner", { CornerRadius=UDim.new(0,5), Parent=go })
+        local remove=create("TextButton",{Size=UDim2.new(0,28,0,26),Position=UDim2.new(1,-28,0,0),
+            BackgroundColor3=Color3.fromRGB(85,45,55),BorderSizePixel=0,Text="X",TextColor3=Color3.fromRGB(255,225,230),
+            TextSize=11,Font=Enum.Font.GothamBold,Parent=entry})
+        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=remove})
+        go.MouseButton1Click:Connect(function()
             local root=LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             local point=waypoints[name]
             if root and point then
+                lastSelectedWaypoint=name
+                waypointBox.Text=name
                 root.CFrame=point
                 clearCharacterVelocity(LocalPlayer.Character)
             end
         end)
+        remove.MouseButton1Click:Connect(function() waypoints[name]=nil; refreshWaypointDropdown() end)
+        if waypointMarkersEnabled then
+            local marker=Instance.new("Part"); marker.Name="LucidWaypoint_"..name; marker.Anchored=true
+            marker.CanCollide=false; marker.CanTouch=false; marker.CanQuery=false; marker.Transparency=1
+            marker.Size=Vector3.new(1,1,1); marker.CFrame=waypoints[name]; marker.Parent=workspace
+            local bill=Instance.new("BillboardGui"); bill.AlwaysOnTop=true; bill.Size=UDim2.new(0,150,0,30); bill.Adornee=marker; bill.Parent=marker
+            local textLabel=Instance.new("TextLabel"); textLabel.Size=UDim2.new(1,0,1,0); textLabel.BackgroundTransparency=1
+            textLabel.Text="◆ "..name; textLabel.TextColor3=Color3.fromRGB(255,215,70); textLabel.TextStrokeTransparency=0
+            textLabel.TextSize=14; textLabel.Font=Enum.Font.GothamBold; textLabel.Parent=bill
+            waypointMarkers[name]=marker
+        end
     end
 end
 refreshWaypointDropdown()
+actionButton("Sort Waypoints: Alphabetical",function(button)
+    waypointSortNearest=not waypointSortNearest
+    button.Text="Sort Waypoints: "..(waypointSortNearest and "Nearest" or "Alphabetical")
+    refreshWaypointDropdown()
+end)
+actionButton("Rename Last Selected",function(button)
+    local newName=waypointBox.Text:match("^%s*(.-)%s*$")
+    if lastSelectedWaypoint and waypoints[lastSelectedWaypoint] and newName~="" then
+        if newName~=lastSelectedWaypoint and waypoints[newName] then button.Text="Name already exists"; return end
+        waypoints[newName]=waypoints[lastSelectedWaypoint]
+        if newName~=lastSelectedWaypoint then waypoints[lastSelectedWaypoint]=nil end
+        lastSelectedWaypoint=newName; refreshWaypointDropdown(); button.Text="Renamed to "..newName
+    else button.Text="Select a quick waypoint first" end
+end)
+createToggle("Show Waypoint Markers",nextOrder(),false,function(on)
+    waypointMarkersEnabled=on; refreshWaypointDropdown()
+end)
+addCleanup(function() for _,marker in pairs(waypointMarkers) do marker:Destroy() end end)
 actionButton("Delete Waypoint", function(button)
     waypoints[waypointBox.Text:match("^%s*(.-)%s*$")] = nil
     refreshWaypointDropdown()
@@ -2788,20 +2977,51 @@ end)
 -- Profiles save only portable settings; character positions are deliberately excluded.
 useCategory("Interface")
 sectionLabel("Profile & Safety", nextOrder())
-local profilePath = "LucidPanel/profile.json"
-actionButton("Save Default Profile", function(button)
+local compactMode=false
+createToggle("Compact Panel",nextOrder(),false,function(on)
+    compactMode=on
+    if not minimized then mainFrame.Size=on and UDim2.new(0,310,0,410) or UDim2.new(0,310,0,520) end
+    searchRow.Visible=not on
+    if statusLabelRef then statusLabelRef.Visible=not on end
+end)
+create("TextLabel",{Size=UDim2.new(1,0,0,32),BackgroundTransparency=1,
+    Text="Safety: intrusive toggles never auto-enable when a profile loads.",
+    TextWrapped=true,TextColor3=Color3.fromRGB(145,180,155),TextSize=10,Font=Enum.Font.Gotham,
+    LayoutOrder=nextOrder(),Parent=currentSection})
+local profileNameRow=rowFrame(nextOrder(),28)
+local profileNameBox=styledBox(profileNameRow,{Size=UDim2.new(1,0,0,26),Text="default",PlaceholderText="Profile name"})
+local function getProfilePath()
+    local safeName=profileNameBox.Text:gsub("[^%w_%-]","")
+    if safeName=="" then safeName="default" end
+    profileNameBox.Text=safeName
+    return "LucidPanel/profile_"..safeName..".json"
+end
+actionButton("Save Named Profile", function(button)
     if not writefile then button.Text="File API unavailable"; return end
     pcall(function() if makefolder and (not isfolder or not isfolder("LucidPanel")) then makefolder("LucidPanel") end end)
     -- Preserve waypoint groups belonging to other places when this profile is
     -- updated. PlaceId isolation prevents coordinates leaking across games.
     local payload = {}
+    local profilePath=getProfilePath()
     if readfile and (not isfile or isfile(profilePath)) then
         pcall(function() payload=HttpService:JSONDecode(readfile(profilePath)) end)
     end
     if type(payload)~="table" then payload={} end
     payload.values={ walkspeedValue=state.walkspeedValue, jumpHeightValue=state.jumpHeightValue,
-        maxZoomValue=state.maxZoomValue, flySpeed=state.flySpeed, fovValue=state.fovValue }
+        maxZoomValue=state.maxZoomValue, flySpeed=state.flySpeed, fovValue=state.fovValue,
+        antiFlingLinear=state.antiFlingLinear,antiFlingAngular=state.antiFlingAngular,
+        antiPushStrength=state.antiPushStrength,espTransparency=state.espTransparency }
     payload.toggles={}
+    payload.favorites={}
+    for name in pairs(state.favoriteNames) do payload.favorites[name]=true end
+    payload.keybinds={}
+    for name,key in pairs(shortcutKeys) do payload.keybinds[name]=key and key.Name or "Unbound" end
+    for _,name in ipairs({"Fly","Noclip","Freecam"}) do
+        if not shortcutKeys[name] then payload.keybinds[name]="Unbound" end
+    end
+    payload.interface={opacity=1-mainFrame.BackgroundTransparency,
+        xScale=mainFrame.Position.X.Scale,xOffset=mainFrame.Position.X.Offset,
+        yScale=mainFrame.Position.Y.Scale,yOffset=mainFrame.Position.Y.Offset}
     payload.waypointsByPlace=payload.waypointsByPlace or {}
     local savedWaypoints={}
     for name, point in pairs(waypoints) do
@@ -2812,13 +3032,26 @@ actionButton("Save Default Profile", function(button)
     local ok = pcall(writefile, profilePath, HttpService:JSONEncode(payload))
     button.Text = ok and "Profile saved" or "Save failed"
 end)
-actionButton("Load Default Profile", function(button)
+actionButton("Load Named Profile", function(button)
+    local profilePath=getProfilePath()
     if not readfile or (isfile and not isfile(profilePath)) then button.Text="No saved profile"; return end
     local ok, payload = pcall(function() return HttpService:JSONDecode(readfile(profilePath)) end)
     if not ok then button.Text="Profile invalid"; return end
     for key,value in pairs(payload.values or {}) do if state[key] ~= nil then state[key]=value end end
     flySpeedBox.Text=tostring(state.flySpeed); fovBox.Text=tostring(state.fovValue)
-    for name,value in pairs(payload.toggles or {}) do if toggleRegistry[name] then toggleRegistry[name](value) end end
+    -- Safe startup: remembered toggle states are intentionally not activated.
+    for name,setter in pairs(favoriteRegistry) do setter((payload.favorites or {})[name]==true) end
+    for name,value in pairs(payload.keybinds or {}) do
+        local key=value~="Unbound" and Enum.KeyCode[value] or nil
+        shortcutKeys[name]=key
+        if shortcutBoxes[name] then shortcutBoxes[name].Text=key and key.Name or "Unbound" end
+    end
+    local interface=payload.interface or {}
+    if type(interface.opacity)=="number" then setOpacity(math.floor(math.clamp(interface.opacity,0,1)*100+0.5)) end
+    if type(interface.xScale)=="number" and type(interface.xOffset)=="number"
+        and type(interface.yScale)=="number" and type(interface.yOffset)=="number" then
+        mainFrame.Position=UDim2.new(interface.xScale,interface.xOffset,interface.yScale,interface.yOffset)
+    end
     table.clear(waypoints)
     local savedWaypoints=(payload.waypointsByPlace or {})[tostring(game.PlaceId)] or {}
     for name, components in pairs(savedWaypoints) do
@@ -2832,6 +3065,23 @@ actionButton("Load Default Profile", function(button)
     end
     refreshWaypointDropdown()
     button.Text="Profile loaded"
+end)
+actionButton("Export Profile to Clipboard",function(button)
+    local path=getProfilePath()
+    if readfile and setclipboard and (not isfile or isfile(path)) then
+        local ok,data=pcall(readfile,path)
+        if ok then setclipboard(data); button.Text="Profile exported" else button.Text="Export failed" end
+    else button.Text="Save profile first" end
+end)
+actionButton("Import Profile from Text Box",function(button)
+    if not writefile then button.Text="File API unavailable"; return end
+    local text=profileNameBox.Text
+    local ok=pcall(function() HttpService:JSONDecode(text) end)
+    if not ok then button.Text="Paste JSON in name box"; return end
+    pcall(function() if makefolder and (not isfolder or not isfolder("LucidPanel")) then makefolder("LucidPanel") end end)
+    local path="LucidPanel/profile_imported.json"
+    local wrote=pcall(writefile,path,text)
+    if wrote then profileNameBox.Text="imported"; button.Text="Imported; press Load" else button.Text="Import failed" end
 end)
 
 -- Panic is also bound to End. It turns off intrusive features and repairs physics.
@@ -2851,25 +3101,44 @@ actionButton("PANIC / Reset Features [End]", function(button)
 end, Color3.fromRGB(145,50,65))
 sectionLabel("Quick Keybinds", nextOrder())
 local shortcutKeys = { Fly=Enum.KeyCode.F, Noclip=Enum.KeyCode.N, Freecam=Enum.KeyCode.P }
-local shortcutRow = rowFrame(nextOrder(), 32)
 local shortcutBoxes = {}
-for index, name in ipairs({"Fly","Noclip","Freecam"}) do
-    local box = styledBox(shortcutRow, { Size=UDim2.new(0.31,0,0,26), Position=UDim2.new((index-1)*0.345,0,0,0),
-        Text=name..":"..shortcutKeys[name].Name, PlaceholderText=name.." key" })
+for _, name in ipairs({"Fly","Noclip","Freecam"}) do
+    local shortcutRow = rowFrame(nextOrder(), 30)
+    create("TextLabel", {
+        Size=UDim2.new(0,72,1,0), BackgroundTransparency=1, Text=name,
+        TextColor3=Color3.fromRGB(205,200,215), TextSize=11, Font=Enum.Font.Gotham,
+        TextXAlignment=Enum.TextXAlignment.Left, Parent=shortcutRow,
+    })
+    local box = styledBox(shortcutRow, { Size=UDim2.new(0,100,0,26), Position=UDim2.new(0,76,0.5,-13),
+        Text=shortcutKeys[name].Name, PlaceholderText="Key name" })
     shortcutBoxes[name]=box
+    local clearButton=create("TextButton", {
+        Size=UDim2.new(0,60,0,24), Position=UDim2.new(1,-60,0.5,-12),
+        BackgroundColor3=Color3.fromRGB(75,48,62), BorderSizePixel=0, Text="Clear",
+        TextColor3=Color3.fromRGB(235,215,225), TextSize=10, Font=Enum.Font.GothamSemibold,
+        Parent=shortcutRow,
+    })
+    create("UICorner", { CornerRadius=UDim.new(0,5), Parent=clearButton })
+    clearButton.MouseButton1Click:Connect(function()
+        shortcutKeys[name]=nil
+        box.Text="Unbound"
+    end)
     box.FocusLost:Connect(function()
-        local requested=box.Text:match(":?(%w+)$")
+        local requested=box.Text:match("^%s*(%w+)%s*$")
         local key=requested and Enum.KeyCode[requested]
         if key and key ~= Enum.KeyCode.Unknown and key ~= Enum.KeyCode.RightAlt and key ~= Enum.KeyCode.End then
             shortcutKeys[name]=key
         end
-        box.Text=name..":"..shortcutKeys[name].Name
+        box.Text=shortcutKeys[name] and shortcutKeys[name].Name or "Unbound"
     end)
 end
 
 -- Live diagnostics and a copyable report.
 useCategory("Diagnostics")
 sectionLabel("Live Character Report", nextOrder())
+create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
+    Text="Lucid Panel v4.2 | Safe Startup",TextColor3=Color3.fromRGB(170,155,220),
+    TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,82), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
     Font=Enum.Font.Code, TextWrapped=true, TextXAlignment=Enum.TextXAlignment.Left,
@@ -2878,6 +3147,17 @@ create("UICorner", { CornerRadius=UDim.new(0,6), Parent=diagnosticsLabel })
 actionButton("Copy Diagnostic Report", function(button)
     if setclipboard then setclipboard(diagnosticsLabel.Text); button.Text="Report copied" else button.Text="Clipboard unavailable" end
 end)
+actionButton("Emergency Cleanup Only",function(button)
+    ContextActionService:UnbindAction("LucidFreecamSink")
+    restoreNoclipCollisions(); destroyPlatform(); removePlayerLight()
+    for _,item in ipairs(workspace:GetChildren()) do
+        if item.Name:match("^LucidWaypoint_") or item.Name=="LucidFloatPlatform" then item:Destroy() end
+    end
+    local camera=workspace.CurrentCamera
+    local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if camera and humanoid then camera.CameraType=Enum.CameraType.Custom; camera.CameraSubject=humanoid end
+    button.Text="Cleanup complete"; task.delay(1,function() if button.Parent then button.Text="Emergency Cleanup Only" end end)
+end,Color3.fromRGB(95,60,65))
 
 local flyKeys = { W=false, A=false, S=false, D=false, Space=false, LeftControl=false }
 track(UserInputService.InputBegan:Connect(function(input, processed)
@@ -3070,18 +3350,23 @@ track(RunService.Heartbeat:Connect(function(dt)
 
     -- Movable freeze: reject external horizontal/rotational impulses while
     -- preserving player-directed movement at the humanoid's current speed.
-    if state.antiPushEnabled and hrp and h and not state.freezeEnabled then
+    if state.antiPushEnabled and hrp and h and not state.freezeEnabled and not state.physicsBypass
+        and not h.SeatPart then
         hrp.Anchored = false
         hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
         local currentVelocity = hrp.AssemblyLinearVelocity
         local moveDirection = h.MoveDirection
         local intendedSpeed = state.walkspeedLocked and state.walkspeedValue or h.WalkSpeed
-        local intendedHorizontal = moveDirection.Magnitude > 0.01
-            and moveDirection.Unit * intendedSpeed
-            or Vector3.new(0, 0, 0)
+        local intendedHorizontal = moveDirection.Magnitude > 0.01 and moveDirection.Unit * intendedSpeed or Vector3.new(0,0,0)
+        if state.antiPushStrength=="Light" then
+            intendedHorizontal=Vector3.new(currentVelocity.X,0,currentVelocity.Z):Lerp(intendedHorizontal,0.45)
+        elseif state.antiPushStrength=="Normal" then
+            intendedHorizontal=Vector3.new(currentVelocity.X,0,currentVelocity.Z):Lerp(intendedHorizontal,0.8)
+        end
         -- Keep ordinary jump/fall motion, but remove extreme vertical impulses
         -- from slap tools as well.
-        local vertical = math.clamp(currentVelocity.Y, -85, 85)
+        local verticalLimit=state.antiPushStrength=="Strict" and 55 or (state.antiPushStrength=="Normal" and 85 or 130)
+        local vertical = math.clamp(currentVelocity.Y,-verticalLimit,verticalLimit)
         hrp.AssemblyLinearVelocity = Vector3.new(
             intendedHorizontal.X,
             vertical,
@@ -3091,17 +3376,17 @@ track(RunService.Heartbeat:Connect(function(dt)
 
     -- Anti-fling: suppress impossible momentum without interfering with normal
     -- running, jumping, vehicles, or deliberate teleports.
-    if hrp and state.antiFlingEnabled then
+    if hrp and state.antiFlingEnabled and not state.physicsBypass then
         local linear = hrp.AssemblyLinearVelocity
         local angular = hrp.AssemblyAngularVelocity
-        if linear.Magnitude > 250 then
+        if linear.Magnitude > state.antiFlingLinear then
             hrp.AssemblyLinearVelocity = Vector3.zero
             hrp.AssemblyAngularVelocity = Vector3.zero
-        elseif linear.Magnitude > 100 then
-            hrp.AssemblyLinearVelocity = linear.Unit * 100
+        elseif linear.Magnitude > state.antiFlingLinear*0.6 then
+            hrp.AssemblyLinearVelocity = linear.Unit * (state.antiFlingLinear*0.6)
         end
-        if angular.Magnitude > 100 then
-            hrp.AssemblyAngularVelocity = angular.Unit * 100
+        if angular.Magnitude > state.antiFlingAngular then
+            hrp.AssemblyAngularVelocity = angular.Unit * state.antiFlingAngular
         end
     end
 
@@ -3258,7 +3543,7 @@ if type(queueTeleport) == "function" then
 end
 
 if teleportQueueReady then
-    print("[Lucid Panel v4.1] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v4.2] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v4.1] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v4.2] Loaded, but this executor does not expose queue_on_teleport")
 end
