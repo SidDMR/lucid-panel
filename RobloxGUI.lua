@@ -69,24 +69,33 @@ local function makeResizableWindow(window, minimumWidth, minimumHeight)
     local handle=create("TextButton",{Name="ResizeHandle",Size=UDim2.new(0,20,0,20),
         Position=UDim2.new(1,-20,1,-20),BackgroundTransparency=1,BorderSizePixel=0,
         Text="◢",TextColor3=Color3.fromRGB(155,135,205),TextSize=16,
-        Font=Enum.Font.GothamBold,ZIndex=20,Parent=window})
+        Font=Enum.Font.GothamBold,ZIndex=100,Active=true,AutoButtonColor=false,Parent=window})
     local resizing=false
     local startPointer=nil
     local startSize=nil
+    local resizeInput=nil
+    local function pointerPosition()
+        if resizeInput and resizeInput.UserInputType==Enum.UserInputType.Touch then
+            return Vector2.new(resizeInput.Position.X,resizeInput.Position.Y)
+        end
+        return UserInputService:GetMouseLocation()
+    end
     handle.InputBegan:Connect(function(input)
         if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
-            resizing=true; startPointer=input.Position; startSize=window.AbsoluteSize
+            resizeInput=input; startPointer=pointerPosition(); startSize=window.AbsoluteSize; resizing=true
         end
     end)
-    track(UserInputService.InputChanged:Connect(function(input)
-        if resizing and (input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch) then
-            local delta=input.Position-startPointer
+    track(RunService.RenderStepped:Connect(function()
+        if resizing and startPointer and startSize then
+            local delta=pointerPosition()-startPointer
             window.Size=UDim2.new(0,math.max(minimumWidth or 220,startSize.X+delta.X),
                 0,math.max(minimumHeight or 150,startSize.Y+delta.Y))
         end
     end))
     track(UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then resizing=false end
+        if input==resizeInput or input.UserInputType==Enum.UserInputType.MouseButton1 then
+            resizing=false; resizeInput=nil; startPointer=nil; startSize=nil
+        end
     end))
     return handle
 end
@@ -620,6 +629,8 @@ end
 -- Favorites live in their own function scope to stay below executor register
 -- limits. Only the registration closure remains in the root chunk.
 local favoriteRegistry = {}
+local favoriteStatusRegistry = {}
+local activeFeatures = {}
 local registerFavorite = (function()
     useCategory("Favorites")
     sectionLabel("Pinned Tools", nextOrder())
@@ -717,6 +728,11 @@ local registerFavorite = (function()
     return function(label, trigger, sourceRow)
         local starred=false
         local favoriteEntry=nil
+        local favoriteCheck=nil
+        local function refreshFavoriteCheck(enabled)
+            if favoriteCheck then favoriteCheck.Visible=enabled==true end
+        end
+        favoriteStatusRegistry[label]=refreshFavoriteCheck
         local star=create("TextButton", {
             Size=UDim2.new(0,24,0,24), Position=UDim2.new(1,-76,0.5,-12),
             BackgroundTransparency=1, BorderSizePixel=0, Text="☆",
@@ -739,6 +755,10 @@ local registerFavorite = (function()
                     Parent=favoritesList,
                 })
                 create("UICorner", { CornerRadius=UDim.new(0,6), Parent=favoriteEntry })
+                favoriteCheck=create("TextLabel",{Size=UDim2.new(0,24,1,0),Position=UDim2.new(1,-28,0,0),
+                    BackgroundTransparency=1,Text="✓",TextColor3=Color3.fromRGB(75,225,120),
+                    TextSize=17,Font=Enum.Font.GothamBold,ZIndex=3,Visible=activeFeatures[label]==true,
+                    Parent=favoriteEntry})
                 favoriteEntry.MouseButton1Click:Connect(function()
                     -- Run after the GUI click releases so mouse-lock/shift-lock
                     -- input state is identical to using the original control.
@@ -747,6 +767,7 @@ local registerFavorite = (function()
             else
                 favoriteCount=math.max(0,favoriteCount-1)
                 if favoriteEntry then favoriteEntry:Destroy(); favoriteEntry=nil end
+                favoriteCheck=nil
                 emptyLabel.Visible=favoriteCount==0
             end
         end
@@ -756,7 +777,6 @@ local registerFavorite = (function()
     end
 end)()
 
-local activeFeatures = {}
 local toggleRegistry = {}
 local statusLabelRef = nil
 local function refreshFeatureStatus()
@@ -814,6 +834,7 @@ local function createToggle(labelText, order, default, callback)
         toggleBg.BackgroundColor3 = enabled and Color3.fromRGB(80, 200, 120) or Color3.fromRGB(60, 60, 70)
         knob.Position = enabled and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
         activeFeatures[labelText] = enabled
+        if favoriteStatusRegistry[labelText] then favoriteStatusRegistry[labelText](enabled) end
         refreshFeatureStatus()
         if callback then callback(enabled) end
     end
@@ -3483,6 +3504,7 @@ create("UICorner",{CornerRadius=UDim.new(0,6),Parent=profileListButton})
 local profileList=create("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
     BackgroundTransparency=1,Visible=false,LayoutOrder=nextOrder(),Parent=currentSection})
 create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,4),Parent=profileList})
+local loadNamedProfile
 local function refreshProfileList()
     for _,child in ipairs(profileList:GetChildren()) do if child:IsA("GuiObject") then child:Destroy() end end
     local names={}
@@ -3510,6 +3532,7 @@ local function refreshProfileList()
             entry.MouseButton1Click:Connect(function()
                 profileNameBox.Text=name; profileListOpen=false; profileList.Visible=false
                 profileListButton.Text=">  Saved Profiles: "..name
+                if loadNamedProfile then task.defer(function() loadNamedProfile(entry) end) end
             end)
         end
     end
@@ -3567,15 +3590,16 @@ actionButton("Save Named Profile", function(button)
     end
     payload.waypointsByPlace[tostring(game.PlaceId)]=savedWaypoints
     for name, enabled in pairs(activeFeatures) do payload.toggles[name]=enabled end
-    local ok = pcall(writefile, profilePath, HttpService:JSONEncode(payload))
-    button.Text = ok and "Profile saved" or "Save failed"
+    local encodedOk, encoded = pcall(function() return HttpService:JSONEncode(payload) end)
+    local ok = encodedOk and pcall(writefile, profilePath, encoded)
+    button.Text = ok and "Profile saved" or (encodedOk and "Write failed" or "Profile data invalid")
     if ok and profileListOpen then refreshProfileList() end
 end)
-actionButton("Load Named Profile", function(button)
+loadNamedProfile = function(button)
     local profilePath=getProfilePath()
     if not readfile or (isfile and not isfile(profilePath)) then button.Text="No saved profile"; return end
     local ok, payload = pcall(function() return HttpService:JSONDecode(readfile(profilePath)) end)
-    if not ok then button.Text="Profile invalid"; return end
+    if not ok or type(payload)~="table" then button.Text="Profile invalid"; return end
     for key,value in pairs(payload.values or {}) do if state[key] ~= nil then state[key]=value end end
     wsBox.Text=tostring(state.walkspeedValue); jhBox.Text=tostring(state.jumpHeightValue)
     zoomBox.Text=tostring(state.maxZoomValue); flySpeedBox.Text=tostring(state.flySpeed)
@@ -3637,7 +3661,9 @@ actionButton("Load Named Profile", function(button)
         if (payload.toggles or {})[name]==true then pcall(toggleRegistry[name],true) end
     end
     button.Text="Profile loaded — settings restored"
-end)
+end
+local loadProfileButton=actionButton("Load Named Profile", function(button) loadNamedProfile(button) end)
+loadProfileButton.Name="LoadNamedProfileButton"
 actionButton("Export Profile to Clipboard",function(button)
     local path=getProfilePath()
     if readfile and setclipboard and (not isfile or isfile(path)) then
