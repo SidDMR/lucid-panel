@@ -2819,6 +2819,8 @@ end)
 -- compilers retain Lua's per-function local/register limit; putting every UI
 -- control in the root chunk makes loadstring return nil before Lucid starts.
 local function initializeV4Toolkit()
+local shortcutKeys = { Fly=Enum.KeyCode.F, Noclip=Enum.KeyCode.N, Freecam=Enum.KeyCode.P }
+local shortcutBoxes = {}
 local function actionButton(textValue, callback, color)
     local row = rowFrame(nextOrder(), 32)
     local button = create("TextButton", {
@@ -3149,6 +3151,7 @@ create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,4
 local emoteCursor=nil
 local emoteQuery=""
 local emoteLoading=false
+local emoteRequestGeneration=0
 local function stopEmote()
     if emoteTrack then pcall(function() emoteTrack:Stop(0.15) end) end
     if emoteAnimation then emoteAnimation:Destroy() end
@@ -3194,13 +3197,31 @@ local function clearEmoteResults()
     for _,child in ipairs(emoteResults:GetChildren()) do if child:IsA("GuiObject") then child:Destroy() end end
 end
 local function loadEmoteResults(append)
-    if emoteLoading then return end
-    emoteLoading=true; emoteSearchButton.Text="Loading"
+    emoteLoading=true; emoteSearchButton.Text="Loading..."
+    emoteRequestGeneration=emoteRequestGeneration+1
+    local generation=emoteRequestGeneration
     if not append then emoteCursor=nil; clearEmoteResults() end
-    local url="https://catalog.roblox.com/v1/search/items/details?taxonomy=ioNxAT977DFP2hMnAJbsbF&salesTypeFilter=1&limit=30"
+    -- Official Marketplace API mapping: category 12 is Avatar Animations and
+    -- subcategory 39 is Emote Animations. This corresponds to the supplied
+    -- website taxonomy while remaining valid for the JSON API.
+    local url="https://catalog.roblox.com/v1/search/items/details?Category=12&Subcategory=39&IncludeNotForSale=false&salesTypeFilter=1&Limit=30&SortType=0&SortAggregation=5"
     if emoteQuery~="" then url=url.."&keyword="..HttpService:UrlEncode(emoteQuery) end
     if append and emoteCursor then url=url.."&cursor="..HttpService:UrlEncode(emoteCursor) end
-    local ok,data=pcall(function() return HttpService:JSONDecode(game:HttpGet(url)) end)
+    local completed=false
+    local ok=false
+    local data=nil
+    task.spawn(function()
+        ok,data=pcall(function() return HttpService:JSONDecode(game:HttpGet(url,true)) end)
+        completed=true
+    end)
+    local started=os.clock()
+    while not completed and os.clock()-started<12 and generation==emoteRequestGeneration do task.wait(0.1) end
+    if generation~=emoteRequestGeneration then return end
+    if not completed then
+        emoteLoading=false; emoteSearchButton.Text="Search"
+        emoteStatus.Text="Catalog request timed out — try again"
+        return
+    end
     if ok and data and type(data.data)=="table" then
         for _,item in ipairs(data.data) do
             local id=item.id or item.assetId
@@ -3214,9 +3235,10 @@ local function loadEmoteResults(append)
             end
         end
         emoteCursor=data.nextPageCursor
-        emoteStatus.Text=#data.data>0 and "Click an emote to loop it" or "No on-sale emotes found"
+        emoteStatus.Text=#data.data>0 and ("Found "..#data.data.." — click a name to play") or "No on-sale emotes matched that name"
     else
-        emoteStatus.Text="Catalog request unavailable in this executor/game"
+        local detail=type(data)=="table" and (data.message or data.errors and data.errors[1] and data.errors[1].message) or data
+        emoteStatus.Text="Catalog error: "..tostring(detail or "request unavailable")
     end
     emoteLoading=false; emoteSearchButton.Text="Search"
 end
@@ -3229,7 +3251,6 @@ end)
 actionButton("Load More Emotes",function(button)
     if emoteCursor then loadEmoteResults(true) else button.Text="No more results"; task.delay(1,function() if button.Parent then button.Text="Load More Emotes" end end) end
 end)
-task.defer(function() loadEmoteResults(false) end)
 track(LocalPlayer.CharacterAdded:Connect(function()
     if currentEmoteName then stopEmote() end
 end))
@@ -3304,9 +3325,9 @@ actionButton("Save Named Profile", function(button)
         antiPushStrength=state.antiPushStrength,espTransparency=state.espTransparency }
     payload.toggles={}
     payload.favorites={}
-    for name in pairs(state.favoriteNames) do payload.favorites[name]=true end
+    for name in pairs(state.favoriteNames or {}) do payload.favorites[name]=true end
     payload.keybinds={}
-    for name,key in pairs(shortcutKeys) do payload.keybinds[name]=key and key.Name or "Unbound" end
+    for name,key in pairs(shortcutKeys or {}) do payload.keybinds[name]=key and key.Name or "Unbound" end
     for _,name in ipairs({"Fly","Noclip","Freecam"}) do
         if not shortcutKeys[name] then payload.keybinds[name]="Unbound" end
     end
@@ -3338,11 +3359,11 @@ actionButton("Load Named Profile", function(button)
     for key,value in pairs(payload.values or {}) do if state[key] ~= nil then state[key]=value end end
     flySpeedBox.Text=tostring(state.flySpeed); fovBox.Text=tostring(state.fovValue)
     -- Safe startup: remembered toggle states are intentionally not activated.
-    for name,setter in pairs(favoriteRegistry) do setter((payload.favorites or {})[name]==true) end
+    for name,setter in pairs(favoriteRegistry or {}) do setter((payload.favorites or {})[name]==true) end
     for name,value in pairs(payload.keybinds or {}) do
         local key=value~="Unbound" and Enum.KeyCode[value] or nil
         shortcutKeys[name]=key
-        if shortcutBoxes[name] then shortcutBoxes[name].Text=key and key.Name or "Unbound" end
+        if shortcutBoxes and shortcutBoxes[name] then shortcutBoxes[name].Text=key and key.Name or "Unbound" end
     end
     local interface=payload.interface or {}
     if type(interface.opacity)=="number" then setOpacity(math.floor(math.clamp(interface.opacity,0,1)*100+0.5)) end
@@ -3350,7 +3371,7 @@ actionButton("Load Named Profile", function(button)
         and type(interface.yScale)=="number" and type(interface.yOffset)=="number" then
         mainFrame.Position=UDim2.new(interface.xScale,interface.xOffset,interface.yScale,interface.yOffset)
     end
-    for _,detachable in ipairs(detachableWindows) do
+    for _,detachable in ipairs(detachableWindows or {}) do
         local saved=(payload.windows or {})[detachable.window.Name]
         if type(saved)=="table" then
             if type(saved.xScale)=="number" and type(saved.xOffset)=="number"
@@ -3409,8 +3430,6 @@ actionButton("PANIC / Reset Features [End]", function(button)
     panicReset(); button.Text="Reset complete"; task.delay(1,function() if button.Parent then button.Text="PANIC / Reset Features [End]" end end)
 end, Color3.fromRGB(145,50,65))
 sectionLabel("Quick Keybinds", nextOrder())
-local shortcutKeys = { Fly=Enum.KeyCode.F, Noclip=Enum.KeyCode.N, Freecam=Enum.KeyCode.P }
-local shortcutBoxes = {}
 for _, name in ipairs({"Fly","Noclip","Freecam"}) do
     local shortcutRow = rowFrame(nextOrder(), 30)
     create("TextLabel", {
