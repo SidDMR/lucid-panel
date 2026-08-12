@@ -45,6 +45,7 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 local TeleportService = game:GetService("TeleportService")
 local Lighting = game:GetService("Lighting")
 local HttpService = game:GetService("HttpService")
+local AvatarEditorService = game:GetService("AvatarEditorService")
 local LocalPlayer = Players.LocalPlayer
 local mouse = LocalPlayer:GetMouse()
 
@@ -3149,6 +3150,7 @@ local emoteResults=create("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.Au
     BackgroundTransparency=1,LayoutOrder=nextOrder(),Parent=currentSection})
 create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,4),Parent=emoteResults})
 local emoteCursor=nil
+local emotePages=nil
 local emoteQuery=""
 local emoteLoading=false
 local emoteRequestGeneration=0
@@ -3200,18 +3202,36 @@ local function loadEmoteResults(append)
     emoteLoading=true; emoteSearchButton.Text="Loading..."
     emoteRequestGeneration=emoteRequestGeneration+1
     local generation=emoteRequestGeneration
-    if not append then emoteCursor=nil; clearEmoteResults() end
-    -- Official Marketplace API mapping: category 12 is Avatar Animations and
-    -- subcategory 39 is Emote Animations. This corresponds to the supplied
-    -- website taxonomy while remaining valid for the JSON API.
-    local url="https://catalog.roblox.com/v1/search/items/details?Category=12&Subcategory=39&IncludeNotForSale=false&salesTypeFilter=1&Limit=30&SortType=0&SortAggregation=5"
-    if emoteQuery~="" then url=url.."&keyword="..HttpService:UrlEncode(emoteQuery) end
-    if append and emoteCursor then url=url.."&cursor="..HttpService:UrlEncode(emoteCursor) end
+    if not append then emoteCursor=nil; emotePages=nil; clearEmoteResults() end
     local completed=false
     local ok=false
     local data=nil
     task.spawn(function()
-        ok,data=pcall(function() return HttpService:JSONDecode(game:HttpGet(url,true)) end)
+        ok,data=pcall(function()
+            if append and emotePages then
+                if emotePages.IsFinished then return {} end
+                emotePages:AdvanceToNextPageAsync()
+                return emotePages:GetCurrentPage()
+            end
+            local params=CatalogSearchParams.new()
+            params.SearchKeyword=emoteQuery
+            params.AssetTypes={Enum.AvatarAssetType.EmoteAnimation}
+            params.IncludeOffSale=false
+            params.SalesTypeFilter=Enum.SalesTypeFilter.All
+            params.SortType=Enum.CatalogSortType.Relevance
+            params.Limit=30
+            emotePages=AvatarEditorService:SearchCatalogAsync(params)
+            return emotePages:GetCurrentPage()
+        end)
+        if not ok then
+            local url="https://catalog.roblox.com/v1/search/items/details?Category=12&Subcategory=39&IncludeNotForSale=false&salesTypeFilter=1&Limit=30&SortType=0&SortAggregation=5"
+            if emoteQuery~="" then url=url.."&Keyword="..HttpService:UrlEncode(emoteQuery) end
+            local httpOk,body=pcall(function() return game:HttpGet(url,true) end)
+            if httpOk and type(body)=="string" and body:sub(1,1)=="{" then
+                local decoded=HttpService:JSONDecode(body)
+                data=decoded.data; emoteCursor=decoded.nextPageCursor; ok=type(data)=="table"
+            end
+        end
         completed=true
     end)
     local started=os.clock()
@@ -3222,11 +3242,11 @@ local function loadEmoteResults(append)
         emoteStatus.Text="Catalog request timed out — try again"
         return
     end
-    if ok and data and type(data.data)=="table" then
-        for _,item in ipairs(data.data) do
-            local id=item.id or item.assetId
+    if ok and type(data)=="table" then
+        for _,item in ipairs(data) do
+            local id=item.Id or item.id or item.AssetId or item.assetId
             if id then
-                local name=tostring(item.name or ("Emote "..id))
+                local name=tostring(item.Name or item.name or ("Emote "..id))
                 local button=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(45,40,62),
                     BorderSizePixel=0,Text=name,TextColor3=Color3.fromRGB(230,225,240),TextSize=11,
                     Font=Enum.Font.Gotham,Parent=emoteResults})
@@ -3234,11 +3254,9 @@ local function loadEmoteResults(append)
                 button.MouseButton1Click:Connect(function() playEmote(id,name) end)
             end
         end
-        emoteCursor=data.nextPageCursor
-        emoteStatus.Text=#data.data>0 and ("Found "..#data.data.." — click a name to play") or "No on-sale emotes matched that name"
+        emoteStatus.Text=#data>0 and ("Found "..#data.." — click a name to play") or "No on-sale emotes matched that name"
     else
-        local detail=type(data)=="table" and (data.message or data.errors and data.errors[1] and data.errors[1].message) or data
-        emoteStatus.Text="Catalog error: "..tostring(detail or "request unavailable")
+        emoteStatus.Text="Catalog search unavailable: "..tostring(data or "unknown error")
     end
     emoteLoading=false; emoteSearchButton.Text="Search"
 end
@@ -3249,7 +3267,8 @@ emoteSearchBox.FocusLost:Connect(function(enterPressed)
     if enterPressed then emoteQuery=emoteSearchBox.Text:match("^%s*(.-)%s*$"); loadEmoteResults(false) end
 end)
 actionButton("Load More Emotes",function(button)
-    if emoteCursor then loadEmoteResults(true) else button.Text="No more results"; task.delay(1,function() if button.Parent then button.Text="Load More Emotes" end end) end
+    if (emotePages and not emotePages.IsFinished) or emoteCursor then loadEmoteResults(true)
+    else button.Text="No more results"; task.delay(1,function() if button.Parent then button.Text="Load More Emotes" end end) end
 end)
 track(LocalPlayer.CharacterAdded:Connect(function()
     if currentEmoteName then stopEmote() end
@@ -3302,6 +3321,50 @@ create("TextLabel",{Size=UDim2.new(1,0,0,32),BackgroundTransparency=1,
     LayoutOrder=nextOrder(),Parent=currentSection})
 local profileNameRow=rowFrame(nextOrder(),28)
 local profileNameBox=styledBox(profileNameRow,{Size=UDim2.new(1,0,0,26),Text="default",PlaceholderText="Profile name"})
+local profileListOpen=false
+local profileListButton=create("TextButton",{Size=UDim2.new(1,0,0,26),BackgroundColor3=Color3.fromRGB(54,46,76),
+    BorderSizePixel=0,Text=">  Saved Profiles",TextColor3=Color3.fromRGB(225,215,240),TextSize=11,
+    Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
+create("UICorner",{CornerRadius=UDim.new(0,6),Parent=profileListButton})
+local profileList=create("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
+    BackgroundTransparency=1,Visible=false,LayoutOrder=nextOrder(),Parent=currentSection})
+create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,4),Parent=profileList})
+local function refreshProfileList()
+    for _,child in ipairs(profileList:GetChildren()) do if child:IsA("GuiObject") then child:Destroy() end end
+    local names={}
+    if listfiles then
+        local ok,files=pcall(listfiles,"LucidPanel")
+        if ok and type(files)=="table" then
+            for _,path in ipairs(files) do
+                local normalized=tostring(path):gsub("\\","/")
+                local name=normalized:match("/profile_([%w_%-]+)%.json$") or normalized:match("^profile_([%w_%-]+)%.json$")
+                if name then table.insert(names,name) end
+            end
+        end
+    end
+    table.sort(names,function(a,b) return a:lower()<b:lower() end)
+    if #names==0 then
+        create("TextLabel",{Size=UDim2.new(1,0,0,24),BackgroundTransparency=1,
+            Text=listfiles and "No saved profiles found" or "Executor cannot list files",
+            TextColor3=Color3.fromRGB(145,135,160),TextSize=10,Font=Enum.Font.Gotham,Parent=profileList})
+    else
+        for index,name in ipairs(names) do
+            local entry=create("TextButton",{Size=UDim2.new(1,0,0,26),BackgroundColor3=Color3.fromRGB(44,39,60),
+                BorderSizePixel=0,Text=name,TextColor3=Color3.fromRGB(225,220,235),TextSize=11,
+                Font=Enum.Font.Gotham,LayoutOrder=index,Parent=profileList})
+            create("UICorner",{CornerRadius=UDim.new(0,5),Parent=entry})
+            entry.MouseButton1Click:Connect(function()
+                profileNameBox.Text=name; profileListOpen=false; profileList.Visible=false
+                profileListButton.Text=">  Saved Profiles: "..name
+            end)
+        end
+    end
+end
+profileListButton.MouseButton1Click:Connect(function()
+    profileListOpen=not profileListOpen; profileList.Visible=profileListOpen
+    profileListButton.Text=(profileListOpen and "v  " or ">  ").."Saved Profiles"
+    if profileListOpen then refreshProfileList() end
+end)
 local function getProfilePath()
     local safeName=profileNameBox.Text:gsub("[^%w_%-]","")
     if safeName=="" then safeName="default" end
@@ -3350,6 +3413,7 @@ actionButton("Save Named Profile", function(button)
     for name, enabled in pairs(activeFeatures) do payload.toggles[name]=enabled end
     local ok = pcall(writefile, profilePath, HttpService:JSONEncode(payload))
     button.Text = ok and "Profile saved" or "Save failed"
+    if ok and profileListOpen then refreshProfileList() end
 end)
 actionButton("Load Named Profile", function(button)
     local profilePath=getProfilePath()
@@ -3413,6 +3477,13 @@ actionButton("Import Profile from Text Box",function(button)
     local wrote=pcall(writefile,path,text)
     if wrote then profileNameBox.Text="imported"; button.Text="Imported; press Load" else button.Text="Import failed" end
 end)
+actionButton("Delete Selected Profile",function(button)
+    local path=getProfilePath()
+    if delfile and (not isfile or isfile(path)) then
+        local ok=pcall(delfile,path); button.Text=ok and "Profile deleted" or "Delete failed"
+        if ok then refreshProfileList() end
+    else button.Text="Delete API/file unavailable" end
+end,Color3.fromRGB(90,48,60))
 
 -- Panic is also bound to End. It turns off intrusive features and repairs physics.
 local function panicReset()
