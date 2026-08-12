@@ -45,7 +45,6 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 local TeleportService = game:GetService("TeleportService")
 local Lighting = game:GetService("Lighting")
 local HttpService = game:GetService("HttpService")
-local AvatarEditorService = game:GetService("AvatarEditorService")
 local LocalPlayer = Players.LocalPlayer
 local mouse = LocalPlayer:GetMouse()
 
@@ -57,6 +56,32 @@ local detachableWindows = {}
 local function registerDetachableWindow(window, isPinned, isDetached, setPinned, setDetached)
     table.insert(detachableWindows, {window=window, isPinned=isPinned, isDetached=isDetached,
         setPinned=setPinned,setDetached=setDetached})
+end
+
+local function makeResizableWindow(window, minimumWidth, minimumHeight)
+    local handle=create("TextButton",{Name="ResizeHandle",Size=UDim2.new(0,20,0,20),
+        Position=UDim2.new(1,-20,1,-20),BackgroundTransparency=1,BorderSizePixel=0,
+        Text="◢",TextColor3=Color3.fromRGB(155,135,205),TextSize=16,
+        Font=Enum.Font.GothamBold,ZIndex=20,Parent=window})
+    local resizing=false
+    local startPointer=nil
+    local startSize=nil
+    handle.InputBegan:Connect(function(input)
+        if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+            resizing=true; startPointer=input.Position; startSize=window.AbsoluteSize
+        end
+    end)
+    track(UserInputService.InputChanged:Connect(function(input)
+        if resizing and (input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch) then
+            local delta=input.Position-startPointer
+            window.Size=UDim2.new(0,math.max(minimumWidth or 220,startSize.X+delta.X),
+                0,math.max(minimumHeight or 150,startSize.Y+delta.Y))
+        end
+    end))
+    track(UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then resizing=false end
+    end))
+    return handle
 end
 
 local function track(connection)
@@ -112,7 +137,14 @@ local state = {
     autoclickEnabled   = false,
     autoclickInterval  = 0.01, -- 10 ms
     espTransparency   = 0.78,
+    espMaxDistance    = 5000,
+    emoteSpeed        = 1,
+    keepEmoteMoving   = true,
+    gotoOffsetX       = 3,
+    gotoOffsetY       = 1,
+    gotoOffsetZ       = 0,
     favoriteNames     = {},
+    emoteFavorites    = {},
 }
 
 -- ============================================================
@@ -413,6 +445,7 @@ local function createCategory(name, order, openByDefault)
         BackgroundTransparency=1, BorderSizePixel=0, ScrollBarThickness=3,
         AutomaticCanvasSize=Enum.AutomaticSize.Y, CanvasSize=UDim2.new(), Parent=dock,
     })
+    makeResizableWindow(dock,220,120)
 
     local function refresh()
         header.Text = detached and ("[]  "..name) or ((open and "v  " or ">  ") .. name)
@@ -646,6 +679,7 @@ local registerFavorite = (function()
         BorderSizePixel=0, ScrollBarThickness=3, AutomaticCanvasSize=Enum.AutomaticSize.Y,
         CanvasSize=UDim2.new(), Parent=dock,
     })
+    makeResizableWindow(dock,210,120)
 
     local detached=false
     local favoriteCount=0
@@ -784,6 +818,7 @@ local function createToggle(labelText, order, default, callback)
     registerFavorite(labelText, fireToggle, row)
 
     toggleRegistry[labelText] = setToggle
+    activeFeatures[labelText] = default == true
     return function() return enabled end, fireToggle, setToggle
 end
 
@@ -807,6 +842,7 @@ local function createInlineToggle(parent, default)
     create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = knob })
 
     local enabled = default
+    local changeCallback = nil
     local btn = create("TextButton", {
         Size                   = UDim2.new(1, 0, 1, 0),
         BackgroundTransparency = 1,
@@ -815,15 +851,22 @@ local function createInlineToggle(parent, default)
     })
 
     local function toggle(callback)
+        changeCallback = callback
         btn.MouseButton1Click:Connect(function()
             enabled = not enabled
             toggleBg.BackgroundColor3 = enabled and Color3.fromRGB(80, 200, 120) or Color3.fromRGB(60, 60, 70)
             knob.Position = enabled and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
-            if callback then callback(enabled) end
+            if changeCallback then changeCallback(enabled) end
         end)
     end
 
-    return toggle, function() return enabled end
+    local function setInline(value)
+        enabled=value==true
+        toggleBg.BackgroundColor3=enabled and Color3.fromRGB(80,200,120) or Color3.fromRGB(60,60,70)
+        knob.Position=enabled and UDim2.new(1,-19,0.5,-8) or UDim2.new(0,3,0.5,-8)
+        if changeCallback then changeCallback(enabled) end
+    end
+    return toggle, function() return enabled end, setInline
 end
 
 -- ════════════════════════════════════════════════════════════
@@ -1166,9 +1209,12 @@ addCleanup(function()
     walkspeedConnection = nil
 end)
 
-local wsToggle, wsGetLocked = createInlineToggle(wsRow, false)
+local wsToggle, wsGetLocked, wsSetLocked = createInlineToggle(wsRow, false)
+toggleRegistry["Lock WalkSpeed"]=wsSetLocked
+activeFeatures["Lock WalkSpeed"]=false
 wsToggle(function(on)
     state.walkspeedLocked = on
+    activeFeatures["Lock WalkSpeed"]=on; refreshFeatureStatus()
     local char = LocalPlayer.Character
     local humanoid = char and char:FindFirstChildOfClass("Humanoid")
     bindWalkSpeedHumanoid(humanoid)
@@ -1207,8 +1253,11 @@ create("TextLabel", {
     Parent = jhRow,
 })
 
-local jhToggle, jhGetLocked = createInlineToggle(jhRow, false)
+local jhToggle, jhGetLocked, jhSetLocked = createInlineToggle(jhRow, false)
+toggleRegistry["Lock Jump Height"]=jhSetLocked
+activeFeatures["Lock Jump Height"]=false
 jhToggle(function(on)
+    activeFeatures["Lock Jump Height"]=on; refreshFeatureStatus()
     -- Always read the current box value when toggling
     local num = tonumber(jhBox.Text)
     if num then
@@ -1576,9 +1625,12 @@ create("TextLabel", {
     Parent = zoomRow,
 })
 
-local zoomToggle, zoomGetLocked = createInlineToggle(zoomRow, false)
+local zoomToggle, zoomGetLocked, zoomSetLocked = createInlineToggle(zoomRow, false)
+toggleRegistry["Lock Max Zoom"]=zoomSetLocked
+activeFeatures["Lock Max Zoom"]=false
 zoomToggle(function(on)
     state.maxZoomLocked = on
+    activeFeatures["Lock Max Zoom"]=on; refreshFeatureStatus()
     if on then
         local num = tonumber(zoomBox.Text)
         if num then
@@ -2140,7 +2192,7 @@ gotoApi.find=findGotoPlayer
 gotoApi.box=gotoBox
 
 local gotoBusy = false
-local gotoOffset=Vector3.new(3,1,0)
+local gotoOffset=Vector3.new(state.gotoOffsetX,state.gotoOffsetY,state.gotoOffsetZ)
 local previousTeleportCFrame=nil
 local recentGotoPlayers={}
 local gotoOffsetRow=rowFrame(nextOrder(),28)
@@ -2148,9 +2200,16 @@ create("TextLabel",{Size=UDim2.new(0,78,1,0),BackgroundTransparency=1,Text="Offs
     TextColor3=Color3.fromRGB(185,175,205),TextSize=10,Font=Enum.Font.Gotham,
     TextXAlignment=Enum.TextXAlignment.Left,Parent=gotoOffsetRow})
 local gotoOffsetBox=styledBox(gotoOffsetRow,{Size=UDim2.new(1,-84,0,24),Position=UDim2.new(0,84,0.5,-12),Text="3, 1, 0"})
+gotoApi.setOffset=function(x,y,z)
+    gotoOffset=Vector3.new(x,y,z)
+    state.gotoOffsetX,state.gotoOffsetY,state.gotoOffsetZ=x,y,z
+    gotoOffsetBox.Text=string.format("%g, %g, %g",x,y,z)
+end
 gotoOffsetBox.FocusLost:Connect(function()
     local x,y,z=gotoOffsetBox.Text:match("^%s*([%+%-%.%d]+)%s*,%s*([%+%-%.%d]+)%s*,%s*([%+%-%.%d]+)%s*$")
-    if tonumber(x) and tonumber(y) and tonumber(z) then gotoOffset=Vector3.new(tonumber(x),tonumber(y),tonumber(z)) end
+    if tonumber(x) and tonumber(y) and tonumber(z) then
+        gotoApi.setOffset(tonumber(x),tonumber(y),tonumber(z))
+    end
     gotoOffsetBox.Text=string.format("%g, %g, %g",gotoOffset.X,gotoOffset.Y,gotoOffset.Z)
 end)
 local function goToRequestedPlayer()
@@ -2288,6 +2347,7 @@ create("UICorner",{CornerRadius=UDim.new(0,6),Parent=gotoCollapseButton})
 local gotoDockContent=create("ScrollingFrame",{Size=UDim2.new(1,-16,1,-44),Position=UDim2.new(0,8,0,38),
     BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=3,AutomaticCanvasSize=Enum.AutomaticSize.Y,
     CanvasSize=UDim2.new(),Parent=gotoDock})
+makeResizableWindow(gotoDock,235,140)
 local gotoDetached=false
 local function setGotoDetached(value)
     gotoDetached=value
@@ -2319,7 +2379,7 @@ local function initializePlayerESP()
     local holders = {}
     local selectedPlayers = {}
     local espTransparency = state.espTransparency
-    local espMaxDistance=5000
+    local espMaxDistance=state.espMaxDistance
     local espShowDetails=true
     local espHideDead=true
     local espUseHighlight=false
@@ -2388,6 +2448,7 @@ local function initializePlayerESP()
     local distanceBox=styledBox(distanceRow,{Size=UDim2.new(0,70,0,24),Position=UDim2.new(1,-70,0.5,-12),Text="5000"})
     distanceBox.FocusLost:Connect(function()
         espMaxDistance=math.clamp(tonumber(distanceBox.Text) or espMaxDistance,25,100000)
+        state.espMaxDistance=espMaxDistance
         distanceBox.Text=tostring(espMaxDistance)
     end)
 
@@ -2820,6 +2881,7 @@ end)
 -- compilers retain Lua's per-function local/register limit; putting every UI
 -- control in the root chunk makes loadstring return nil before Lucid starts.
 local function initializeV4Toolkit()
+local AvatarEditorService=game:GetService("AvatarEditorService")
 local shortcutKeys = { Fly=Enum.KeyCode.F, Noclip=Enum.KeyCode.N, Freecam=Enum.KeyCode.P }
 local shortcutBoxes = {}
 local function actionButton(textValue, callback, color)
@@ -3134,21 +3196,36 @@ create("TextLabel",{Size=UDim2.new(1,-78,1,0),BackgroundTransparency=1,Text="Pla
     TextColor3=Color3.fromRGB(195,185,215),TextSize=11,Font=Enum.Font.Gotham,
     TextXAlignment=Enum.TextXAlignment.Left,Parent=emoteSpeedRow})
 local emoteSpeedBox=styledBox(emoteSpeedRow,{Size=UDim2.new(0,70,0,24),Position=UDim2.new(1,-70,0.5,-12),Text="1"})
-local emoteSpeed=1
+local emoteSpeed=state.emoteSpeed
 local emoteTrack=nil
 local emoteAnimation=nil
 local currentEmoteName=nil
+local emoteResumeBusy=false
+createToggle("Keep Emote While Moving",nextOrder(),true,function(on)
+    state.keepEmoteMoving=on
+end)
 emoteSpeedBox.FocusLost:Connect(function()
     emoteSpeed=math.clamp(tonumber(emoteSpeedBox.Text) or emoteSpeed,0.1,5)
+    state.emoteSpeed=emoteSpeed
     emoteSpeedBox.Text=string.format("%.1f",emoteSpeed)
     if emoteTrack then pcall(function() emoteTrack:AdjustSpeed(emoteSpeed) end) end
 end)
 local emoteStatus=create("TextLabel",{Size=UDim2.new(1,0,0,22),BackgroundTransparency=1,
     Text="Search to load emotes",TextColor3=Color3.fromRGB(160,150,180),TextSize=10,
     Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=nextOrder(),Parent=currentSection})
-local emoteResults=create("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
-    BackgroundTransparency=1,LayoutOrder=nextOrder(),Parent=currentSection})
+local emoteTabRow=rowFrame(nextOrder(),28)
+local browseEmotesButton=create("TextButton",{Size=UDim2.new(0.49,0,0,26),BackgroundColor3=Color3.fromRGB(78,55,135),
+    BorderSizePixel=0,Text="Browse",TextColor3=Color3.new(1,1,1),TextSize=11,Font=Enum.Font.GothamSemibold,Parent=emoteTabRow})
+local favoriteEmotesButton=create("TextButton",{Size=UDim2.new(0.49,0,0,26),Position=UDim2.new(0.51,0,0,0),
+    BackgroundColor3=Color3.fromRGB(48,43,65),BorderSizePixel=0,Text="Favorites",
+    TextColor3=Color3.fromRGB(225,215,235),TextSize=11,Font=Enum.Font.GothamSemibold,Parent=emoteTabRow})
+create("UICorner",{CornerRadius=UDim.new(0,5),Parent=browseEmotesButton}); create("UICorner",{CornerRadius=UDim.new(0,5),Parent=favoriteEmotesButton})
+local emoteResults=create("ScrollingFrame",{Size=UDim2.new(1,0,0,190),CanvasSize=UDim2.new(),
+    AutomaticCanvasSize=Enum.AutomaticSize.Y,BackgroundColor3=Color3.fromRGB(29,27,39),
+    BackgroundTransparency=0.2,BorderSizePixel=0,ScrollBarThickness=3,LayoutOrder=nextOrder(),Parent=currentSection})
+create("UICorner",{CornerRadius=UDim.new(0,6),Parent=emoteResults})
 create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,4),Parent=emoteResults})
+local emoteView="browse"
 local emoteCursor=nil
 local emotePages=nil
 local emoteQuery=""
@@ -3158,9 +3235,11 @@ local function stopEmote()
     if emoteTrack then pcall(function() emoteTrack:Stop(0.15) end) end
     if emoteAnimation then emoteAnimation:Destroy() end
     emoteTrack=nil; emoteAnimation=nil; currentEmoteName=nil
+    emoteResumeBusy=false
     emoteStatus.Text="Emote stopped"
 end
 local stopEmoteButton=actionButton("Stop Current Emote",function() stopEmote() end,Color3.fromRGB(85,48,62))
+emoteResults.LayoutOrder=nextOrder()
 local function playEmote(assetId,name)
     stopEmote()
     local character=LocalPlayer.Character
@@ -3195,10 +3274,69 @@ local function playEmote(assetId,name)
     track.Priority=Enum.AnimationPriority.Action4; track.Looped=true; track:AdjustSpeed(emoteSpeed)
     emoteStatus.Text="Playing: "..name.."  |  "..string.format("%.1fx",emoteSpeed)
 end
+track(RunService.Heartbeat:Connect(function()
+    if not state.keepEmoteMoving or not currentEmoteName or not emoteTrack or emoteResumeBusy then return end
+    if not emoteTrack.IsPlaying then
+        emoteResumeBusy=true
+        task.defer(function()
+            if state.keepEmoteMoving and currentEmoteName and emoteTrack then
+                pcall(function()
+                    emoteTrack.Priority=Enum.AnimationPriority.Action4
+                    emoteTrack.Looped=true
+                    emoteTrack:Play(0.05,1,emoteSpeed)
+                    emoteTrack:AdjustSpeed(emoteSpeed)
+                end)
+            end
+            emoteResumeBusy=false
+        end)
+    end
+end))
 local function clearEmoteResults()
     for _,child in ipairs(emoteResults:GetChildren()) do if child:IsA("GuiObject") then child:Destroy() end end
 end
-local function loadEmoteResults(append)
+local loadEmoteResults
+local function createEmoteResult(id,name)
+    local row=create("Frame",{Size=UDim2.new(1,-4,0,30),BackgroundTransparency=1,Parent=emoteResults})
+    local button=create("TextButton",{Size=UDim2.new(1,-36,0,28),BackgroundColor3=Color3.fromRGB(45,40,62),
+        BorderSizePixel=0,Text=name,TextColor3=Color3.fromRGB(230,225,240),TextSize=11,
+        Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=row})
+    create("UIPadding",{PaddingLeft=UDim.new(0,8),Parent=button})
+    create("UICorner",{CornerRadius=UDim.new(0,5),Parent=button})
+    local star=create("TextButton",{Size=UDim2.new(0,30,0,28),Position=UDim2.new(1,-30,0,0),
+        BackgroundColor3=Color3.fromRGB(55,48,70),BorderSizePixel=0,
+        Text=state.emoteFavorites[tostring(id)] and "★" or "☆",
+        TextColor3=state.emoteFavorites[tostring(id)] and Color3.fromRGB(255,215,55) or Color3.fromRGB(155,145,175),
+        TextSize=17,Font=Enum.Font.GothamBold,Parent=row})
+    create("UICorner",{CornerRadius=UDim.new(0,5),Parent=star})
+    button.MouseButton1Click:Connect(function() playEmote(id,name) end)
+    star.MouseButton1Click:Connect(function()
+        local key=tostring(id)
+        if state.emoteFavorites[key] then state.emoteFavorites[key]=nil else state.emoteFavorites[key]={id=id,name=name} end
+        star.Text=state.emoteFavorites[key] and "★" or "☆"
+        star.TextColor3=state.emoteFavorites[key] and Color3.fromRGB(255,215,55) or Color3.fromRGB(155,145,175)
+        if emoteView=="favorites" then row:Destroy() end
+    end)
+end
+local function showFavoriteEmotes()
+    emoteView="favorites"; clearEmoteResults()
+    browseEmotesButton.BackgroundColor3=Color3.fromRGB(48,43,65)
+    favoriteEmotesButton.BackgroundColor3=Color3.fromRGB(78,55,135)
+    local favorites={}
+    for _,info in pairs(state.emoteFavorites or {}) do table.insert(favorites,info) end
+    table.sort(favorites,function(a,b) return tostring(a.name):lower()<tostring(b.name):lower() end)
+    for _,info in ipairs(favorites) do createEmoteResult(info.id,info.name) end
+    emoteStatus.Text=#favorites>0 and ("Favorite emotes: "..#favorites) or "No favorite emotes yet"
+end
+browseEmotesButton.MouseButton1Click:Connect(function()
+    emoteView="browse"; browseEmotesButton.BackgroundColor3=Color3.fromRGB(78,55,135)
+    favoriteEmotesButton.BackgroundColor3=Color3.fromRGB(48,43,65)
+    emoteQuery=emoteSearchBox.Text:match("^%s*(.-)%s*$"); loadEmoteResults(false)
+end)
+favoriteEmotesButton.MouseButton1Click:Connect(showFavoriteEmotes)
+loadEmoteResults=function(append)
+    emoteView="browse"
+    browseEmotesButton.BackgroundColor3=Color3.fromRGB(78,55,135)
+    favoriteEmotesButton.BackgroundColor3=Color3.fromRGB(48,43,65)
     emoteLoading=true; emoteSearchButton.Text="Loading..."
     emoteRequestGeneration=emoteRequestGeneration+1
     local generation=emoteRequestGeneration
@@ -3247,11 +3385,7 @@ local function loadEmoteResults(append)
             local id=item.Id or item.id or item.AssetId or item.assetId
             if id then
                 local name=tostring(item.Name or item.name or ("Emote "..id))
-                local button=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(45,40,62),
-                    BorderSizePixel=0,Text=name,TextColor3=Color3.fromRGB(230,225,240),TextSize=11,
-                    Font=Enum.Font.Gotham,Parent=emoteResults})
-                create("UICorner",{CornerRadius=UDim.new(0,5),Parent=button})
-                button.MouseButton1Click:Connect(function() playEmote(id,name) end)
+                createEmoteResult(id,name)
             end
         end
         emoteStatus.Text=#data>0 and ("Found "..#data.." — click a name to play") or "No on-sale emotes matched that name"
@@ -3266,10 +3400,22 @@ end)
 emoteSearchBox.FocusLost:Connect(function(enterPressed)
     if enterPressed then emoteQuery=emoteSearchBox.Text:match("^%s*(.-)%s*$"); loadEmoteResults(false) end
 end)
-actionButton("Load More Emotes",function(button)
+local loadMoreEmotesButton=actionButton("Load More Emotes",function(button)
     if (emotePages and not emotePages.IsFinished) or emoteCursor then loadEmoteResults(true)
     else button.Text="No more results"; task.delay(1,function() if button.Parent then button.Text="Load More Emotes" end end) end
 end)
+loadMoreEmotesButton.Parent.LayoutOrder=emoteResults.LayoutOrder
+emoteResults.LayoutOrder=nextOrder()
+local emotesDock=categoryMeta["Emotes"] and categoryMeta["Emotes"].dock
+if emotesDock then
+    track(emotesDock:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+        if emotesDock.Visible then
+            emoteResults.Size=UDim2.new(1,-4,0,math.max(100,emotesDock.AbsoluteSize.Y-255))
+        else
+            emoteResults.Size=UDim2.new(1,0,0,190)
+        end
+    end))
+end
 track(LocalPlayer.CharacterAdded:Connect(function()
     if currentEmoteName then stopEmote() end
 end))
@@ -3382,13 +3528,14 @@ actionButton("Save Named Profile", function(button)
         pcall(function() payload=HttpService:JSONDecode(readfile(profilePath)) end)
     end
     if type(payload)~="table" then payload={} end
-    payload.values={ walkspeedValue=state.walkspeedValue, jumpHeightValue=state.jumpHeightValue,
-        maxZoomValue=state.maxZoomValue, flySpeed=state.flySpeed, fovValue=state.fovValue,
-        antiFlingLinear=state.antiFlingLinear,antiFlingAngular=state.antiFlingAngular,
-        antiPushStrength=state.antiPushStrength,espTransparency=state.espTransparency }
+    payload.values={}
+    for key,value in pairs(state) do
+        if type(value)=="number" or type(value)=="string" then payload.values[key]=value end
+    end
     payload.toggles={}
     payload.favorites={}
     for name in pairs(state.favoriteNames or {}) do payload.favorites[name]=true end
+    payload.emoteFavorites=state.emoteFavorites or {}
     payload.keybinds={}
     for name,key in pairs(shortcutKeys or {}) do payload.keybinds[name]=key and key.Name or "Unbound" end
     for _,name in ipairs({"Fly","Noclip","Freecam"}) do
@@ -3402,6 +3549,7 @@ actionButton("Save Named Profile", function(button)
         local window=detachable.window
         payload.windows[window.Name]={xScale=window.Position.X.Scale,xOffset=window.Position.X.Offset,
             yScale=window.Position.Y.Scale,yOffset=window.Position.Y.Offset,
+            width=window.Size.X.Offset,height=window.Size.Y.Offset,
             pinned=detachable.isPinned(),detached=detachable.isDetached()}
     end
     payload.waypointsByPlace=payload.waypointsByPlace or {}
@@ -3421,8 +3569,18 @@ actionButton("Load Named Profile", function(button)
     local ok, payload = pcall(function() return HttpService:JSONDecode(readfile(profilePath)) end)
     if not ok then button.Text="Profile invalid"; return end
     for key,value in pairs(payload.values or {}) do if state[key] ~= nil then state[key]=value end end
-    flySpeedBox.Text=tostring(state.flySpeed); fovBox.Text=tostring(state.fovValue)
+    wsBox.Text=tostring(state.walkspeedValue); jhBox.Text=tostring(state.jumpHeightValue)
+    zoomBox.Text=tostring(state.maxZoomValue); flySpeedBox.Text=tostring(state.flySpeed)
+    fovBox.Text=tostring(state.fovValue); flingLinearBox.Text=tostring(state.antiFlingLinear)
+    flingAngularBox.Text=tostring(state.antiFlingAngular); fogBox.Text=tostring(state.fogEndValue)
+    clockBox.Text=tostring(state.nightClockTime); lightRangeBox.Text=tostring(state.playerLightRange)
+    lightPowerBox.Text=tostring(state.playerLightPower); spawnDelayBox.Text=tostring(state.spawnpointDelay)
+    antiPushStrengthButton.Text="Anti Push Strength: "..tostring(state.antiPushStrength)
+    distanceBox.Text=tostring(state.espMaxDistance); espMaxDistance=state.espMaxDistance
+    emoteSpeed=state.emoteSpeed; emoteSpeedBox.Text=string.format("%.1f",emoteSpeed)
+    if gotoApi.setOffset then gotoApi.setOffset(state.gotoOffsetX,state.gotoOffsetY,state.gotoOffsetZ) end
     -- Safe startup: remembered toggle states are intentionally not activated.
+    state.emoteFavorites=type(payload.emoteFavorites)=="table" and payload.emoteFavorites or {}
     for name,setter in pairs(favoriteRegistry or {}) do setter((payload.favorites or {})[name]==true) end
     for name,value in pairs(payload.keybinds or {}) do
         local key=value~="Unbound" and Enum.KeyCode[value] or nil
@@ -3442,6 +3600,9 @@ actionButton("Load Named Profile", function(button)
                 and type(saved.yScale)=="number" and type(saved.yOffset)=="number" then
                 detachable.window.Position=UDim2.new(saved.xScale,saved.xOffset,saved.yScale,saved.yOffset)
             end
+            if type(saved.width)=="number" and type(saved.height)=="number" then
+                detachable.window.Size=UDim2.new(0,math.max(210,saved.width),0,math.max(34,saved.height))
+            end
             if detachable.setPinned then detachable.setPinned(saved.pinned==true) end
             if detachable.setDetached then detachable.setDetached(saved.detached==true) end
         end
@@ -3458,7 +3619,16 @@ actionButton("Load Named Profile", function(button)
         end
     end
     refreshWaypointDropdown()
-    button.Text="Profile loaded"
+    -- Restore the complete saved feature state. Reset first so callbacks clean
+    -- up the live state, then enable the saved set in a deterministic order.
+    local toggleNames={}
+    for name in pairs(toggleRegistry or {}) do table.insert(toggleNames,name) end
+    table.sort(toggleNames)
+    for _,name in ipairs(toggleNames) do pcall(toggleRegistry[name],false) end
+    for _,name in ipairs(toggleNames) do
+        if (payload.toggles or {})[name]==true then pcall(toggleRegistry[name],true) end
+    end
+    button.Text="Profile loaded — settings restored"
 end)
 actionButton("Export Profile to Clipboard",function(button)
     local path=getProfilePath()
