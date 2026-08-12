@@ -74,6 +74,7 @@ local state = {
     freezeEnabled      = false,
     freezeRoot         = nil,
     freezeWasAnchored  = false,
+    antiPushEnabled    = false,
     infJumpEnabled     = false,
     maxZoomLocked      = false,
     maxZoomValue       = 128, -- Roblox default
@@ -1350,6 +1351,19 @@ end
 
 createToggle("Freeze Me", nextOrder(), false, setSelfFrozen)
 addCleanup(function() setSelfFrozen(false) end)
+
+createToggle("Mobile Freeze / Anti Push", nextOrder(), false, function(on)
+    state.antiPushEnabled = on
+    if on and state.freezeEnabled and toggleRegistry["Freeze Me"] then
+        toggleRegistry["Freeze Me"](false)
+    end
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if root then
+        root.Anchored = false
+        root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+    end
+end)
 
 -- ════════════════════════════════════════════════════════════
 --  SECTION 6 ─ INFINITE JUMP
@@ -2635,10 +2649,11 @@ sectionLabel("Named Waypoints", nextOrder())
 local waypointRow = rowFrame(nextOrder())
 local waypointBox = styledBox(waypointRow, { Size=UDim2.new(1,0,0,26), Text="Home", PlaceholderText="Waypoint name" })
 local waypoints = {}
+local refreshWaypointDropdown = function() end
 actionButton("Save / Update Waypoint", function(button)
     local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     local name = waypointBox.Text:match("^%s*(.-)%s*$")
-    if root and name ~= "" then waypoints[name] = root.CFrame; button.Text = "Saved: "..name
+    if root and name ~= "" then waypoints[name] = root.CFrame; refreshWaypointDropdown(); button.Text = "Saved: "..name
         task.delay(1, function() if button.Parent then button.Text="Save / Update Waypoint" end end) end
 end)
 actionButton("Go To Waypoint", function(button)
@@ -2647,8 +2662,61 @@ actionButton("Go To Waypoint", function(button)
     if root and point then root.CFrame = point; clearCharacterVelocity(LocalPlayer.Character)
     else button.Text="Waypoint not found"; task.delay(1, function() if button.Parent then button.Text="Go To Waypoint" end end) end
 end)
+local waypointDropdownRow = rowFrame(nextOrder(), 30)
+local waypointDropdownButton = create("TextButton", {
+    Size=UDim2.new(1,0,0,26), BackgroundColor3=Color3.fromRGB(54,46,76),
+    BorderSizePixel=0, Text=">  Quick Waypoint List", TextColor3=Color3.fromRGB(225,215,240),
+    TextSize=11, Font=Enum.Font.GothamSemibold, Parent=waypointDropdownRow,
+})
+create("UICorner", { CornerRadius=UDim.new(0,6), Parent=waypointDropdownButton })
+local waypointDropdown = create("Frame", {
+    Size=UDim2.new(1,0,0,0), AutomaticSize=Enum.AutomaticSize.Y,
+    BackgroundTransparency=1, Visible=false, LayoutOrder=nextOrder(), Parent=currentSection,
+})
+create("UIListLayout", { SortOrder=Enum.SortOrder.LayoutOrder, Padding=UDim.new(0,4), Parent=waypointDropdown })
+local waypointDropdownOpen=false
+local function setWaypointDropdownOpen(value)
+    waypointDropdownOpen=value
+    waypointDropdown.Visible=value
+    waypointDropdownButton.Text=(value and "v  " or ">  ").."Quick Waypoint List"
+end
+waypointDropdownButton.MouseButton1Click:Connect(function() setWaypointDropdownOpen(not waypointDropdownOpen) end)
+registerFavorite("Quick Waypoint List", function()
+    categoryMeta["Waypoints"].setOpen(true)
+    setWaypointDropdownOpen(true)
+end, waypointDropdownRow)
+refreshWaypointDropdown=function()
+    for _, child in ipairs(waypointDropdown:GetChildren()) do
+        if child:IsA("TextButton") or child:IsA("TextLabel") then child:Destroy() end
+    end
+    local names={}
+    for name in pairs(waypoints) do table.insert(names,name) end
+    table.sort(names,function(a,b) return a:lower()<b:lower() end)
+    if #names==0 then
+        create("TextLabel", { Size=UDim2.new(1,0,0,24), BackgroundTransparency=1,
+            Text="No saved waypoints", TextColor3=Color3.fromRGB(140,130,155), TextSize=10,
+            Font=Enum.Font.Gotham, Parent=waypointDropdown })
+        return
+    end
+    for index,name in ipairs(names) do
+        local entry=create("TextButton", { Size=UDim2.new(1,0,0,26), BackgroundColor3=Color3.fromRGB(44,39,60),
+            BorderSizePixel=0, Text="Teleport: "..name, TextColor3=Color3.fromRGB(225,220,235),
+            TextSize=11, Font=Enum.Font.Gotham, LayoutOrder=index, Parent=waypointDropdown })
+        create("UICorner", { CornerRadius=UDim.new(0,5), Parent=entry })
+        entry.MouseButton1Click:Connect(function()
+            local root=LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            local point=waypoints[name]
+            if root and point then
+                root.CFrame=point
+                clearCharacterVelocity(LocalPlayer.Character)
+            end
+        end)
+    end
+end
+refreshWaypointDropdown()
 actionButton("Delete Waypoint", function(button)
     waypoints[waypointBox.Text:match("^%s*(.-)%s*$")] = nil
+    refreshWaypointDropdown()
     button.Text="Deleted"; task.delay(1, function() if button.Parent then button.Text="Delete Waypoint" end end)
 end)
 
@@ -2724,8 +2792,22 @@ local profilePath = "LucidPanel/profile.json"
 actionButton("Save Default Profile", function(button)
     if not writefile then button.Text="File API unavailable"; return end
     pcall(function() if makefolder and (not isfolder or not isfolder("LucidPanel")) then makefolder("LucidPanel") end end)
-    local payload = { values={ walkspeedValue=state.walkspeedValue, jumpHeightValue=state.jumpHeightValue,
-        maxZoomValue=state.maxZoomValue, flySpeed=state.flySpeed, fovValue=state.fovValue }, toggles={} }
+    -- Preserve waypoint groups belonging to other places when this profile is
+    -- updated. PlaceId isolation prevents coordinates leaking across games.
+    local payload = {}
+    if readfile and (not isfile or isfile(profilePath)) then
+        pcall(function() payload=HttpService:JSONDecode(readfile(profilePath)) end)
+    end
+    if type(payload)~="table" then payload={} end
+    payload.values={ walkspeedValue=state.walkspeedValue, jumpHeightValue=state.jumpHeightValue,
+        maxZoomValue=state.maxZoomValue, flySpeed=state.flySpeed, fovValue=state.fovValue }
+    payload.toggles={}
+    payload.waypointsByPlace=payload.waypointsByPlace or {}
+    local savedWaypoints={}
+    for name, point in pairs(waypoints) do
+        savedWaypoints[name]={point:GetComponents()}
+    end
+    payload.waypointsByPlace[tostring(game.PlaceId)]=savedWaypoints
     for name, enabled in pairs(activeFeatures) do payload.toggles[name]=enabled end
     local ok = pcall(writefile, profilePath, HttpService:JSONEncode(payload))
     button.Text = ok and "Profile saved" or "Save failed"
@@ -2737,6 +2819,18 @@ actionButton("Load Default Profile", function(button)
     for key,value in pairs(payload.values or {}) do if state[key] ~= nil then state[key]=value end end
     flySpeedBox.Text=tostring(state.flySpeed); fovBox.Text=tostring(state.fovValue)
     for name,value in pairs(payload.toggles or {}) do if toggleRegistry[name] then toggleRegistry[name](value) end end
+    table.clear(waypoints)
+    local savedWaypoints=(payload.waypointsByPlace or {})[tostring(game.PlaceId)] or {}
+    for name, components in pairs(savedWaypoints) do
+        if type(name)=="string" and type(components)=="table" and #components==12 then
+            local valid=true
+            for index=1,12 do
+                if type(components[index])~="number" then valid=false; break end
+            end
+            if valid then waypoints[name]=CFrame.new(unpack(components)) end
+        end
+    end
+    refreshWaypointDropdown()
     button.Text="Profile loaded"
 end)
 
@@ -2972,6 +3066,27 @@ track(RunService.Heartbeat:Connect(function(dt)
                 hrp.CFrame = CFrame.lookAt(hrp.Position, hrp.Position + flatLook.Unit)
             end
         end
+    end
+
+    -- Movable freeze: reject external horizontal/rotational impulses while
+    -- preserving player-directed movement at the humanoid's current speed.
+    if state.antiPushEnabled and hrp and h and not state.freezeEnabled then
+        hrp.Anchored = false
+        hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+        local currentVelocity = hrp.AssemblyLinearVelocity
+        local moveDirection = h.MoveDirection
+        local intendedSpeed = state.walkspeedLocked and state.walkspeedValue or h.WalkSpeed
+        local intendedHorizontal = moveDirection.Magnitude > 0.01
+            and moveDirection.Unit * intendedSpeed
+            or Vector3.new(0, 0, 0)
+        -- Keep ordinary jump/fall motion, but remove extreme vertical impulses
+        -- from slap tools as well.
+        local vertical = math.clamp(currentVelocity.Y, -85, 85)
+        hrp.AssemblyLinearVelocity = Vector3.new(
+            intendedHorizontal.X,
+            vertical,
+            intendedHorizontal.Z
+        )
     end
 
     -- Anti-fling: suppress impossible momentum without interfering with normal
