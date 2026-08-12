@@ -3606,15 +3606,19 @@ loadNamedProfile = function(button)
     local ok, payload = pcall(function() return HttpService:JSONDecode(readfile(profilePath)) end)
     if not ok or type(payload)~="table" then button.Text="Profile invalid"; return end
     for key,value in pairs(payload.values or {}) do if state[key] ~= nil then state[key]=value end end
-    wsBox.Text=tostring(state.walkspeedValue); jhBox.Text=tostring(state.jumpHeightValue)
-    zoomBox.Text=tostring(state.maxZoomValue); flySpeedBox.Text=tostring(state.flySpeed)
-    fovBox.Text=tostring(state.fovValue); flingLinearBox.Text=tostring(state.antiFlingLinear)
-    flingAngularBox.Text=tostring(state.antiFlingAngular); fogBox.Text=tostring(state.fogEndValue)
-    clockBox.Text=tostring(state.nightClockTime); lightRangeBox.Text=tostring(state.playerLightRange)
-    lightPowerBox.Text=tostring(state.playerLightPower); spawnDelayBox.Text=tostring(state.spawnpointDelay)
-    antiPushStrengthButton.Text="Anti Push Strength: "..tostring(state.antiPushStrength)
-    distanceBox.Text=tostring(state.espMaxDistance); espMaxDistance=state.espMaxDistance
-    emoteSpeed=state.emoteSpeed; emoteSpeedBox.Text=string.format("%.1f",emoteSpeed)
+    local function updateText(control,value)
+        if control and control.Parent then control.Text=tostring(value) end
+    end
+    updateText(wsBox,state.walkspeedValue); updateText(jhBox,state.jumpHeightValue)
+    updateText(zoomBox,state.maxZoomValue); updateText(flySpeedBox,state.flySpeed)
+    updateText(fovBox,state.fovValue); updateText(flingLinearBox,state.antiFlingLinear)
+    updateText(flingAngularBox,state.antiFlingAngular); updateText(fogBox,state.fogEndValue)
+    updateText(clockBox,state.nightClockTime); updateText(lightRangeBox,state.playerLightRange)
+    updateText(lightPowerBox,state.playerLightPower); updateText(spawnDelayBox,state.spawnpointDelay)
+    if antiPushStrengthButton and antiPushStrengthButton.Parent then
+        antiPushStrengthButton.Text="Anti Push Strength: "..tostring(state.antiPushStrength)
+    end
+    emoteSpeed=state.emoteSpeed; updateText(emoteSpeedBox,string.format("%.1f",emoteSpeed))
     if gotoApi.setOffset then gotoApi.setOffset(state.gotoOffsetX,state.gotoOffsetY,state.gotoOffsetZ) end
     -- Safe startup: remembered toggle states are intentionally not activated.
     state.emoteFavorites=type(payload.emoteFavorites)=="table" and payload.emoteFavorites or {}
