@@ -3738,6 +3738,35 @@ end
 
 -- Live diagnostics and a copyable report.
 useCategory("Diagnostics")
+sectionLabel("Explorer", nextOrder())
+actionButton("Launch Dex++ Explorer", function(button)
+    if sharedEnvironment.__LUCID_DEX_LOADING then
+        button.Text="Dex++ is already loading"
+        task.delay(1.5,function() if button.Parent then button.Text="Launch Dex++ Explorer" end end)
+        return
+    end
+    if type(loadstring)~="function" then
+        button.Text="Executor has no loadstring"
+        return
+    end
+    sharedEnvironment.__LUCID_DEX_LOADING=true
+    button.Text="Loading Dex++..."
+    task.spawn(function()
+        local fetched, source=pcall(function()
+            return game:HttpGet("https://github.com/AZYsGithub/DexPlusPlus/releases/latest/download/out.lua")
+        end)
+        local launched=false
+        if fetched and type(source)=="string" and #source>0 then
+            local compiled, dexChunk=pcall(loadstring,source)
+            if compiled and type(dexChunk)=="function" then launched=pcall(dexChunk) end
+        end
+        sharedEnvironment.__LUCID_DEX_LOADING=nil
+        if button.Parent then
+            button.Text=launched and "Dex++ launched" or "Dex++ failed to load"
+            task.delay(1.5,function() if button.Parent then button.Text="Launch Dex++ Explorer" end end)
+        end
+    end)
+end,Color3.fromRGB(70,52,115))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
     Text="Lucid Panel v4.3 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
