@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v4.2
+--// Lucid Panel v4.3
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -230,7 +230,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v4.2",
+    Text                   = ">>  Lucid Panel v4.3",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -363,20 +363,90 @@ local function createCategory(name, order, openByDefault)
         Parent = body,
     })
     local open = openByDefault
+    local detached = false
+    local pinned = false
+
+    -- Huzuni-style modular category window. The original body is reparented,
+    -- so controls retain their state and connections instead of being cloned.
+    local detachButton = create("TextButton", {
+        Size=UDim2.new(0,26,0,24), Position=UDim2.new(1,-30,0,4),
+        BackgroundColor3=Color3.fromRGB(62,52,88), BorderSizePixel=0,
+        Text="D", TextColor3=Color3.fromRGB(215,200,245), TextSize=10,
+        Font=Enum.Font.GothamBold, ZIndex=5, Parent=header,
+    })
+    create("UICorner", { CornerRadius=UDim.new(0,5), Parent=detachButton })
+    local dock = create("Frame", {
+        Name="Lucid"..name:gsub("[^%w]","").."Window",
+        Size=UDim2.new(0,285,0,340),
+        Position=UDim2.new(0.5,-460+((order%4)*36),0.5,-170+((order%5)*24)),
+        BackgroundColor3=Color3.fromRGB(24,22,34), BackgroundTransparency=0.12,
+        BorderSizePixel=0, Active=true, Draggable=true, Visible=false, Parent=screenGui,
+    })
+    create("UICorner", { CornerRadius=UDim.new(0,9), Parent=dock })
+    create("UIStroke", { Color=Color3.fromRGB(115,85,190), Thickness=1.3, Parent=dock })
+    create("TextLabel", {
+        Size=UDim2.new(1,-82,0,34), Position=UDim2.new(0,10,0,0), BackgroundTransparency=1,
+        Text=name, TextColor3=Color3.fromRGB(210,190,255), TextSize=13,
+        Font=Enum.Font.GothamBold, TextXAlignment=Enum.TextXAlignment.Left, Parent=dock,
+    })
+    local pinButton=create("TextButton", {
+        Size=UDim2.new(0,34,0,26), Position=UDim2.new(1,-70,0,4),
+        BackgroundColor3=Color3.fromRGB(65,58,85), BorderSizePixel=0, Text="Pin",
+        TextColor3=Color3.fromRGB(225,215,235), TextSize=9, Font=Enum.Font.GothamSemibold,
+        Parent=dock,
+    })
+    local attachButton=create("TextButton", {
+        Size=UDim2.new(0,28,0,26), Position=UDim2.new(1,-32,0,4),
+        BackgroundColor3=Color3.fromRGB(105,65,75), BorderSizePixel=0, Text="X",
+        TextColor3=Color3.new(1,1,1), TextSize=11, Font=Enum.Font.GothamBold, Parent=dock,
+    })
+    create("UICorner", { CornerRadius=UDim.new(0,6), Parent=pinButton })
+    create("UICorner", { CornerRadius=UDim.new(0,6), Parent=attachButton })
+    local dockContent=create("ScrollingFrame", {
+        Size=UDim2.new(1,-16,1,-44), Position=UDim2.new(0,8,0,38),
+        BackgroundTransparency=1, BorderSizePixel=0, ScrollBarThickness=3,
+        AutomaticCanvasSize=Enum.AutomaticSize.Y, CanvasSize=UDim2.new(), Parent=dock,
+    })
+
     local function refresh()
-        header.Text = (open and "v  " or ">  ") .. name
-        body.Visible = open
+        header.Text = detached and ("[]  "..name) or ((open and "v  " or ">  ") .. name)
+        body.Visible = detached or open
     end
     header.MouseButton1Click:Connect(function()
+        if detached then dock.Visible=true; return end
         open = not open
         refresh()
     end)
+    local function setDetached(value)
+        detached=value
+        if detached then
+            body.Parent=dockContent
+            body.Visible=true
+            dock.Visible=true
+        else
+            body.Parent=wrapper
+            body.LayoutOrder=1
+            dock.Visible=false
+        end
+        refresh()
+    end
+    detachButton.MouseButton1Click:Connect(function() setDetached(not detached) end)
+    attachButton.MouseButton1Click:Connect(function() setDetached(false) end)
+    pinButton.MouseButton1Click:Connect(function()
+        pinned=not pinned
+        pinButton.Text=pinned and "ON" or "Pin"
+        pinButton.BackgroundColor3=pinned and Color3.fromRGB(150,115,45) or Color3.fromRGB(65,58,85)
+    end)
+    registerDetachableWindow(dock,function() return pinned end,function() return detached end)
+    addCleanup(function() if dock.Parent then setDetached(false) end end)
     refresh()
     categories[name] = body
     categoryMeta[name] = {
         wrapper = wrapper,
         body = body,
         header = header,
+        dock = dock,
+        setDetached = setDetached,
         setOpen = function(value)
             open = value
             refresh()
@@ -3202,7 +3272,7 @@ end
 useCategory("Diagnostics")
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v4.2 | Safe Startup",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v4.3 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,82), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -3613,7 +3683,7 @@ if type(queueTeleport) == "function" then
 end
 
 if teleportQueueReady then
-    print("[Lucid Panel v4.2] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v4.3] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v4.2] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v4.3] Loaded, but this executor does not expose queue_on_teleport")
 end
