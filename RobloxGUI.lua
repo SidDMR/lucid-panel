@@ -3232,6 +3232,10 @@ local emoteTrack=nil
 local emoteAnimation=nil
 local currentEmoteName=nil
 local emoteResumeBusy=false
+local emoteSyncPlayer=nil
+local emoteSyncActive=false
+local emoteSyncAnimationId=nil
+local emoteSyncElapsed=0
 createToggle("Keep Emote While Moving",nextOrder(),true,function(on)
     state.keepEmoteMoving=on
 end)
@@ -3263,6 +3267,7 @@ local emoteQuery=""
 local emoteLoading=false
 local emoteRequestGeneration=0
 local function stopEmote()
+    emoteSyncActive=false; emoteSyncPlayer=nil; emoteSyncAnimationId=nil; emoteSyncElapsed=0
     if emoteTrack then pcall(function() emoteTrack:Stop(0.15) end) end
     if emoteAnimation then emoteAnimation:Destroy() end
     emoteTrack=nil; emoteAnimation=nil; currentEmoteName=nil
@@ -3272,6 +3277,7 @@ end
 local stopEmoteButton=actionButton("Stop Current Emote",function() stopEmote() end,Color3.fromRGB(85,48,62))
 emoteResults.LayoutOrder=nextOrder()
 local function playEmote(assetId,name)
+    emoteSyncActive=false; emoteSyncPlayer=nil; emoteSyncAnimationId=nil
     stopEmote()
     local character=LocalPlayer.Character
     local humanoid=character and character:FindFirstChildOfClass("Humanoid")
@@ -3306,7 +3312,7 @@ local function playEmote(assetId,name)
     emoteStatus.Text="Playing: "..name.."  |  "..string.format("%.1fx",emoteSpeed)
 end
 track(RunService.Heartbeat:Connect(function()
-    if not state.keepEmoteMoving or not currentEmoteName or not emoteTrack or emoteResumeBusy then return end
+    if emoteSyncActive or not state.keepEmoteMoving or not currentEmoteName or not emoteTrack or emoteResumeBusy then return end
     if not emoteTrack.IsPlaying then
         emoteResumeBusy=true
         task.defer(function()
@@ -3321,6 +3327,111 @@ track(RunService.Heartbeat:Connect(function()
             emoteResumeBusy=false
         end)
     end
+end))
+sectionLabel("Player Emote Sync",nextOrder())
+local emoteSyncRow=rowFrame(nextOrder(),30)
+local emoteSyncBox=styledBox(emoteSyncRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="Username or display name"})
+local emoteSyncButton=create("TextButton",{Size=UDim2.new(0,64,0,26),Position=UDim2.new(1,-64,0,0),
+    BackgroundColor3=Color3.fromRGB(58,120,88),BorderSizePixel=0,Text="Sync",TextColor3=Color3.new(1,1,1),
+    TextSize=10,Font=Enum.Font.GothamSemibold,Parent=emoteSyncRow})
+create("UICorner",{CornerRadius=UDim.new(0,6),Parent=emoteSyncButton})
+
+local function findEmoteSyncPlayer(query)
+    query=tostring(query or ""):match("^%s*(.-)%s*$"):lower()
+    if query=="" then return nil end
+    for _,player in ipairs(Players:GetPlayers()) do
+        if player~=LocalPlayer and (player.Name:lower()==query or player.DisplayName:lower()==query) then return player end
+    end
+    for _,player in ipairs(Players:GetPlayers()) do
+        if player~=LocalPlayer and (player.Name:lower():sub(1,#query)==query
+            or player.DisplayName:lower():sub(1,#query)==query) then return player end
+    end
+end
+
+local function getSyncSourceTrack(player)
+    local humanoid=player and player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+    local animator=humanoid and humanoid:FindFirstChildOfClass("Animator")
+    if not animator then return nil end
+    local best=nil
+    for _,playing in ipairs(animator:GetPlayingAnimationTracks()) do
+        local animation=playing.Animation
+        local animationId=animation and animation.AnimationId
+        if playing.IsPlaying and animationId and animationId~=""
+            and playing.Priority.Value>=Enum.AnimationPriority.Action.Value
+            and (not best or playing.Priority.Value>best.Priority.Value) then
+            best=playing
+        end
+    end
+    return best
+end
+
+local function loadSyncedTrack(sourceTrack)
+    local animationId=sourceTrack.Animation and sourceTrack.Animation.AnimationId
+    if not animationId or animationId=="" then return false end
+    if emoteTrack then pcall(function() emoteTrack:Stop(0.05) end) end
+    if emoteAnimation then emoteAnimation:Destroy() end
+    local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    local animator=humanoid and humanoid:FindFirstChildOfClass("Animator")
+    if not animator and humanoid then animator=Instance.new("Animator"); animator.Parent=humanoid end
+    if not animator then return false end
+    local animation=Instance.new("Animation"); animation.AnimationId=animationId
+    local ok,loaded=pcall(function() return animator:LoadAnimation(animation) end)
+    if not ok or not loaded then animation:Destroy(); return false end
+    emoteAnimation=animation; emoteTrack=loaded; emoteSyncAnimationId=animationId
+    currentEmoteName="Synced with "..emoteSyncPlayer.Name
+    loaded.Priority=sourceTrack.Priority; loaded.Looped=sourceTrack.Looped
+    loaded:Play(0.05,1,sourceTrack.Speed)
+    pcall(function() loaded.TimePosition=sourceTrack.TimePosition end)
+    return true
+end
+
+local function stopEmoteSync(stopPlayback)
+    emoteSyncActive=false; emoteSyncPlayer=nil; emoteSyncAnimationId=nil; emoteSyncElapsed=0
+    if stopPlayback then stopEmote() end
+end
+
+local function beginEmoteSync()
+    local player=findEmoteSyncPlayer(emoteSyncBox.Text)
+    if not player then emoteStatus.Text="Sync player not found"; return end
+    stopEmote()
+    emoteSyncPlayer=player; emoteSyncActive=true; emoteSyncElapsed=1
+    emoteStatus.Text="Waiting for "..player.Name.." to emote..."
+end
+emoteSyncButton.MouseButton1Click:Connect(beginEmoteSync)
+emoteSyncBox.FocusLost:Connect(function(enterPressed)
+    if enterPressed then beginEmoteSync() end
+end)
+actionButton("Stop Emote Sync",function(button)
+    stopEmoteSync(true); button.Text="Emote sync stopped"
+    task.delay(1,function() if button.Parent then button.Text="Stop Emote Sync" end end)
+end,Color3.fromRGB(85,48,62))
+
+track(RunService.Heartbeat:Connect(function(dt)
+    if not emoteSyncActive then return end
+    emoteSyncElapsed=emoteSyncElapsed+dt
+    if emoteSyncElapsed<0.12 then return end
+    emoteSyncElapsed=0
+    if not emoteSyncPlayer or emoteSyncPlayer.Parent~=Players then
+        emoteStatus.Text="Sync player left the server"; stopEmoteSync(true); return
+    end
+    local sourceTrack=getSyncSourceTrack(emoteSyncPlayer)
+    if not sourceTrack then
+        if emoteTrack and emoteTrack.IsPlaying then pcall(function() emoteTrack:Stop(0.1) end) end
+        emoteStatus.Text="Waiting for "..emoteSyncPlayer.Name.." to emote..."
+        return
+    end
+    local sourceId=sourceTrack.Animation and sourceTrack.Animation.AnimationId
+    if not emoteTrack or sourceId~=emoteSyncAnimationId then
+        if not loadSyncedTrack(sourceTrack) then emoteStatus.Text="Could not load target emote"; return end
+    end
+    pcall(function()
+        if not emoteTrack.IsPlaying then emoteTrack:Play(0.05,1,sourceTrack.Speed) end
+        emoteTrack:AdjustSpeed(sourceTrack.Speed)
+        if math.abs(emoteTrack.TimePosition-sourceTrack.TimePosition)>0.18 then
+            emoteTrack.TimePosition=sourceTrack.TimePosition
+        end
+    end)
+    emoteStatus.Text="Synced with "..emoteSyncPlayer.Name
 end))
 local function clearEmoteResults()
     for _,child in ipairs(emoteResults:GetChildren()) do if child:IsA("GuiObject") then child:Destroy() end end
@@ -3448,7 +3559,12 @@ if emotesDock then
     end))
 end
 track(LocalPlayer.CharacterAdded:Connect(function()
-    if currentEmoteName then stopEmote() end
+    local syncTarget=emoteSyncActive and emoteSyncPlayer or nil
+    if currentEmoteName or emoteTrack then stopEmote() end
+    if syncTarget and syncTarget.Parent==Players then
+        emoteSyncPlayer=syncTarget; emoteSyncActive=true; emoteSyncElapsed=1
+        emoteStatus.Text="Resuming sync with "..syncTarget.Name.."..."
+    end
 end))
 addCleanup(stopEmote)
 
