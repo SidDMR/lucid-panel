@@ -3216,6 +3216,31 @@ end)
 -- animations as asset type 61; only currently on-sale results are requested.
 useCategory("Emotes")
 sectionLabel("Marketplace Emote Browser", nextOrder())
+local EMOTE_FAVORITES_PATH="LucidPanel/emote_favorites.json"
+local function saveGlobalEmoteFavorites()
+    if not writefile then return false end
+    pcall(function()
+        if makefolder and (not isfolder or not isfolder("LucidPanel")) then makefolder("LucidPanel") end
+    end)
+    local encodedOk,encoded=pcall(function() return HttpService:JSONEncode(state.emoteFavorites or {}) end)
+    return encodedOk and pcall(writefile,EMOTE_FAVORITES_PATH,encoded)
+end
+local function loadGlobalEmoteFavorites()
+    if not readfile or (isfile and not isfile(EMOTE_FAVORITES_PATH)) then return end
+    local ok,decoded=pcall(function() return HttpService:JSONDecode(readfile(EMOTE_FAVORITES_PATH)) end)
+    if ok and type(decoded)=="table" then state.emoteFavorites=decoded end
+end
+local function mergeLegacyEmoteFavorites(legacyFavorites)
+    if type(legacyFavorites)~="table" then return end
+    local changed=false
+    for id,info in pairs(legacyFavorites) do
+        if state.emoteFavorites[tostring(id)]==nil and type(info)=="table" then
+            state.emoteFavorites[tostring(id)]=info; changed=true
+        end
+    end
+    if changed then saveGlobalEmoteFavorites() end
+end
+loadGlobalEmoteFavorites()
 local emoteSearchRow=rowFrame(nextOrder(),30)
 local emoteSearchBox=styledBox(emoteSearchRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="Search on-sale emotes..."})
 local emoteSearchButton=create("TextButton",{Size=UDim2.new(0,64,0,26),Position=UDim2.new(1,-64,0,0),
@@ -3454,6 +3479,7 @@ local function createEmoteResult(id,name)
     star.MouseButton1Click:Connect(function()
         local key=tostring(id)
         if state.emoteFavorites[key] then state.emoteFavorites[key]=nil else state.emoteFavorites[key]={id=id,name=name} end
+        saveGlobalEmoteFavorites()
         star.Text=state.emoteFavorites[key] and "★" or "☆"
         star.TextColor3=state.emoteFavorites[key] and Color3.fromRGB(255,215,55) or Color3.fromRGB(155,145,175)
         if emoteView=="favorites" then row:Destroy() end
@@ -3684,7 +3710,7 @@ actionButton("Save Named Profile", function(button)
     payload.toggles={}
     payload.favorites={}
     for name in pairs(state.favoriteNames or {}) do payload.favorites[name]=true end
-    payload.emoteFavorites=state.emoteFavorites or {}
+    -- Emote favorites are global and saved independently of named profiles.
     payload.keybinds={}
     for name,key in pairs(shortcutKeys or {}) do payload.keybinds[name]=key and key.Name or "Unbound" end
     for _,name in ipairs({"Fly","Noclip","Freecam"}) do
@@ -3738,7 +3764,9 @@ loadNamedProfile = function(button)
     emoteSpeed=state.emoteSpeed; updateText(emoteSpeedBox,string.format("%.1f",emoteSpeed))
     if gotoApi.setOffset then gotoApi.setOffset(state.gotoOffsetX,state.gotoOffsetY,state.gotoOffsetZ) end
     -- Safe startup: remembered toggle states are intentionally not activated.
-    state.emoteFavorites=type(payload.emoteFavorites)=="table" and payload.emoteFavorites or {}
+    -- Import favorites from older profile files once, without replacing the
+    -- global collection or tying it to this profile/place.
+    mergeLegacyEmoteFavorites(payload.emoteFavorites)
     for name,setter in pairs(favoriteRegistry or {}) do setter((payload.favorites or {})[name]==true) end
     for name,value in pairs(payload.keybinds or {}) do
         local key=value~="Unbound" and Enum.KeyCode[value] or nil
