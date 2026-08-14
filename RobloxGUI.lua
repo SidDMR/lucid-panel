@@ -3108,7 +3108,7 @@ refreshWaypointDropdown=function()
     for _,marker in pairs(waypointMarkers) do marker:Destroy() end
     table.clear(waypointMarkers)
     for _, child in ipairs(waypointDropdown:GetChildren()) do
-        if child:IsA("TextButton") or child:IsA("TextLabel") then child:Destroy() end
+        if child:IsA("GuiObject") then child:Destroy() end
     end
     local names={}
     for name in pairs(waypoints) do table.insert(names,name) end
@@ -3126,7 +3126,8 @@ refreshWaypointDropdown=function()
         return
     end
     for index,name in ipairs(names) do
-        local entry=create("Frame",{Size=UDim2.new(1,0,0,28),BackgroundTransparency=1,LayoutOrder=index,Parent=waypointDropdown})
+        local entry=create("Frame",{Name="WaypointEntry_"..name,Size=UDim2.new(1,0,0,28),
+            BackgroundTransparency=1,LayoutOrder=index,Parent=waypointDropdown})
         local rootNow=LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         local distance=rootNow and math.floor((rootNow.Position-waypoints[name].Position).Magnitude) or 0
         local go=create("TextButton", { Size=UDim2.new(1,-34,0,26), BackgroundColor3=Color3.fromRGB(44,39,60),
