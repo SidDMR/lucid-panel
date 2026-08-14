@@ -141,7 +141,7 @@ local state = {
     fogEndLocked       = false,
     fogEndValue        = Lighting.FogEnd,
     antiLagEnabled     = false,
-    clickTpEnabled     = false,
+    clickTpEnabled     = true,
     loopGotoEnabled    = false,
     spawnpointEnabled  = false,
     spawnpointDelay    = 0.1,
@@ -152,6 +152,8 @@ local state = {
     fovValue           = 70,
     autoclickEnabled   = false,
     autoclickInterval  = 0.01, -- 10 ms
+    autoclickToolOnly  = true,
+    autoclickAvoidGui  = true,
     espTransparency   = 0.78,
     espMaxDistance    = 5000,
     emoteSpeed        = 1,
@@ -1700,7 +1702,7 @@ end))
 
 useCategory("Teleport & Coordinates")
 sectionLabel("Click Teleport", nextOrder())
-createToggle("Left Alt + Click TP", nextOrder(), false, function(on)
+createToggle("Left Alt + Click TP", nextOrder(), true, function(on)
     state.clickTpEnabled = on
 end)
 
@@ -1958,6 +1960,12 @@ sectionLabel("AutoClick (10ms)", nextOrder())
 
 local _, acFireToggle = createToggle("Enable AutoClick", nextOrder(), false, function(on)
     state.autoclickEnabled = on
+end)
+createToggle("AutoClick Equipped Tool Only",nextOrder(),true,function(on)
+    state.autoclickToolOnly=on
+end)
+createToggle("AutoClick Avoid GUI Buttons",nextOrder(),true,function(on)
+    state.autoclickAvoidGui=on
 end)
 
 -- Keybind row
@@ -3815,8 +3823,11 @@ loadNamedProfile = function(button)
     for name in pairs(toggleRegistry or {}) do table.insert(toggleNames,name) end
     table.sort(toggleNames)
     for _,name in ipairs(toggleNames) do
-        local desired=(payload.toggles or {})[name]==true
-        if activeFeatures[name]~=desired then pcall(toggleRegistry[name],desired) end
+        local savedToggle=(payload.toggles or {})[name]
+        if savedToggle~=nil then
+            local desired=savedToggle==true
+            if activeFeatures[name]~=desired then pcall(toggleRegistry[name],desired) end
+        end
     end
     button.Text="Profile loaded — settings restored"
 end
@@ -3892,6 +3903,87 @@ for _, name in ipairs({"Fly","Noclip","Freecam"}) do
         end
         box.Text=shortcutKeys[name] and shortcutKeys[name].Name or "Unbound"
     end)
+end
+
+-- General dynamic backpack cleaner. Tools are discovered from the live
+-- Backpack/Character, so users never need to type internal tool names.
+do
+useCategory("Misc")
+sectionLabel("Dynamic Backpack Cleaner",nextOrder())
+local backpackCleanerSelections={}
+local backpackCleanerDiscovered={}
+local backpackCleanerList=create("ScrollingFrame",{Size=UDim2.new(1,0,0,150),CanvasSize=UDim2.new(),
+    AutomaticCanvasSize=Enum.AutomaticSize.Y,BackgroundColor3=Color3.fromRGB(29,27,39),
+    BackgroundTransparency=0.2,BorderSizePixel=0,ScrollBarThickness=3,LayoutOrder=nextOrder(),Parent=currentSection})
+create("UICorner",{CornerRadius=UDim.new(0,6),Parent=backpackCleanerList})
+create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,4),Parent=backpackCleanerList})
+
+local function removeSelectedBackpackTool(object)
+    if object and object:IsA("Tool") and backpackCleanerSelections[object.Name] then
+        pcall(function() object:Destroy() end)
+    end
+end
+local function discoverBackpackTools()
+    local function inspect(container)
+        if not container then return end
+        for _,object in ipairs(container:GetChildren()) do
+            if object:IsA("Tool") then backpackCleanerDiscovered[object.Name]=true end
+        end
+    end
+    inspect(LocalPlayer:FindFirstChildOfClass("Backpack")); inspect(LocalPlayer.Character)
+end
+local function sweepSelectedBackpackTools()
+    local function inspect(container)
+        if not container then return end
+        for _,object in ipairs(container:GetChildren()) do removeSelectedBackpackTool(object) end
+    end
+    inspect(LocalPlayer:FindFirstChildOfClass("Backpack")); inspect(LocalPlayer.Character)
+end
+local refreshBackpackCleanerList
+refreshBackpackCleanerList=function()
+    discoverBackpackTools()
+    for _,child in ipairs(backpackCleanerList:GetChildren()) do
+        if child:IsA("GuiObject") then child:Destroy() end
+    end
+    local names={}
+    for name in pairs(backpackCleanerDiscovered) do table.insert(names,name) end
+    table.sort(names,function(a,b) return a:lower()<b:lower() end)
+    if #names==0 then
+        create("TextLabel",{Size=UDim2.new(1,-4,0,28),BackgroundTransparency=1,Text="No tools detected yet",
+            TextColor3=Color3.fromRGB(150,140,170),TextSize=11,Font=Enum.Font.Gotham,Parent=backpackCleanerList})
+        return
+    end
+    for index,name in ipairs(names) do
+        local selected=backpackCleanerSelections[name]==true
+        local button=create("TextButton",{Size=UDim2.new(1,-4,0,30),BackgroundColor3=selected and Color3.fromRGB(55,135,82) or Color3.fromRGB(48,42,65),
+            BorderSizePixel=0,Text=name..(selected and "  |  AUTO-REMOVE ON" or "  |  Keep"),
+            TextColor3=selected and Color3.fromRGB(225,255,232) or Color3.fromRGB(225,220,235),
+            TextSize=11,Font=Enum.Font.GothamSemibold,LayoutOrder=index,Parent=backpackCleanerList})
+        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=button})
+        button.MouseButton1Click:Connect(function()
+            backpackCleanerSelections[name]=not backpackCleanerSelections[name] or nil
+            refreshBackpackCleanerList()
+            task.defer(sweepSelectedBackpackTools)
+        end)
+    end
+end
+actionButton("Refresh Detected Backpack Tools",function(button)
+    refreshBackpackCleanerList(); button.Text="Tool list refreshed"
+    task.delay(1,function() if button.Parent then button.Text="Refresh Detected Backpack Tools" end end)
+end)
+actionButton("Clear Backpack Auto-Remove List",function(button)
+    table.clear(backpackCleanerSelections); refreshBackpackCleanerList(); button.Text="Auto-remove list cleared"
+    task.delay(1,function() if button.Parent then button.Text="Clear Backpack Auto-Remove List" end end)
+end,Color3.fromRGB(85,48,62))
+track(LocalPlayer.DescendantAdded:Connect(function(object)
+    if not object:IsA("Tool") then return end
+    backpackCleanerDiscovered[object.Name]=true
+    task.defer(function()
+        removeSelectedBackpackTool(object)
+        if backpackCleanerList.Parent then refreshBackpackCleanerList() end
+    end)
+end))
+refreshBackpackCleanerList()
 end
 
 -- Place-specific obstacle cleanup for Climb Scary Worm Tower 3.
@@ -4350,18 +4442,39 @@ task.spawn(function()
 end)
 
 -- AutoClick (10ms loop — works even when alt-tabbed)
+local function hasInteractiveGuiAt(x,y)
+    if not state.autoclickAvoidGui then return false end
+    for _,container in ipairs({LocalPlayer:FindFirstChildOfClass("PlayerGui"),CoreGui}) do
+        if container then
+            local ok,objects=pcall(function() return container:GetGuiObjectsAtPosition(x,y) end)
+            if ok then
+                for _,object in ipairs(objects) do
+                    if object:IsA("GuiButton") or object:IsA("TextBox") then return true end
+                end
+            end
+        end
+    end
+    return false
+end
 task.spawn(function()
     while screenGui.Parent do
         if state.autoclickEnabled then
             local success = pcall(function()
+                if state.autoclickToolOnly then
+                    local character=LocalPlayer.Character
+                    local tool=character and character:FindFirstChildOfClass("Tool")
+                    if tool then tool:Activate() end
+                    return
+                end
                 local camera = workspace.CurrentCamera
                 if not camera then return end
                 local vpSize = camera.ViewportSize
                 local cx, cy = vpSize.X / 2, vpSize.Y / 2
+                if hasInteractiveGuiAt(cx,cy) then return end
                 VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
                 VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
             end)
-            if not success and mouse1click then
+            if not success and not state.autoclickToolOnly and mouse1click then
                 pcall(mouse1click)
             end
         end
