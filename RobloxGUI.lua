@@ -4151,7 +4151,7 @@ actionButton("Clear This Game Auto Profile",function(button)
     local ok=writeAutoProfiles(data); refreshAutoProfileStatus(); button.Text=ok and "Game assignment cleared" or "Clear failed"
 end,Color3.fromRGB(85,48,62))
 refreshAutoProfileStatus()
-local function autoLoadAssignedProfile()
+state.autoLoadAssignedProfile=function()
     local data=readAutoProfiles()
     local assigned=data.byPlace[tostring(game.PlaceId)] or data.fallback
     if assigned and tostring(assigned)~="" then
@@ -4993,7 +4993,7 @@ end)
 
 -- Load the PlaceId-assigned profile only after every category, toggle and
 -- detachable window has registered. Loading earlier produced partial configs.
-task.defer(autoLoadAssignedProfile)
+task.defer(state.autoLoadAssignedProfile)
 
 -- Executor-supported teleport persistence. The newly loaded copy queues itself
 -- again, so this also works across multi-place teleport chains.
