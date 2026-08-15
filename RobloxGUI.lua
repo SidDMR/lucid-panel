@@ -136,6 +136,8 @@ local state = {
     playerLightEnabled = false,
     playerLightRange   = 30,
     playerLightPower   = 5,
+    comfortPreset      = "None",
+    comfortLocked      = false,
     nightLockEnabled   = false,
     nightClockTime     = 0,
     fogEndLocked       = false,
@@ -223,7 +225,9 @@ local function updatePanelScale()
     local camera = workspace.CurrentCamera
     if not camera then return end
     local viewport = camera.ViewportSize
-    panelScale.Scale = math.min(1, viewport.X / 340, viewport.Y / 550)
+    local panelWidth=math.max(1,mainFrame.Size.X.Offset)
+    local panelHeight=math.max(1,mainFrame.Size.Y.Offset)
+    panelScale.Scale = math.min(1, viewport.X / (panelWidth+30), viewport.Y / (panelHeight+30))
 end
 updatePanelScale()
 if workspace.CurrentCamera then
@@ -355,10 +359,17 @@ local content = create("ScrollingFrame", {
     AutomaticCanvasSize       = Enum.AutomaticSize.Y,
     Parent                    = mainFrame,
 })
+local mainExpandedSize=mainFrame.Size
+local mainResizeHandle=makeResizableWindow(mainFrame,270,180)
+track(mainFrame:GetPropertyChangedSignal("Size"):Connect(function()
+    if not minimized then mainExpandedSize=mainFrame.Size end
+    updatePanelScale()
+end))
 minimizeBtn.MouseButton1Click:Connect(function()
     minimized = not minimized
     content.Visible = not minimized
-    mainFrame.Size = minimized and UDim2.new(0, 310, 0, 36) or UDim2.new(0, 310, 0, 520)
+    mainResizeHandle.Visible=not minimized
+    mainFrame.Size = minimized and UDim2.new(0, mainExpandedSize.X.Offset, 0, 36) or mainExpandedSize
     minimizeBtn.Text = minimized and "+" or "-"
 end)
 
@@ -3195,12 +3206,34 @@ local function setComfort(clock, brightness, exposure, ambient)
     Lighting.ClockTime=clock; Lighting.Brightness=brightness; Lighting.ExposureCompensation=exposure
     Lighting.Ambient=ambient; Lighting.OutdoorAmbient=ambient
 end
-actionButton("Migraine Comfort", function() setComfort(0, 1, -1, Color3.fromRGB(55,55,75)) end)
-actionButton("Evening", function() setComfort(19, 1.5, -0.35, Color3.fromRGB(85,70,85)) end)
-actionButton("Overcast", function() setComfort(12, 1, -0.5, Color3.fromRGB(90,90,95)) end)
+local function applySavedComfortPreset()
+    if state.comfortPreset=="Migraine" then setComfort(0,1,-1,Color3.fromRGB(55,55,75))
+    elseif state.comfortPreset=="Evening" then setComfort(19,1.5,-0.35,Color3.fromRGB(85,70,85))
+    elseif state.comfortPreset=="Overcast" then setComfort(12,1,-0.5,Color3.fromRGB(90,90,95)) end
+end
+actionButton("Migraine Comfort", function(button)
+    state.comfortPreset="Migraine"; applySavedComfortPreset(); button.Text="Migraine Comfort applied"
+end)
+actionButton("Evening", function(button)
+    state.comfortPreset="Evening"; applySavedComfortPreset(); button.Text="Evening applied"
+end)
+actionButton("Overcast", function(button)
+    state.comfortPreset="Overcast"; applySavedComfortPreset(); button.Text="Overcast applied"
+end)
 actionButton("Restore Lighting", function()
+    state.comfortPreset="None"
     for property, value in pairs(originalComfort) do Lighting[property] = value end
 end)
+createToggle("Lock Comfort Preset",nextOrder(),false,function(on)
+    state.comfortLocked=on
+    if on then applySavedComfortPreset() end
+end)
+local comfortLockElapsed=0
+track(RunService.Heartbeat:Connect(function(dt)
+    if not state.comfortLocked or state.comfortPreset=="None" then return end
+    comfortLockElapsed=comfortLockElapsed+dt
+    if comfortLockElapsed>=0.25 then comfortLockElapsed=0; applySavedComfortPreset() end
+end))
 local brightEffectState = {}
 createToggle("Disable Bright Effects", nextOrder(), false, function(on)
     for _, effect in ipairs(Lighting:GetChildren()) do
@@ -3270,6 +3303,8 @@ local emoteSyncPlayer=nil
 local emoteSyncActive=false
 local emoteSyncAnimationId=nil
 local emoteSyncElapsed=0
+local emoteSyncAutoRotate=nil
+local emoteSyncRestoreAntiPush=nil
 createToggle("Keep Emote While Moving",nextOrder(),true,function(on)
     state.keepEmoteMoving=on
 end)
@@ -3302,6 +3337,14 @@ local emoteLoading=false
 local emoteRequestGeneration=0
 local function stopEmote()
     emoteSyncActive=false; emoteSyncPlayer=nil; emoteSyncAnimationId=nil; emoteSyncElapsed=0
+    local syncHumanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if syncHumanoid and emoteSyncAutoRotate~=nil then syncHumanoid.AutoRotate=emoteSyncAutoRotate end
+    emoteSyncAutoRotate=nil
+    local restoreAntiPush=emoteSyncRestoreAntiPush==true
+    emoteSyncRestoreAntiPush=nil
+    if restoreAntiPush and toggleRegistry["Mobile Freeze / Anti Push"] then
+        toggleRegistry["Mobile Freeze / Anti Push"](true)
+    end
     if emoteTrack then pcall(function() emoteTrack:Stop(0.15) end) end
     if emoteAnimation then emoteAnimation:Destroy() end
     emoteTrack=nil; emoteAnimation=nil; currentEmoteName=nil
@@ -3391,9 +3434,10 @@ local function getSyncSourceTrack(player)
         local animation=playing.Animation
         local animationId=animation and animation.AnimationId
         if playing.IsPlaying and animationId and animationId~=""
-            and playing.Priority.Value>=Enum.AnimationPriority.Action.Value
-            and (not best or playing.Priority.Value>best.Priority.Value) then
-            best=playing
+            and playing.Priority.Value>=Enum.AnimationPriority.Action.Value then
+            if animationId==emoteSyncAnimationId then return playing end
+            if not best or playing.Priority.Value>best.Priority.Value
+                or (playing.Priority==best.Priority and playing.WeightCurrent>best.WeightCurrent) then best=playing end
         end
     end
     return best
@@ -3408,13 +3452,16 @@ local function loadSyncedTrack(sourceTrack)
     local animator=humanoid and humanoid:FindFirstChildOfClass("Animator")
     if not animator and humanoid then animator=Instance.new("Animator"); animator.Parent=humanoid end
     if not animator then return false end
+    if emoteSyncAutoRotate==nil then emoteSyncAutoRotate=humanoid.AutoRotate end
+    humanoid.AutoRotate=false
     local animation=Instance.new("Animation"); animation.AnimationId=animationId
     local ok,loaded=pcall(function() return animator:LoadAnimation(animation) end)
     if not ok or not loaded then animation:Destroy(); return false end
     emoteAnimation=animation; emoteTrack=loaded; emoteSyncAnimationId=animationId
     currentEmoteName="Synced with "..emoteSyncPlayer.Name
-    loaded.Priority=sourceTrack.Priority; loaded.Looped=sourceTrack.Looped
+    loaded.Priority=Enum.AnimationPriority.Action4; loaded.Looped=sourceTrack.Looped
     loaded:Play(0.05,1,sourceTrack.Speed)
+    loaded:AdjustWeight(1,0.05)
     pcall(function() loaded.TimePosition=sourceTrack.TimePosition end)
     return true
 end
@@ -3428,7 +3475,13 @@ local function beginEmoteSync()
     local player=findEmoteSyncPlayer(emoteSyncBox.Text)
     if not player then emoteStatus.Text="Sync player not found"; return end
     stopEmote()
+    emoteSyncRestoreAntiPush=state.antiPushEnabled==true
+    if state.antiPushEnabled and toggleRegistry["Mobile Freeze / Anti Push"] then
+        toggleRegistry["Mobile Freeze / Anti Push"](false)
+    end
     emoteSyncPlayer=player; emoteSyncActive=true; emoteSyncElapsed=1
+    local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if humanoid then emoteSyncAutoRotate=humanoid.AutoRotate; humanoid.AutoRotate=false end
     emoteStatus.Text="Waiting for "..player.Name.." to emote..."
 end
 emoteSyncButton.MouseButton1Click:Connect(beginEmoteSync)
@@ -3442,6 +3495,10 @@ end,Color3.fromRGB(85,48,62))
 
 track(RunService.Heartbeat:Connect(function(dt)
     if not emoteSyncActive then return end
+    if state.antiPushEnabled and toggleRegistry["Mobile Freeze / Anti Push"] then
+        emoteSyncRestoreAntiPush=true
+        toggleRegistry["Mobile Freeze / Anti Push"](false)
+    end
     emoteSyncElapsed=emoteSyncElapsed+dt
     if emoteSyncElapsed<0.12 then return end
     emoteSyncElapsed=0
@@ -3461,7 +3518,10 @@ track(RunService.Heartbeat:Connect(function(dt)
     pcall(function()
         if not emoteTrack.IsPlaying then emoteTrack:Play(0.05,1,sourceTrack.Speed) end
         emoteTrack:AdjustSpeed(sourceTrack.Speed)
-        if math.abs(emoteTrack.TimePosition-sourceTrack.TimePosition)>0.18 then
+        local drift=math.abs(emoteTrack.TimePosition-sourceTrack.TimePosition)
+        local trackLength=math.max(emoteTrack.Length,sourceTrack.Length)
+        if trackLength>0 then drift=math.min(drift,math.abs(trackLength-drift)) end
+        if drift>0.45 then
             emoteTrack.TimePosition=sourceTrack.TimePosition
         end
     end)
@@ -3727,7 +3787,13 @@ actionButton("Save Named Profile", function(button)
     end
     payload.interface={opacity=1-mainFrame.BackgroundTransparency,
         xScale=mainFrame.Position.X.Scale,xOffset=mainFrame.Position.X.Offset,
-        yScale=mainFrame.Position.Y.Scale,yOffset=mainFrame.Position.Y.Offset}
+        yScale=mainFrame.Position.Y.Scale,yOffset=mainFrame.Position.Y.Offset,
+        width=mainExpandedSize.X.Offset,height=mainExpandedSize.Y.Offset}
+    payload.lighting={playerLightEnabled=state.playerLightEnabled==true,
+        brightness=Lighting.Brightness,exposure=Lighting.ExposureCompensation,
+        clockTime=Lighting.ClockTime,fogStart=Lighting.FogStart,fogEnd=Lighting.FogEnd,
+        ambient={Lighting.Ambient.R,Lighting.Ambient.G,Lighting.Ambient.B},
+        outdoorAmbient={Lighting.OutdoorAmbient.R,Lighting.OutdoorAmbient.G,Lighting.OutdoorAmbient.B}}
     payload.windows={}
     for _,detachable in ipairs(detachableWindows) do
         local window=detachable.window
@@ -3758,6 +3824,9 @@ loadNamedProfile = function(button)
     local ok, payload = pcall(function() return HttpService:JSONDecode(readfile(profilePath)) end)
     if not ok or type(payload)~="table" then button.Text="Profile invalid"; return end
     for key,value in pairs(payload.values or {}) do if state[key] ~= nil then state[key]=value end end
+    if type(payload.lighting)=="table" and type(payload.lighting.playerLightEnabled)=="boolean" then
+        state.playerLightEnabled=payload.lighting.playerLightEnabled
+    end
     local function updateText(control,value)
         if control and control.Parent then control.Text=tostring(value) end
     end
@@ -3787,6 +3856,10 @@ loadNamedProfile = function(button)
     if type(interface.xScale)=="number" and type(interface.xOffset)=="number"
         and type(interface.yScale)=="number" and type(interface.yOffset)=="number" then
         mainFrame.Position=UDim2.new(interface.xScale,interface.xOffset,interface.yScale,interface.yOffset)
+    end
+    if type(interface.width)=="number" and type(interface.height)=="number" then
+        mainExpandedSize=UDim2.new(0,math.max(270,interface.width),0,math.max(180,interface.height))
+        if not minimized then mainFrame.Size=mainExpandedSize end
     end
     for name,isOpen in pairs(payload.categories or {}) do
         local meta=categoryMeta[name]
@@ -3830,6 +3903,22 @@ loadNamedProfile = function(button)
             if activeFeatures[name]~=desired then pcall(toggleRegistry[name],desired) end
         end
     end
+    local savedLighting=payload.lighting
+    if type(savedLighting)=="table" then pcall(function()
+        if type(savedLighting.brightness)=="number" then Lighting.Brightness=savedLighting.brightness end
+        if type(savedLighting.exposure)=="number" then Lighting.ExposureCompensation=savedLighting.exposure end
+        if type(savedLighting.clockTime)=="number" then Lighting.ClockTime=savedLighting.clockTime end
+        if type(savedLighting.fogStart)=="number" then Lighting.FogStart=savedLighting.fogStart end
+        if type(savedLighting.fogEnd)=="number" then Lighting.FogEnd=savedLighting.fogEnd end
+        if type(savedLighting.ambient)=="table" and #savedLighting.ambient==3 then
+            Lighting.Ambient=Color3.new(unpack(savedLighting.ambient))
+        end
+        if type(savedLighting.outdoorAmbient)=="table" and #savedLighting.outdoorAmbient==3 then
+            Lighting.OutdoorAmbient=Color3.new(unpack(savedLighting.outdoorAmbient))
+        end
+    end) end
+    applySavedComfortPreset()
+    if state.playerLightEnabled then applyPlayerLight() else removePlayerLight() end
     button.Text="Profile loaded — settings restored"
 end
 local loadProfileButton=actionButton("Load Named Profile", function(button) loadNamedProfile(button) end)
