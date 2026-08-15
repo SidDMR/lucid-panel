@@ -2244,7 +2244,7 @@ end)
 
 -- IY goto, grouped with Lucid's other character/location teleport tools.
 local gotoApi={}
-local yellowHighlightApi={}
+state.yellowHighlightApi={}
 local function initializeTeleportAndESP()
 useCategory("Teleport & Coordinates")
 local teleportCategory=categories["Teleport & Coordinates"]
@@ -2808,10 +2808,10 @@ local function initializePlayerESP()
     track(Players.PlayerAdded:Connect(watchYellowPlayer))
     track(Players.PlayerRemoving:Connect(removeYellowHighlight))
     for _,player in ipairs(Players:GetPlayers()) do watchYellowPlayer(player) end
-    yellowHighlightApi.getNames=function()
+    state.yellowHighlightApi.getNames=function()
         local names={}; for name in pairs(yellowNames) do table.insert(names,name) end; return names
     end
-    yellowHighlightApi.setNames=function(names)
+    state.yellowHighlightApi.setNames=function(names)
         table.clear(yellowNames)
         if type(names)=="table" then for _,name in ipairs(names) do if type(name)=="string" then yellowNames[name]=true end end end
         for player in pairs(yellowHighlights) do removeYellowHighlight(player) end
@@ -3938,7 +3938,7 @@ actionButton("Save Named Profile", function(button)
     payload.toggles={}
     payload.favorites={}
     for name in pairs(state.favoriteNames or {}) do payload.favorites[name]=true end
-    payload.yellowHighlights=yellowHighlightApi.getNames and yellowHighlightApi.getNames() or {}
+    payload.yellowHighlights=state.yellowHighlightApi.getNames and state.yellowHighlightApi.getNames() or {}
     -- Emote favorites are global and saved independently of named profiles.
     payload.keybinds={}
     for name,key in pairs(shortcutKeys or {}) do payload.keybinds[name]=key and key.Name or "Unbound" end
@@ -4024,7 +4024,7 @@ loadNamedProfile = function(button)
     -- Import favorites from older profile files once, without replacing the
     -- global collection or tying it to this profile/place.
     mergeLegacyEmoteFavorites(payload.emoteFavorites)
-    if yellowHighlightApi.setNames then yellowHighlightApi.setNames(payload.yellowHighlights or {}) end
+    if state.yellowHighlightApi.setNames then state.yellowHighlightApi.setNames(payload.yellowHighlights or {}) end
     for name,setter in pairs(favoriteRegistry or {}) do setter((payload.favorites or {})[name]==true) end
     for name,value in pairs(payload.keybinds or {}) do
         local key=value~="Unbound" and Enum.KeyCode[value] or nil
@@ -4997,20 +4997,20 @@ task.defer(state.autoLoadAssignedProfile)
 
 -- Executor-supported teleport persistence. The newly loaded copy queues itself
 -- again, so this also works across multi-place teleport chains.
-local queueTeleport = queue_on_teleport
+state.queueTeleport = queue_on_teleport
     or queueonteleport
     or (syn and syn.queue_on_teleport)
     or (fluxus and fluxus.queue_on_teleport)
-local teleportBootstrap = string.format(
+state.teleportBootstrap = string.format(
     "loadstring(game:HttpGet(%q, true))()",
     SCRIPT_URL
 )
-local teleportQueueReady = false
-if type(queueTeleport) == "function" then
-    teleportQueueReady = pcall(queueTeleport, teleportBootstrap)
+state.teleportQueueReady = false
+if type(state.queueTeleport) == "function" then
+    state.teleportQueueReady = pcall(state.queueTeleport, state.teleportBootstrap)
 end
 
-if teleportQueueReady then
+if state.teleportQueueReady then
     print("[Lucid Panel v4.4] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
     warn("[Lucid Panel v4.4] Loaded, but this executor does not expose queue_on_teleport")
