@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v4.3
+--// Lucid Panel v4.4
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -160,6 +160,8 @@ local state = {
     espMaxDistance    = 5000,
     emoteSpeed        = 1,
     keepEmoteMoving   = true,
+    emoteSyncTolerance = 0.45,
+    lowPerformanceMode = false,
     gotoOffsetX       = 3,
     gotoOffsetY       = 1,
     gotoOffsetZ       = 0,
@@ -200,6 +202,26 @@ track(LocalPlayer.OnTeleport:Connect(function(teleportState)
         screenGui:SetAttribute("LucidTeleporting", true)
     end
 end))
+
+local notificationHost=create("Frame",{Name="LucidNotifications",Size=UDim2.new(0,280,1,-20),
+    Position=UDim2.new(1,-290,0,10),BackgroundTransparency=1,ZIndex=200,Parent=screenGui})
+create("UIListLayout",{VerticalAlignment=Enum.VerticalAlignment.Bottom,HorizontalAlignment=Enum.HorizontalAlignment.Right,
+    SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6),Parent=notificationHost})
+local notificationOrder=0
+local function notifyLucid(title,message,color)
+    notificationOrder=notificationOrder+1
+    local notice=create("Frame",{Size=UDim2.new(1,0,0,54),BackgroundColor3=Color3.fromRGB(30,27,42),
+        BackgroundTransparency=0.08,BorderSizePixel=0,LayoutOrder=notificationOrder,ZIndex=201,Parent=notificationHost})
+    create("UICorner",{CornerRadius=UDim.new(0,7),Parent=notice})
+    create("UIStroke",{Color=color or Color3.fromRGB(105,80,175),Thickness=1,Parent=notice})
+    create("TextLabel",{Size=UDim2.new(1,-12,0,20),Position=UDim2.new(0,6,0,4),BackgroundTransparency=1,
+        Text=tostring(title),TextColor3=color or Color3.fromRGB(205,190,250),TextSize=11,Font=Enum.Font.GothamBold,
+        TextXAlignment=Enum.TextXAlignment.Left,ZIndex=202,Parent=notice})
+    create("TextLabel",{Size=UDim2.new(1,-12,0,24),Position=UDim2.new(0,6,0,25),BackgroundTransparency=1,
+        Text=tostring(message),TextWrapped=true,TextColor3=Color3.fromRGB(225,220,235),TextSize=10,Font=Enum.Font.Gotham,
+        TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,ZIndex=202,Parent=notice})
+    task.delay(3.5,function() if notice.Parent then notice:Destroy() end end)
+end
 
 -- ============================================================
 -- SCROLLING MAIN FRAME  (taller content now needs scroll)
@@ -287,7 +309,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v4.3",
+    Text                   = ">>  Lucid Panel v4.4",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -564,6 +586,9 @@ local collapseBtn = create("TextButton", {
     TextSize = 10, Font = Enum.Font.GothamSemibold, Parent = searchRow,
 })
 create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = collapseBtn })
+local searchResults=create("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
+    BackgroundTransparency=1,Visible=false,LayoutOrder=-19,Parent=content})
+create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,3),Parent=searchResults})
 local allExpanded = false
 collapseBtn.MouseButton1Click:Connect(function()
     allExpanded = not allExpanded
@@ -582,9 +607,37 @@ local function categoryMatches(name, body, query)
 end
 searchBox:GetPropertyChangedSignal("Text"):Connect(function()
     local query = searchBox.Text:lower():match("^%s*(.-)%s*$")
+    for _,child in ipairs(searchResults:GetChildren()) do if child:IsA("GuiObject") then child:Destroy() end end
+    searchResults.Visible=query~=""
+    local resultCount=0
     for name, meta in pairs(categoryMeta) do
         meta.wrapper.Visible = query == "" or categoryMatches(name, meta.body, query)
         if query ~= "" and meta.wrapper.Visible then meta.setOpen(true) end
+        if query~="" and resultCount<8 then
+            for _,item in ipairs(meta.body:GetDescendants()) do
+                if resultCount>=8 then break end
+                if item:IsA("TextLabel") or item:IsA("TextButton") or item:IsA("TextBox") then
+                    local label=(item.Text~="" and item.Text or (item:IsA("TextBox") and item.PlaceholderText or ""))
+                    if label~="" and label:lower():find(query,1,true) then
+                        resultCount=resultCount+1
+                        local resultMeta=meta
+                        local result=create("TextButton",{Size=UDim2.new(1,0,0,24),BackgroundColor3=Color3.fromRGB(46,40,64),
+                            BorderSizePixel=0,Text="["..name.."]  "..label,TextColor3=Color3.fromRGB(225,215,240),
+                            TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
+                            LayoutOrder=resultCount,Parent=searchResults})
+                        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=result})
+                        create("UIPadding",{PaddingLeft=UDim.new(0,7),Parent=result})
+                        result.MouseButton1Click:Connect(function()
+                            resultMeta.setOpen(true); searchBox.Text=""
+                            task.defer(function()
+                                local target=resultMeta.wrapper.AbsolutePosition.Y-content.AbsolutePosition.Y+content.CanvasPosition.Y
+                                content.CanvasPosition=Vector2.new(0,math.max(0,target))
+                            end)
+                        end)
+                    end
+                end
+            end
+        end
     end
 end)
 
@@ -1586,6 +1639,7 @@ createToggle("Mobile Freeze / Anti Push", nextOrder(), false, function(on)
     state.antiPushEnabled = on
     if on and state.freezeEnabled and toggleRegistry["Freeze Me"] then
         toggleRegistry["Freeze Me"](false)
+        notifyLucid("Compatibility manager","Freeze Me suspended because Anti-Push was enabled",Color3.fromRGB(235,175,70))
     end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -2699,7 +2753,7 @@ local function initializePlayerESP()
                     end
                 end
             end
-            task.wait(0.35)
+            task.wait(state.lowPerformanceMode and 0.8 or 0.35)
         end
     end)
 
@@ -2932,7 +2986,7 @@ end)
 -- control in the root chunk makes loadstring return nil before Lucid starts.
 local function initializeV4Toolkit()
 local AvatarEditorService=game:GetService("AvatarEditorService")
-local shortcutKeys = { Fly=Enum.KeyCode.F, Noclip=Enum.KeyCode.N, Freecam=Enum.KeyCode.P }
+local shortcutKeys = { Fly=Enum.KeyCode.F, Noclip=Enum.KeyCode.N, Freecam=Enum.KeyCode.P, Migraine=Enum.KeyCode.F8 }
 local shortcutBoxes = {}
 local function actionButton(textValue, callback, color)
     local row = rowFrame(nextOrder(), 32)
@@ -3008,7 +3062,10 @@ local _, fireFreecam, setFreecam = createToggle("Freecam", nextOrder(), false, f
     local camera = workspace.CurrentCamera
     if not camera then return end
     if on then
-        if state.flyEnabled then setFly(false) end
+        if state.flyEnabled then
+            setFly(false)
+            notifyLucid("Compatibility manager","Fly suspended while Freecam is active",Color3.fromRGB(235,175,70))
+        end
         savedCamera = {
             Type=camera.CameraType, Subject=camera.CameraSubject,
             CFrame=camera.CFrame, FOV=camera.FieldOfView,
@@ -3211,8 +3268,11 @@ local function applySavedComfortPreset()
     elseif state.comfortPreset=="Evening" then setComfort(19,1.5,-0.35,Color3.fromRGB(85,70,85))
     elseif state.comfortPreset=="Overcast" then setComfort(12,1,-0.5,Color3.fromRGB(90,90,95)) end
 end
+local function triggerMigraineComfort()
+    state.comfortPreset="Migraine"; applySavedComfortPreset()
+end
 actionButton("Migraine Comfort", function(button)
-    state.comfortPreset="Migraine"; applySavedComfortPreset(); button.Text="Migraine Comfort applied"
+    triggerMigraineComfort(); button.Text="Migraine Comfort applied"
 end)
 actionButton("Evening", function(button)
     state.comfortPreset="Evening"; applySavedComfortPreset(); button.Text="Evening applied"
@@ -3406,6 +3466,16 @@ track(RunService.Heartbeat:Connect(function()
     end
 end))
 sectionLabel("Player Emote Sync",nextOrder())
+local emoteSyncSettingsRow=rowFrame(nextOrder(),28)
+create("TextLabel",{Size=UDim2.new(1,-78,1,0),BackgroundTransparency=1,Text="Sync tolerance (seconds)",
+    TextColor3=Color3.fromRGB(195,185,215),TextSize=11,Font=Enum.Font.Gotham,
+    TextXAlignment=Enum.TextXAlignment.Left,Parent=emoteSyncSettingsRow})
+local emoteSyncToleranceBox=styledBox(emoteSyncSettingsRow,{Size=UDim2.new(0,70,0,24),
+    Position=UDim2.new(1,-70,0.5,-12),Text=tostring(state.emoteSyncTolerance)})
+emoteSyncToleranceBox.FocusLost:Connect(function()
+    state.emoteSyncTolerance=math.clamp(tonumber(emoteSyncToleranceBox.Text) or state.emoteSyncTolerance,0.1,2)
+    emoteSyncToleranceBox.Text=string.format("%.2f",state.emoteSyncTolerance)
+end)
 local emoteSyncRow=rowFrame(nextOrder(),30)
 local emoteSyncBox=styledBox(emoteSyncRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="Username or display name"})
 local emoteSyncButton=create("TextButton",{Size=UDim2.new(0,64,0,26),Position=UDim2.new(1,-64,0,0),
@@ -3478,10 +3548,15 @@ local function beginEmoteSync()
     emoteSyncRestoreAntiPush=state.antiPushEnabled==true
     if state.antiPushEnabled and toggleRegistry["Mobile Freeze / Anti Push"] then
         toggleRegistry["Mobile Freeze / Anti Push"](false)
+        notifyLucid("Compatibility manager","Anti-Push suspended during Emote Sync",Color3.fromRGB(235,175,70))
     end
     emoteSyncPlayer=player; emoteSyncActive=true; emoteSyncElapsed=1
     local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
     if humanoid then emoteSyncAutoRotate=humanoid.AutoRotate; humanoid.AutoRotate=false end
+    local targetHumanoid=player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+    if humanoid and targetHumanoid and humanoid.RigType~=targetHumanoid.RigType then
+        notifyLucid("Emote rig mismatch","Your rig and "..player.Name.." use different rig types; some poses may distort.",Color3.fromRGB(235,175,70))
+    end
     emoteStatus.Text="Waiting for "..player.Name.." to emote..."
 end
 emoteSyncButton.MouseButton1Click:Connect(beginEmoteSync)
@@ -3500,7 +3575,7 @@ track(RunService.Heartbeat:Connect(function(dt)
         toggleRegistry["Mobile Freeze / Anti Push"](false)
     end
     emoteSyncElapsed=emoteSyncElapsed+dt
-    if emoteSyncElapsed<0.12 then return end
+    if emoteSyncElapsed<(state.lowPerformanceMode and 0.25 or 0.12) then return end
     emoteSyncElapsed=0
     if not emoteSyncPlayer or emoteSyncPlayer.Parent~=Players then
         emoteStatus.Text="Sync player left the server"; stopEmoteSync(true); return
@@ -3521,7 +3596,7 @@ track(RunService.Heartbeat:Connect(function(dt)
         local drift=math.abs(emoteTrack.TimePosition-sourceTrack.TimePosition)
         local trackLength=math.max(emoteTrack.Length,sourceTrack.Length)
         if trackLength>0 then drift=math.min(drift,math.abs(trackLength-drift)) end
-        if drift>0.45 then
+        if drift>state.emoteSyncTolerance then
             emoteTrack.TimePosition=sourceTrack.TimePosition
         end
     end)
@@ -3694,6 +3769,7 @@ actionButton("Server Hop", function(button)
 end)
 
 -- Profiles save only portable settings; character positions are deliberately excluded.
+do
 useCategory("Interface")
 sectionLabel("Profile & Safety", nextOrder())
 local compactMode=false
@@ -3727,7 +3803,7 @@ local function refreshProfileList()
             for _,path in ipairs(files) do
                 local normalized=tostring(path):gsub("\\","/")
                 local name=normalized:match("/profile_([%w_%-]+)%.json$") or normalized:match("^profile_([%w_%-]+)%.json$")
-                if name then table.insert(names,name) end
+                if name and not name:match("_backup$") then table.insert(names,name) end
             end
         end
     end
@@ -3772,6 +3848,8 @@ actionButton("Save Named Profile", function(button)
         pcall(function() payload=HttpService:JSONDecode(readfile(profilePath)) end)
     end
     if type(payload)~="table" then payload={} end
+    payload.version=3
+    payload.savedAt=os.time()
     payload.values={}
     for key,value in pairs(state) do
         if type(value)=="number" or type(value)=="string" then payload.values[key]=value end
@@ -3782,13 +3860,13 @@ actionButton("Save Named Profile", function(button)
     -- Emote favorites are global and saved independently of named profiles.
     payload.keybinds={}
     for name,key in pairs(shortcutKeys or {}) do payload.keybinds[name]=key and key.Name or "Unbound" end
-    for _,name in ipairs({"Fly","Noclip","Freecam"}) do
+    for _,name in ipairs({"Fly","Noclip","Freecam","Migraine"}) do
         if not shortcutKeys[name] then payload.keybinds[name]="Unbound" end
     end
     payload.interface={opacity=1-mainFrame.BackgroundTransparency,
         xScale=mainFrame.Position.X.Scale,xOffset=mainFrame.Position.X.Offset,
         yScale=mainFrame.Position.Y.Scale,yOffset=mainFrame.Position.Y.Offset,
-        width=mainExpandedSize.X.Offset,height=mainExpandedSize.Y.Offset}
+        width=mainExpandedSize.X.Offset,height=mainExpandedSize.Y.Offset,minimized=minimized}
     payload.lighting={playerLightEnabled=state.playerLightEnabled==true,
         brightness=Lighting.Brightness,exposure=Lighting.ExposureCompensation,
         clockTime=Lighting.ClockTime,fogStart=Lighting.FogStart,fogEnd=Lighting.FogEnd,
@@ -3814,15 +3892,33 @@ actionButton("Save Named Profile", function(button)
     payload.waypointsByPlace[tostring(game.PlaceId)]=savedWaypoints
     for name, enabled in pairs(activeFeatures) do payload.toggles[name]=enabled end
     local encodedOk, encoded = pcall(function() return HttpService:JSONEncode(payload) end)
+    if encodedOk and readfile and (not isfile or isfile(profilePath)) then
+        local backupPath=profilePath:gsub("%.json$","_backup.json")
+        pcall(function()
+            local existing=readfile(profilePath)
+            local decoded=HttpService:JSONDecode(existing)
+            if type(decoded)=="table" then writefile(backupPath,existing) end
+        end)
+    end
     local ok = encodedOk and pcall(writefile, profilePath, encoded)
     button.Text = ok and "Profile saved" or (encodedOk and "Write failed" or "Profile data invalid")
+    notifyLucid(ok and "Profile saved" or "Profile save failed",
+        ok and profileNameBox.Text or button.Text,ok and Color3.fromRGB(75,210,120) or Color3.fromRGB(230,90,105))
     if ok and profileListOpen then refreshProfileList() end
 end)
 loadNamedProfile = function(button)
     local profilePath=getProfilePath()
-    if not readfile or (isfile and not isfile(profilePath)) then button.Text="No saved profile"; return end
-    local ok, payload = pcall(function() return HttpService:JSONDecode(readfile(profilePath)) end)
-    if not ok or type(payload)~="table" then button.Text="Profile invalid"; return end
+    if not readfile then button.Text="File API unavailable"; return end
+    local function decodeProfile(path)
+        if isfile and not isfile(path) then return false,nil end
+        return pcall(function() return HttpService:JSONDecode(readfile(path)) end)
+    end
+    local ok,payload=decodeProfile(profilePath)
+    local recovered=false
+    if not ok or type(payload)~="table" then
+        ok,payload=decodeProfile(profilePath:gsub("%.json$","_backup.json")); recovered=ok and type(payload)=="table"
+    end
+    if not ok or type(payload)~="table" then button.Text="Profile invalid/missing"; notifyLucid("Profile load failed",profileNameBox.Text,Color3.fromRGB(230,90,105)); return end
     for key,value in pairs(payload.values or {}) do if state[key] ~= nil then state[key]=value end end
     if type(payload.lighting)=="table" and type(payload.lighting.playerLightEnabled)=="boolean" then
         state.playerLightEnabled=payload.lighting.playerLightEnabled
@@ -3840,6 +3936,7 @@ loadNamedProfile = function(button)
         antiPushStrengthButton.Text="Anti Push Strength: "..tostring(state.antiPushStrength)
     end
     emoteSpeed=state.emoteSpeed; updateText(emoteSpeedBox,string.format("%.1f",emoteSpeed))
+    updateText(emoteSyncToleranceBox,string.format("%.2f",state.emoteSyncTolerance))
     if gotoApi.setOffset then gotoApi.setOffset(state.gotoOffsetX,state.gotoOffsetY,state.gotoOffsetZ) end
     -- Safe startup: remembered toggle states are intentionally not activated.
     -- Import favorites from older profile files once, without replacing the
@@ -3860,6 +3957,11 @@ loadNamedProfile = function(button)
     if type(interface.width)=="number" and type(interface.height)=="number" then
         mainExpandedSize=UDim2.new(0,math.max(270,interface.width),0,math.max(180,interface.height))
         if not minimized then mainFrame.Size=mainExpandedSize end
+    end
+    if type(interface.minimized)=="boolean" then
+        minimized=interface.minimized; content.Visible=not minimized; mainResizeHandle.Visible=not minimized
+        mainFrame.Size=minimized and UDim2.new(0,mainExpandedSize.X.Offset,0,36) or mainExpandedSize
+        minimizeBtn.Text=minimized and "+" or "-"
     end
     for name,isOpen in pairs(payload.categories or {}) do
         local meta=categoryMeta[name]
@@ -3920,9 +4022,54 @@ loadNamedProfile = function(button)
     applySavedComfortPreset()
     if state.playerLightEnabled then applyPlayerLight() else removePlayerLight() end
     button.Text="Profile loaded — settings restored"
+    notifyLucid(recovered and "Profile recovered from backup" or "Profile loaded",profileNameBox.Text,
+        recovered and Color3.fromRGB(235,175,70) or Color3.fromRGB(75,210,120))
 end
 local loadProfileButton=actionButton("Load Named Profile", function(button) loadNamedProfile(button) end)
 loadProfileButton.Name="LoadNamedProfileButton"
+local AUTO_PROFILE_PATH="LucidPanel/auto_profiles.json"
+local autoProfileStatus=create("TextLabel",{Size=UDim2.new(1,0,0,24),BackgroundTransparency=1,
+    Text="Auto profile: none",TextColor3=Color3.fromRGB(155,145,175),TextSize=10,Font=Enum.Font.Gotham,
+    TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=nextOrder(),Parent=currentSection})
+local function readAutoProfiles()
+    if not readfile or (isfile and not isfile(AUTO_PROFILE_PATH)) then return {byPlace={}} end
+    local ok,data=pcall(function() return HttpService:JSONDecode(readfile(AUTO_PROFILE_PATH)) end)
+    if not ok or type(data)~="table" then return {byPlace={}} end
+    data.byPlace=type(data.byPlace)=="table" and data.byPlace or {}
+    return data
+end
+local function writeAutoProfiles(data)
+    if not writefile then return false end
+    pcall(function() if makefolder and (not isfolder or not isfolder("LucidPanel")) then makefolder("LucidPanel") end end)
+    local ok,encoded=pcall(function() return HttpService:JSONEncode(data) end)
+    return ok and pcall(writefile,AUTO_PROFILE_PATH,encoded)
+end
+local function refreshAutoProfileStatus()
+    local data=readAutoProfiles()
+    local assigned=data.byPlace[tostring(game.PlaceId)]
+    autoProfileStatus.Text="Auto profile: "..tostring(assigned or data.fallback or "none")..(assigned and " (this game)" or (data.fallback and " (fallback)" or ""))
+end
+actionButton("Auto-load Selected Profile for This Game",function(button)
+    local data=readAutoProfiles(); data.byPlace[tostring(game.PlaceId)]=profileNameBox.Text
+    local ok=writeAutoProfiles(data); refreshAutoProfileStatus(); button.Text=ok and "Game auto profile assigned" or "Assignment failed"
+end)
+actionButton("Set Selected as Global Fallback",function(button)
+    local data=readAutoProfiles(); data.fallback=profileNameBox.Text
+    local ok=writeAutoProfiles(data); refreshAutoProfileStatus(); button.Text=ok and "Global fallback assigned" or "Assignment failed"
+end)
+actionButton("Clear This Game Auto Profile",function(button)
+    local data=readAutoProfiles(); data.byPlace[tostring(game.PlaceId)]=nil
+    local ok=writeAutoProfiles(data); refreshAutoProfileStatus(); button.Text=ok and "Game assignment cleared" or "Clear failed"
+end,Color3.fromRGB(85,48,62))
+refreshAutoProfileStatus()
+task.defer(function()
+    local data=readAutoProfiles()
+    local assigned=data.byPlace[tostring(game.PlaceId)] or data.fallback
+    if assigned and tostring(assigned)~="" then
+        profileNameBox.Text=tostring(assigned)
+        loadNamedProfile(loadProfileButton)
+    end
+end)
 actionButton("Export Profile to Clipboard",function(button)
     local path=getProfilePath()
     if readfile and setclipboard and (not isfile or isfile(path)) then
@@ -3948,6 +4095,49 @@ actionButton("Delete Selected Profile",function(button)
     else button.Text="Delete API/file unavailable" end
 end,Color3.fromRGB(90,48,60))
 
+sectionLabel("Window & Performance Manager",nextOrder())
+createToggle("Low Performance Mode",nextOrder(),false,function(on)
+    state.lowPerformanceMode=on
+    notifyLucid("Performance mode",on and "Reduced update frequency enabled" or "Normal update frequency restored",
+        on and Color3.fromRGB(235,175,70) or Color3.fromRGB(75,210,120))
+end)
+actionButton("Show All Detached Windows",function(button)
+    local shown=0
+    for _,item in ipairs(detachableWindows) do
+        if item.isDetached() and item.window and item.window.Parent then item.window.Visible=true; shown=shown+1 end
+    end
+    button.Text="Shown: "..shown
+end)
+actionButton("Reset Off-screen Windows",function(button)
+    local camera=workspace.CurrentCamera; local viewport=camera and camera.ViewportSize or Vector2.new(1280,720)
+    mainFrame.Position=UDim2.new(0.5,-mainFrame.AbsoluteSize.X/2,0.5,-mainFrame.AbsoluteSize.Y/2)
+    local index=0
+    for _,item in ipairs(detachableWindows) do
+        local window=item.window
+        if window and window.Parent then
+            local p=window.AbsolutePosition; local s=window.AbsoluteSize
+            if p.X+s.X<20 or p.Y+s.Y<20 or p.X>viewport.X-20 or p.Y>viewport.Y-20 then
+                index=index+1; window.Position=UDim2.new(0,20+((index-1)%4)*35,0,50+((index-1)%6)*30)
+            end
+        end
+    end
+    button.Text="Off-screen windows recovered"
+end)
+actionButton("Snap Detached Windows to Edges",function(button)
+    local camera=workspace.CurrentCamera; local viewport=camera and camera.ViewportSize or Vector2.new(1280,720)
+    for _,item in ipairs(detachableWindows) do
+        local window=item.window
+        if item.isDetached() and window and window.Visible then
+            local p=window.AbsolutePosition; local s=window.AbsoluteSize
+            local x=(p.X+s.X/2)<viewport.X/2 and 8 or math.max(8,viewport.X-s.X-8)
+            local y=math.clamp(p.Y,8,math.max(8,viewport.Y-s.Y-8))
+            window.Position=UDim2.new(0,x,0,y)
+        end
+    end
+    button.Text="Detached windows snapped"
+end)
+end
+
 -- Panic is also bound to End. It turns off intrusive features and repairs physics.
 local function panicReset()
     for name, setter in pairs(toggleRegistry) do
@@ -3964,7 +4154,7 @@ actionButton("PANIC / Reset Features [End]", function(button)
     panicReset(); button.Text="Reset complete"; task.delay(1,function() if button.Parent then button.Text="PANIC / Reset Features [End]" end end)
 end, Color3.fromRGB(145,50,65))
 sectionLabel("Quick Keybinds", nextOrder())
-for _, name in ipairs({"Fly","Noclip","Freecam"}) do
+for _, name in ipairs({"Fly","Noclip","Freecam","Migraine"}) do
     local shortcutRow = rowFrame(nextOrder(), 30)
     create("TextLabel", {
         Size=UDim2.new(0,72,1,0), BackgroundTransparency=1, Text=name,
@@ -4002,6 +4192,32 @@ useCategory("Misc")
 sectionLabel("Dynamic Backpack Cleaner",nextOrder())
 local backpackCleanerSelections={}
 local backpackCleanerDiscovered={}
+local backpackCleanerOrder={}
+local backpackCleanerAutoArrange=false
+local backpackArrangeGeneration=0
+local backpackArranging=false
+local BACKPACK_CLEANER_PATH="LucidPanel/backpack_cleaner.json"
+local function readBackpackCleanerData()
+    if not readfile or (isfile and not isfile(BACKPACK_CLEANER_PATH)) then return {byPlace={}} end
+    local ok,data=pcall(function() return HttpService:JSONDecode(readfile(BACKPACK_CLEANER_PATH)) end)
+    if not ok or type(data)~="table" then return {byPlace={}} end
+    data.byPlace=type(data.byPlace)=="table" and data.byPlace or {}; return data
+end
+local function saveBackpackCleanerSelections()
+    if not writefile then return end
+    local data=readBackpackCleanerData(); data.byPlace[tostring(game.PlaceId)]={remove=backpackCleanerSelections,
+        order=backpackCleanerOrder,autoArrange=backpackCleanerAutoArrange}
+    pcall(function() if makefolder and (not isfolder or not isfolder("LucidPanel")) then makefolder("LucidPanel") end end)
+    pcall(function() writefile(BACKPACK_CLEANER_PATH,HttpService:JSONEncode(data)) end)
+end
+do
+    local saved=(readBackpackCleanerData().byPlace or {})[tostring(game.PlaceId)]
+    if type(saved)=="table" and type(saved.remove)=="table" then
+        for name,enabled in pairs(saved.remove) do if enabled==true then backpackCleanerSelections[name]=true end end
+        if type(saved.order)=="table" then backpackCleanerOrder=saved.order end
+        backpackCleanerAutoArrange=saved.autoArrange==true
+    end
+end
 local backpackCleanerList=create("ScrollingFrame",{Size=UDim2.new(1,0,0,150),CanvasSize=UDim2.new(),
     AutomaticCanvasSize=Enum.AutomaticSize.Y,BackgroundColor3=Color3.fromRGB(29,27,39),
     BackgroundTransparency=0.2,BorderSizePixel=0,ScrollBarThickness=3,LayoutOrder=nextOrder(),Parent=currentSection})
@@ -4029,6 +4245,27 @@ local function sweepSelectedBackpackTools()
     end
     inspect(LocalPlayer:FindFirstChildOfClass("Backpack")); inspect(LocalPlayer.Character)
 end
+local function arrangeBackpackTools()
+    if not backpackCleanerAutoArrange or backpackArranging or #backpackCleanerOrder==0 then return end
+    local backpack=LocalPlayer:FindFirstChildOfClass("Backpack"); if not backpack then return end
+    backpackArranging=true
+    local rank={}; for index,name in ipairs(backpackCleanerOrder) do if rank[name]==nil then rank[name]=index end end
+    local tools={}; for _,tool in ipairs(backpack:GetChildren()) do if tool:IsA("Tool") then table.insert(tools,tool) end end
+    table.sort(tools,function(a,b)
+        local ar,br=rank[a.Name] or math.huge,rank[b.Name] or math.huge
+        return ar==br and a.Name:lower()<b.Name:lower() or ar<br
+    end)
+    for _,tool in ipairs(tools) do tool.Parent=nil end
+    for _,tool in ipairs(tools) do tool.Parent=backpack end
+    backpackArranging=false
+end
+local function scheduleBackpackArrange()
+    if not backpackCleanerAutoArrange or backpackArranging then return end
+    backpackArrangeGeneration=backpackArrangeGeneration+1; local generation=backpackArrangeGeneration
+    task.delay(0.45,function()
+        if generation==backpackArrangeGeneration and screenGui.Parent then arrangeBackpackTools() end
+    end)
+end
 local refreshBackpackCleanerList
 refreshBackpackCleanerList=function()
     discoverBackpackTools()
@@ -4052,6 +4289,7 @@ refreshBackpackCleanerList=function()
         create("UICorner",{CornerRadius=UDim.new(0,5),Parent=button})
         button.MouseButton1Click:Connect(function()
             backpackCleanerSelections[name]=not backpackCleanerSelections[name] or nil
+            saveBackpackCleanerSelections()
             refreshBackpackCleanerList()
             task.defer(sweepSelectedBackpackTools)
         end)
@@ -4062,18 +4300,31 @@ actionButton("Refresh Detected Backpack Tools",function(button)
     task.delay(1,function() if button.Parent then button.Text="Refresh Detected Backpack Tools" end end)
 end)
 actionButton("Clear Backpack Auto-Remove List",function(button)
-    table.clear(backpackCleanerSelections); refreshBackpackCleanerList(); button.Text="Auto-remove list cleared"
+    table.clear(backpackCleanerSelections); saveBackpackCleanerSelections(); refreshBackpackCleanerList(); button.Text="Auto-remove list cleared"
     task.delay(1,function() if button.Parent then button.Text="Clear Backpack Auto-Remove List" end end)
 end,Color3.fromRGB(85,48,62))
+createToggle("Auto-arrange Saved Backpack Order",nextOrder(),backpackCleanerAutoArrange,function(on)
+    backpackCleanerAutoArrange=on; saveBackpackCleanerSelections(); if on then scheduleBackpackArrange() end
+end)
+actionButton("Save Current Backpack Order",function(button)
+    table.clear(backpackCleanerOrder)
+    local backpack=LocalPlayer:FindFirstChildOfClass("Backpack")
+    if backpack then
+        for _,tool in ipairs(backpack:GetChildren()) do if tool:IsA("Tool") then table.insert(backpackCleanerOrder,tool.Name) end end
+    end
+    saveBackpackCleanerSelections(); button.Text=#backpackCleanerOrder>0 and ("Saved order: "..#backpackCleanerOrder.." tools") or "No tools to order"
+end)
 track(LocalPlayer.DescendantAdded:Connect(function(object)
     if not object:IsA("Tool") then return end
     backpackCleanerDiscovered[object.Name]=true
     task.defer(function()
         removeSelectedBackpackTool(object)
+        scheduleBackpackArrange()
         if backpackCleanerList.Parent then refreshBackpackCleanerList() end
     end)
 end))
 refreshBackpackCleanerList()
+scheduleBackpackArrange()
 end
 
 -- Place-specific obstacle cleanup for Climb Scary Worm Tower 3.
@@ -4083,6 +4334,8 @@ if game.PlaceId==136070094363960 then
     local removeBananaPeels=false
     local removeLandmines=false
     local removeAllObstacles=false
+    local scaryWormEspEnabled=false
+    local scaryWormHighlights=setmetatable({},{__mode="k"})
 
     local function isInsideObstacles(object)
         local obstacles=workspace:FindFirstChild("Obstacles")
@@ -4103,6 +4356,40 @@ if game.PlaceId==136070094363960 then
     local function sweepObstacles()
         for _,object in ipairs(workspace:GetDescendants()) do removeMatchingObstacle(object) end
     end
+    local function isScaryWorm(object)
+        return object and object.Name:lower():find("scary worm",1,true)~=nil
+    end
+    local function addScaryWormHighlight(object)
+        if not scaryWormEspEnabled or not object or not object.Parent or not isScaryWorm(object) then return end
+        if scaryWormHighlights[object] and scaryWormHighlights[object].Parent then return end
+        local target=(object:IsA("Model") or object:IsA("BasePart")) and object
+            or object:FindFirstChildWhichIsA("Model",true) or object:FindFirstChildWhichIsA("BasePart",true)
+        if not target then return end
+        local highlight=Instance.new("Highlight")
+        highlight.Name="LucidScaryWormESP"
+        highlight.Adornee=target
+        highlight.FillColor=Color3.fromRGB(255,35,35)
+        highlight.FillTransparency=0.9
+        highlight.OutlineColor=Color3.fromRGB(255,45,45)
+        highlight.OutlineTransparency=0.35
+        highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.Parent=object
+        scaryWormHighlights[object]=highlight
+    end
+    local function clearScaryWormHighlights()
+        for object,highlight in pairs(scaryWormHighlights) do
+            if highlight and highlight.Parent then highlight:Destroy() end
+            scaryWormHighlights[object]=nil
+        end
+        for _,highlight in ipairs(workspace:GetDescendants()) do
+            if highlight:IsA("Highlight") and highlight.Name=="LucidScaryWormESP" then highlight:Destroy() end
+        end
+    end
+    local function scanScaryWorms()
+        for _,object in ipairs(workspace:GetDescendants()) do
+            if isScaryWorm(object) then addScaryWormHighlight(object) end
+        end
+    end
 
     createToggle("Remove Banana Peels",nextOrder(),false,function(on)
         removeBananaPeels=on
@@ -4116,11 +4403,17 @@ if game.PlaceId==136070094363960 then
         removeAllObstacles=on
         if on then task.defer(sweepObstacles) end
     end)
+    createToggle("Scary Worm ESP (Red 90% Transparent)",nextOrder(),false,function(on)
+        scaryWormEspEnabled=on
+        if on then task.defer(scanScaryWorms) else clearScaryWormHighlights() end
+    end)
     track(workspace.DescendantAdded:Connect(function(object)
         if removeBananaPeels or removeLandmines or removeAllObstacles then
             task.defer(removeMatchingObstacle,object)
         end
+        if scaryWormEspEnabled and isScaryWorm(object) then task.defer(addScaryWormHighlight,object) end
     end))
+    addCleanup(function() scaryWormEspEnabled=false; clearScaryWormHighlights() end)
 end
 
 -- Live diagnostics and a copyable report.
@@ -4186,9 +4479,9 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v4.3 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v4.4 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
-local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,82), BackgroundColor3=Color3.fromRGB(35,33,48),
+local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
     Font=Enum.Font.Code, TextWrapped=true, TextXAlignment=Enum.TextXAlignment.Left,
     TextYAlignment=Enum.TextYAlignment.Top, LayoutOrder=nextOrder(), Parent=currentSection })
@@ -4216,7 +4509,11 @@ track(UserInputService.InputBegan:Connect(function(input, processed)
             if state.freecamEnabled then setFreecam(false) end
             fireFly()
         elseif input.KeyCode == shortcutKeys.Noclip then fireNoclip()
-        elseif input.KeyCode == shortcutKeys.Freecam then fireFreecam() end
+        elseif input.KeyCode == shortcutKeys.Freecam then fireFreecam()
+        elseif input.KeyCode == shortcutKeys.Migraine then
+            triggerMigraineComfort()
+            notifyLucid("Migraine Comfort","Emergency lighting preset applied",Color3.fromRGB(105,180,220))
+        end
     end
     if flyKeys[input.KeyCode.Name] ~= nil and (not processed or state.freecamEnabled) then
         flyKeys[input.KeyCode.Name]=true
@@ -4275,16 +4572,19 @@ task.spawn(function()
             local rig=h and tostring(h.RigType):gsub("Enum.HumanoidRigType.","") or "None"
             local humanoidState=h and tostring(h:GetState()):gsub("Enum.HumanoidStateType.","") or "None"
             local speed=root and math.floor(root.AssemblyLinearVelocity.Magnitude+0.5) or 0
-            diagnosticsLabel.Text=string.format("Place: %s\nRig: %s | State: %s\nWalkSpeed: %s | HipHeight: %s | Velocity: %s\nActive: %s",
+            local activeCount=0; for _,enabled in pairs(activeFeatures) do if enabled then activeCount=activeCount+1 end end
+            local detachedCount=0; for _,item in ipairs(detachableWindows) do if item.isDetached() then detachedCount=detachedCount+1 end end
+            diagnosticsLabel.Text=string.format("Place: %s\nRig: %s | State: %s\nWalkSpeed: %s | HipHeight: %s | Velocity: %s\nLucid: %d connections | %d active | %d detached | %s\nActive: %s",
                 tostring(game.PlaceId), rig, humanoidState, h and tostring(h.WalkSpeed) or "-",
-                h and string.format("%.2f",h.HipHeight) or "-", speed, statusLabelRef and statusLabelRef.Text or "Anti-AFK")
+                h and string.format("%.2f",h.HipHeight) or "-", speed,#connections,activeCount,detachedCount,
+                state.lowPerformanceMode and "LOW PERF" or "NORMAL",statusLabelRef and statusLabelRef.Text or "Anti-AFK")
         end)
         if not ok then
             diagnosticsLabel.Text="Diagnostics unavailable\n"..tostring(err)
             warn("[Lucid v4 / Diagnostics] "..tostring(err))
             diagnosticsFailed=true
         end
-        task.wait(1)
+        task.wait(state.lowPerformanceMode and 2.5 or 1)
     end
 end)
 end
@@ -4618,7 +4918,7 @@ if type(queueTeleport) == "function" then
 end
 
 if teleportQueueReady then
-    print("[Lucid Panel v4.3] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v4.4] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v4.3] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v4.4] Loaded, but this executor does not expose queue_on_teleport")
 end
