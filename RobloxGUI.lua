@@ -2244,6 +2244,7 @@ end)
 
 -- IY goto, grouped with Lucid's other character/location teleport tools.
 local gotoApi={}
+local yellowHighlightApi={}
 local function initializeTeleportAndESP()
 useCategory("Teleport & Coordinates")
 local teleportCategory=categories["Teleport & Coordinates"]
@@ -2739,6 +2740,85 @@ local function initializePlayerESP()
         espUseHighlight=on; clearESP(); refreshESP()
     end)
 
+    sectionLabel("Yellow Player Highlights",nextOrder())
+    local yellowNames={}
+    local yellowHighlights={}
+    local yellowCharacterConnections={}
+    local yellowRow=rowFrame(nextOrder(),30)
+    local yellowBox=styledBox(yellowRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="Friend username/display name"})
+    local yellowAdd=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-64,0,0),
+        BackgroundColor3=Color3.fromRGB(125,105,38),BorderSizePixel=0,Text="+",TextColor3=Color3.new(1,1,1),
+        TextSize=18,Font=Enum.Font.GothamBold,Parent=yellowRow})
+    local yellowRemove=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-30,0,0),
+        BackgroundColor3=Color3.fromRGB(95,55,60),BorderSizePixel=0,Text="-",TextColor3=Color3.new(1,1,1),
+        TextSize=18,Font=Enum.Font.GothamBold,Parent=yellowRow})
+    create("UICorner",{CornerRadius=UDim.new(0,5),Parent=yellowAdd}); create("UICorner",{CornerRadius=UDim.new(0,5),Parent=yellowRemove})
+    local yellowStatus=create("TextLabel",{Size=UDim2.new(1,0,0,24),BackgroundTransparency=1,Text="Highlighted: none",
+        TextColor3=Color3.fromRGB(220,205,120),TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
+        TextTruncate=Enum.TextTruncate.AtEnd,LayoutOrder=nextOrder(),Parent=currentSection})
+
+    local function refreshYellowStatus()
+        local names={}; for name in pairs(yellowNames) do table.insert(names,name) end
+        table.sort(names,function(a,b) return a:lower()<b:lower() end)
+        yellowStatus.Text=#names>0 and ("Highlighted: "..table.concat(names,", ")) or "Highlighted: none"
+    end
+    local function removeYellowHighlight(player)
+        local highlight=yellowHighlights[player]
+        if highlight and highlight.Parent then highlight:Destroy() end
+        yellowHighlights[player]=nil
+    end
+    local function applyYellowHighlight(player)
+        removeYellowHighlight(player)
+        if not player or not yellowNames[player.Name] or not player.Character then return end
+        local highlight=Instance.new("Highlight")
+        highlight.Name="LucidYellowPlayerHighlight"; highlight.Adornee=player.Character
+        highlight.FillColor=Color3.fromRGB(255,225,45); highlight.FillTransparency=0.82
+        highlight.OutlineColor=Color3.fromRGB(255,235,80); highlight.OutlineTransparency=0.2
+        highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; highlight.Parent=player.Character
+        yellowHighlights[player]=highlight
+    end
+    local function watchYellowPlayer(player)
+        if player==LocalPlayer or yellowCharacterConnections[player] then return end
+        yellowCharacterConnections[player]=track(player.CharacterAdded:Connect(function()
+            task.defer(function() applyYellowHighlight(player) end)
+        end))
+        applyYellowHighlight(player)
+    end
+    local function addYellowPlayer()
+        local player=findGotoPlayer(yellowBox.Text)
+        if not player then yellowBox.Text="Player not found"; return end
+        yellowNames[player.Name]=true; yellowBox.Text=""; watchYellowPlayer(player); applyYellowHighlight(player); refreshYellowStatus()
+    end
+    local function removeYellowPlayer()
+        local query=yellowBox.Text:match("^%s*(.-)%s*$"):lower(); local removedName=nil
+        if query=="" then yellowBox.Text="Enter a player name"; return end
+        local player=findGotoPlayer(query)
+        if player and yellowNames[player.Name] then removedName=player.Name end
+        if not removedName then
+            for name in pairs(yellowNames) do if name:lower():sub(1,#query)==query then removedName=name; break end end
+        end
+        if removedName then
+            yellowNames[removedName]=nil
+            for playerKey in pairs(yellowHighlights) do if playerKey.Name==removedName then removeYellowHighlight(playerKey) end end
+        end
+        yellowBox.Text=""; refreshYellowStatus()
+    end
+    yellowAdd.MouseButton1Click:Connect(addYellowPlayer); yellowRemove.MouseButton1Click:Connect(removeYellowPlayer)
+    yellowBox.FocusLost:Connect(function(enterPressed) if enterPressed then addYellowPlayer() end end)
+    track(Players.PlayerAdded:Connect(watchYellowPlayer))
+    track(Players.PlayerRemoving:Connect(removeYellowHighlight))
+    for _,player in ipairs(Players:GetPlayers()) do watchYellowPlayer(player) end
+    yellowHighlightApi.getNames=function()
+        local names={}; for name in pairs(yellowNames) do table.insert(names,name) end; return names
+    end
+    yellowHighlightApi.setNames=function(names)
+        table.clear(yellowNames)
+        if type(names)=="table" then for _,name in ipairs(names) do if type(name)=="string" then yellowNames[name]=true end end end
+        for player in pairs(yellowHighlights) do removeYellowHighlight(player) end
+        for _,player in ipairs(Players:GetPlayers()) do watchYellowPlayer(player); applyYellowHighlight(player) end
+        refreshYellowStatus()
+    end
+
     task.spawn(function()
         while running and screenGui.Parent do
             if mode ~= "off" then
@@ -2761,6 +2841,7 @@ local function initializePlayerESP()
         running=false
         mode="off"
         clearESP()
+        for player in pairs(yellowHighlights) do removeYellowHighlight(player) end
     end)
 end
 
@@ -3857,6 +3938,7 @@ actionButton("Save Named Profile", function(button)
     payload.toggles={}
     payload.favorites={}
     for name in pairs(state.favoriteNames or {}) do payload.favorites[name]=true end
+    payload.yellowHighlights=yellowHighlightApi.getNames and yellowHighlightApi.getNames() or {}
     -- Emote favorites are global and saved independently of named profiles.
     payload.keybinds={}
     for name,key in pairs(shortcutKeys or {}) do payload.keybinds[name]=key and key.Name or "Unbound" end
@@ -3942,6 +4024,7 @@ loadNamedProfile = function(button)
     -- Import favorites from older profile files once, without replacing the
     -- global collection or tying it to this profile/place.
     mergeLegacyEmoteFavorites(payload.emoteFavorites)
+    if yellowHighlightApi.setNames then yellowHighlightApi.setNames(payload.yellowHighlights or {}) end
     for name,setter in pairs(favoriteRegistry or {}) do setter((payload.favorites or {})[name]==true) end
     for name,value in pairs(payload.keybinds or {}) do
         local key=value~="Unbound" and Enum.KeyCode[value] or nil
