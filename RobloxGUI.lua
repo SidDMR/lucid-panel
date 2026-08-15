@@ -4133,11 +4133,17 @@ local function refreshAutoProfileStatus()
     autoProfileStatus.Text="Auto profile: "..tostring(assigned or data.fallback or "none")..(assigned and " (this game)" or (data.fallback and " (fallback)" or ""))
 end
 actionButton("Auto-load Selected Profile for This Game",function(button)
-    local data=readAutoProfiles(); data.byPlace[tostring(game.PlaceId)]=profileNameBox.Text
+    local selected=profileNameBox.Text:gsub("[^%w_%-]","")
+    if selected=="" then selected="default" end
+    profileNameBox.Text=selected
+    local data=readAutoProfiles(); data.byPlace[tostring(game.PlaceId)]=selected
     local ok=writeAutoProfiles(data); refreshAutoProfileStatus(); button.Text=ok and "Game auto profile assigned" or "Assignment failed"
 end)
 actionButton("Set Selected as Global Fallback",function(button)
-    local data=readAutoProfiles(); data.fallback=profileNameBox.Text
+    local selected=profileNameBox.Text:gsub("[^%w_%-]","")
+    if selected=="" then selected="default" end
+    profileNameBox.Text=selected
+    local data=readAutoProfiles(); data.fallback=selected
     local ok=writeAutoProfiles(data); refreshAutoProfileStatus(); button.Text=ok and "Global fallback assigned" or "Assignment failed"
 end)
 actionButton("Clear This Game Auto Profile",function(button)
@@ -4145,14 +4151,14 @@ actionButton("Clear This Game Auto Profile",function(button)
     local ok=writeAutoProfiles(data); refreshAutoProfileStatus(); button.Text=ok and "Game assignment cleared" or "Clear failed"
 end,Color3.fromRGB(85,48,62))
 refreshAutoProfileStatus()
-task.defer(function()
+local function autoLoadAssignedProfile()
     local data=readAutoProfiles()
     local assigned=data.byPlace[tostring(game.PlaceId)] or data.fallback
     if assigned and tostring(assigned)~="" then
         profileNameBox.Text=tostring(assigned)
         loadNamedProfile(loadProfileButton)
     end
-end)
+end
 actionButton("Export Profile to Clipboard",function(button)
     local path=getProfilePath()
     if readfile and setclipboard and (not isfile or isfile(path)) then
@@ -4984,6 +4990,10 @@ screenGui.Destroying:Connect(function()
         sharedEnvironment.__LUCID_PANEL_ACTIVE = nil
     end
 end)
+
+-- Load the PlaceId-assigned profile only after every category, toggle and
+-- detachable window has registered. Loading earlier produced partial configs.
+task.defer(autoLoadAssignedProfile)
 
 -- Executor-supported teleport persistence. The newly loaded copy queues itself
 -- again, so this also works across multi-place teleport chains.
