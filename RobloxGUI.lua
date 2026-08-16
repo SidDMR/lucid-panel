@@ -3200,6 +3200,104 @@ actionButton("Third Person / Restore", function()
     if camera and h then camera.CameraType = Enum.CameraType.Custom; camera.CameraSubject = h end
 end)
 
+sectionLabel("Photo Isolation",nextOrder())
+state.initializePhotoIsolation=function()
+    local exceptions={}
+    local originals={}
+    local characterConnections={}
+    local isolationEnabled=false
+    local inputRow=rowFrame(nextOrder(),30)
+    local inputBox=styledBox(inputRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="Player username/display name"})
+    local addButton=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-64,0,0),
+        BackgroundColor3=Color3.fromRGB(48,105,67),BorderSizePixel=0,Text="+",TextColor3=Color3.new(1,1,1),
+        TextSize=18,Font=Enum.Font.GothamBold,Parent=inputRow})
+    local removeButton=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-30,0,0),
+        BackgroundColor3=Color3.fromRGB(95,55,60),BorderSizePixel=0,Text="-",TextColor3=Color3.new(1,1,1),
+        TextSize=18,Font=Enum.Font.GothamBold,Parent=inputRow})
+    create("UICorner",{CornerRadius=UDim.new(0,5),Parent=addButton}); create("UICorner",{CornerRadius=UDim.new(0,5),Parent=removeButton})
+    local status=create("TextLabel",{Size=UDim2.new(1,0,0,24),BackgroundTransparency=1,Text="Visible with you: nobody",
+        TextColor3=Color3.fromRGB(155,190,165),TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
+        TextTruncate=Enum.TextTruncate.AtEnd,LayoutOrder=nextOrder(),Parent=currentSection})
+
+    local function remember(instance,property,value)
+        local record=originals[instance]
+        if not record then record={}; originals[instance]=record end
+        if record[property]==nil then record[property]=value end
+    end
+    local function hideObject(object)
+        if object:IsA("BasePart") then
+            remember(object,"LocalTransparencyModifier",object.LocalTransparencyModifier); object.LocalTransparencyModifier=1
+        elseif object:IsA("ParticleEmitter") or object:IsA("Trail") or object:IsA("Beam")
+            or object:IsA("BillboardGui") or object:IsA("SurfaceGui") or object:IsA("Highlight") then
+            remember(object,"Enabled",object.Enabled); object.Enabled=false
+        elseif object:IsA("Humanoid") then
+            remember(object,"DisplayDistanceType",object.DisplayDistanceType); object.DisplayDistanceType=Enum.HumanoidDisplayDistanceType.None
+        end
+    end
+    local function shouldHide(player)
+        return isolationEnabled and player~=LocalPlayer and not exceptions[player.Name]
+    end
+    local function applyPlayer(player)
+        local character=player.Character
+        if not character or not shouldHide(player) then return end
+        hideObject(character)
+        for _,object in ipairs(character:GetDescendants()) do hideObject(object) end
+    end
+    local function restoreAll()
+        for object,properties in pairs(originals) do
+            if object and object.Parent then
+                for property,value in pairs(properties) do pcall(function() object[property]=value end) end
+            end
+        end
+        table.clear(originals)
+    end
+    local function refresh()
+        restoreAll()
+        if isolationEnabled then for _,player in ipairs(Players:GetPlayers()) do applyPlayer(player) end end
+    end
+    local function updateStatus()
+        local names={}; for name in pairs(exceptions) do table.insert(names,name) end
+        table.sort(names,function(a,b) return a:lower()<b:lower() end)
+        status.Text=#names>0 and ("Visible with you: "..table.concat(names,", ")) or "Visible with you: nobody"
+    end
+    local function watchPlayer(player)
+        if player==LocalPlayer or characterConnections[player] then return end
+        characterConnections[player]=track(player.CharacterAdded:Connect(function(character)
+            if shouldHide(player) then
+                task.defer(function() if character.Parent then applyPlayer(player) end end)
+            end
+        end))
+    end
+    local function addException()
+        local player=gotoApi.find(inputBox.Text)
+        if not player or player==LocalPlayer then inputBox.Text="Player not found"; return end
+        exceptions[player.Name]=true; inputBox.Text=""; updateStatus(); refresh()
+    end
+    local function removeException()
+        local query=inputBox.Text:match("^%s*(.-)%s*$"):lower()
+        if query=="" then inputBox.Text="Enter a player name"; return end
+        local removed=nil
+        for name in pairs(exceptions) do if name:lower():sub(1,#query)==query then removed=name; break end end
+        if removed then exceptions[removed]=nil end
+        inputBox.Text=""; updateStatus(); refresh()
+    end
+    addButton.MouseButton1Click:Connect(addException); removeButton.MouseButton1Click:Connect(removeException)
+    inputBox.FocusLost:Connect(function(enterPressed) if enterPressed then addException() end end)
+    createToggle("Photo Isolation — Hide Other Players",nextOrder(),false,function(on)
+        isolationEnabled=on; state.photoIsolationEnabled=on; refresh()
+    end)
+    track(Players.PlayerAdded:Connect(function(player) watchPlayer(player); if isolationEnabled then task.defer(function() applyPlayer(player) end) end end))
+    track(workspace.DescendantAdded:Connect(function(object)
+        if not isolationEnabled then return end
+        local character=object:FindFirstAncestorOfClass("Model")
+        local player=character and Players:GetPlayerFromCharacter(character)
+        if player and shouldHide(player) then hideObject(object) end
+    end))
+    for _,player in ipairs(Players:GetPlayers()) do watchPlayer(player) end
+    addCleanup(function() isolationEnabled=false; restoreAll() end)
+end
+state.initializePhotoIsolation()
+
 -- In-memory waypoints are intentionally per-place and do not move between games.
 useCategory("Waypoints")
 sectionLabel("Named Waypoints", nextOrder())
