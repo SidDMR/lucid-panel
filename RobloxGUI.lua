@@ -4523,6 +4523,10 @@ if game.PlaceId==136070094363960 then
     local removeAllObstacles=false
     local scaryWormEspEnabled=false
     local scaryWormHighlights=setmetatable({},{__mode="k"})
+    local hazardEspEnabled={banana=false,mine=false}
+    local hazardHighlights=setmetatable({},{__mode="k"})
+    local hazardGhosts={}
+    local preserveHazardGhost=function() end
 
     local function isInsideObstacles(object)
         local obstacles=workspace:FindFirstChild("Obstacles")
@@ -4531,17 +4535,99 @@ if game.PlaceId==136070094363960 then
     local function shouldRemoveObstacle(object)
         if removeAllObstacles and isInsideObstacles(object) then return true end
         local lowerName=object.Name:lower()
-        if removeBananaPeels and lowerName:find("banana peel",1,true) then return true end
+        if removeBananaPeels and lowerName:find("banana peel",1,true) then
+            -- Equipped tools live under a player's Character, which is itself
+            -- inside workspace. Preserve that tool so it can still activate;
+            -- only remove the deployed peel after it leaves the character.
+            local tool=object:IsA("Tool") and object or object:FindFirstAncestorOfClass("Tool")
+            local holder=tool and tool.Parent
+            if holder and Players:GetPlayerFromCharacter(holder) then return false end
+            local character=object:FindFirstAncestorOfClass("Model")
+            if character and Players:GetPlayerFromCharacter(character) then return false end
+            return true
+        end
         if removeLandmines and (lowerName:find("landmine",1,true) or lowerName:find("land mine",1,true)) then return true end
         return false
     end
     local function removeMatchingObstacle(object)
         if object and object.Parent and shouldRemoveObstacle(object) then
+            preserveHazardGhost(object)
             pcall(function() object:Destroy() end)
         end
     end
     local function sweepObstacles()
         for _,object in ipairs(workspace:GetDescendants()) do removeMatchingObstacle(object) end
+    end
+    local function heldByPlayer(object)
+        local tool=object:IsA("Tool") and object or object:FindFirstAncestorOfClass("Tool")
+        if tool and tool.Parent and Players:GetPlayerFromCharacter(tool.Parent) then return true end
+        local character=object:FindFirstAncestorOfClass("Model")
+        return character and Players:GetPlayerFromCharacter(character)~=nil
+    end
+    local function hazardKind(object)
+        if heldByPlayer(object) then return nil end
+        local name=object.Name:lower()
+        if name:find("banana peel",1,true) then return "banana" end
+        if name:find("landmine",1,true) or name:find("land mine",1,true) then return "mine" end
+        return nil
+    end
+    local function hazardTransform(object)
+        if object:IsA("BasePart") then return object.CFrame,object.Size end
+        if object:IsA("Model") then
+            local ok,cframe,size=pcall(object.GetBoundingBox,object)
+            if ok then return cframe,size end
+        end
+        return nil,nil
+    end
+    local function clearHazardGhosts()
+        for key,marker in pairs(hazardGhosts) do
+            if marker and marker.Parent then marker:Destroy() end
+            hazardGhosts[key]=nil
+        end
+    end
+    preserveHazardGhost=function(object)
+        local kind=hazardKind(object)
+        if not kind or not hazardEspEnabled[kind] then return end
+        local cframe,size=hazardTransform(object)
+        if not cframe then return end
+        local position=cframe.Position
+        local key=string.format("%s:%d:%d:%d",kind,math.floor(position.X/2+0.5),math.floor(position.Y/2+0.5),math.floor(position.Z/2+0.5))
+        if hazardGhosts[key] and hazardGhosts[key].Parent then return end
+        local marker=Instance.new("Part")
+        marker.Name="LucidHazardGhost"; marker.Anchored=true; marker.CanCollide=false; marker.CanTouch=false; marker.CanQuery=false
+        marker.Transparency=1; marker.Size=Vector3.new(math.max(1,size.X),math.max(0.5,size.Y),math.max(1,size.Z)); marker.CFrame=cframe
+        marker.Parent=workspace
+        local box=Instance.new("BoxHandleAdornment")
+        box.Name="GhostOutline"; box.Adornee=marker; box.AlwaysOnTop=true; box.ZIndex=10; box.Size=marker.Size
+        box.Color3=kind=="banana" and Color3.fromRGB(255,220,35) or Color3.fromRGB(255,75,35)
+        box.Transparency=0.35; box.Parent=marker
+        local tag=Instance.new("BillboardGui")
+        tag.Name="GhostLabel"; tag.Adornee=marker; tag.AlwaysOnTop=true; tag.Size=UDim2.new(0,110,0,24); tag.StudsOffset=Vector3.new(0,marker.Size.Y/2+0.8,0); tag.Parent=marker
+        local label=Instance.new("TextLabel")
+        label.Size=UDim2.fromScale(1,1); label.BackgroundTransparency=1; label.Text=kind=="banana" and "Banana (removed)" or "Mine (removed)"
+        label.TextColor3=box.Color3; label.TextStrokeTransparency=0.25; label.Font=Enum.Font.GothamBold; label.TextSize=12; label.Parent=tag
+        hazardGhosts[key]=marker
+    end
+    local function addHazardHighlight(object)
+        local kind=hazardKind(object)
+        if not kind or not hazardEspEnabled[kind] or hazardHighlights[object] or not (object:IsA("Model") or object:IsA("BasePart")) then return end
+        local highlight=Instance.new("Highlight")
+        highlight.Name="LucidHazardESP_"..kind; highlight.Adornee=object
+        highlight.FillColor=kind=="banana" and Color3.fromRGB(255,220,35) or Color3.fromRGB(255,75,35)
+        highlight.OutlineColor=kind=="banana" and Color3.fromRGB(255,245,110) or Color3.fromRGB(255,155,70)
+        highlight.FillTransparency=0.82; highlight.OutlineTransparency=0.1
+        highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; highlight.Parent=object
+        hazardHighlights[object]=highlight
+    end
+    local function clearHazardHighlights(kind)
+        for object,highlight in pairs(hazardHighlights) do
+            if not kind or highlight.Name=="LucidHazardESP_"..kind then
+                if highlight.Parent then highlight:Destroy() end; hazardHighlights[object]=nil
+            end
+        end
+    end
+    local function scanHazards()
+        for _,object in ipairs(workspace:GetDescendants()) do addHazardHighlight(object) end
     end
     local function isScaryWorm(object)
         return object and object.Name:lower():find("scary worm",1,true)~=nil
@@ -4586,6 +4672,18 @@ if game.PlaceId==136070094363960 then
         removeLandmines=on
         if on then task.defer(sweepObstacles) end
     end)
+    createToggle("Banana Peel ESP (Yellow)",nextOrder(),false,function(on)
+        hazardEspEnabled.banana=on
+        if on then task.defer(scanHazards) else clearHazardHighlights("banana") end
+    end)
+    createToggle("Landmine ESP (Red)",nextOrder(),false,function(on)
+        hazardEspEnabled.mine=on
+        if on then task.defer(scanHazards) else clearHazardHighlights("mine") end
+    end)
+    actionButton("Clear Hazard Ghost ESP",function(button)
+        clearHazardGhosts(); button.Text="Hazard ghosts cleared"
+        task.delay(1.2,function() if button.Parent then button.Text="Clear Hazard Ghost ESP" end end)
+    end,Color3.fromRGB(85,55,62))
     createToggle("Remove All Workspace Obstacles",nextOrder(),false,function(on)
         removeAllObstacles=on
         if on then task.defer(sweepObstacles) end
@@ -4598,9 +4696,13 @@ if game.PlaceId==136070094363960 then
         if removeBananaPeels or removeLandmines or removeAllObstacles then
             task.defer(removeMatchingObstacle,object)
         end
+        if hazardEspEnabled.banana or hazardEspEnabled.mine then task.defer(addHazardHighlight,object) end
         if scaryWormEspEnabled and isScaryWorm(object) then task.defer(addScaryWormHighlight,object) end
     end))
-    addCleanup(function() scaryWormEspEnabled=false; clearScaryWormHighlights() end)
+    addCleanup(function()
+        scaryWormEspEnabled=false; hazardEspEnabled.banana=false; hazardEspEnabled.mine=false
+        clearScaryWormHighlights(); clearHazardHighlights(); clearHazardGhosts()
+    end)
 end
 
 -- Live diagnostics and a copyable report.
