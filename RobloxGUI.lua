@@ -3138,10 +3138,28 @@ local savedCamera = nil
 local freecamCFrame = nil
 local freecamYaw = 0
 local freecamPitch = 0
+local function releaseFreecamMouse()
+    UserInputService.MouseBehavior=Enum.MouseBehavior.Default
+    UserInputService.MouseIconEnabled=true
+    -- Potassium/Roblox may apply the previous frame's LockCenter after this
+    -- callback. Release it again after that frame has completed.
+    task.defer(function()
+        if not state.freecamEnabled then
+            UserInputService.MouseBehavior=Enum.MouseBehavior.Default
+            UserInputService.MouseIconEnabled=true
+        end
+    end)
+    task.delay(0.08,function()
+        if not state.freecamEnabled then
+            UserInputService.MouseBehavior=Enum.MouseBehavior.Default
+            UserInputService.MouseIconEnabled=true
+        end
+    end)
+end
 local _, fireFreecam, setFreecam = createToggle("Freecam", nextOrder(), false, function(on)
     state.freecamEnabled = on
     local camera = workspace.CurrentCamera
-    if not camera then return end
+    if not camera then if not on then releaseFreecamMouse() end; return end
     if on then
         if state.flyEnabled then
             setFly(false)
@@ -3176,9 +3194,10 @@ local _, fireFreecam, setFreecam = createToggle("Freecam", nextOrder(), false, f
         camera.CameraSubject = savedCamera.Subject
         camera.CFrame = savedCamera.CFrame
         if not state.fovLocked then camera.FieldOfView = savedCamera.FOV end
-        UserInputService.MouseBehavior = savedCamera.MouseBehavior
-        UserInputService.MouseIconEnabled = savedCamera.MouseIconEnabled
         savedCamera, freecamCFrame = nil, nil
+        releaseFreecamMouse()
+    elseif not on then
+        releaseFreecamMouse()
     end
 end)
 addCleanup(function()
@@ -3187,9 +3206,8 @@ addCleanup(function()
         local camera=workspace.CurrentCamera
         camera.CameraType=savedCamera.Type; camera.CameraSubject=savedCamera.Subject
         camera.CFrame=savedCamera.CFrame; camera.FieldOfView=savedCamera.FOV
-        UserInputService.MouseBehavior=savedCamera.MouseBehavior
-        UserInputService.MouseIconEnabled=savedCamera.MouseIconEnabled
     end
+    state.freecamEnabled=false; releaseFreecamMouse()
 end)
 actionButton("First Person", function() LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson end)
 actionButton("Third Person / Restore", function()
@@ -3198,6 +3216,7 @@ actionButton("Third Person / Restore", function()
     local camera = workspace.CurrentCamera
     local h = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
     if camera and h then camera.CameraType = Enum.CameraType.Custom; camera.CameraSubject = h end
+    releaseFreecamMouse()
 end)
 
 sectionLabel("Photo Isolation",nextOrder())
@@ -4780,6 +4799,7 @@ actionButton("Copy Diagnostic Report", function(button)
 end)
 actionButton("Emergency Cleanup Only",function(button)
     ContextActionService:UnbindAction("LucidFreecamSink")
+    state.freecamEnabled=false; releaseFreecamMouse()
     restoreNoclipCollisions(); destroyPlatform(); removePlayerLight()
     for _,item in ipairs(workspace:GetChildren()) do
         if item.Name:match("^LucidWaypoint_") or item.Name=="LucidFloatPlatform" then item:Destroy() end
