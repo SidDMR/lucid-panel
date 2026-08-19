@@ -3571,6 +3571,30 @@ end)
 -- Marketplace emote browser. Roblox's catalog API identifies emote
 -- animations as asset type 61; only currently on-sale results are requested.
 useCategory("Emotes")
+state.emoteModuleTabs={root=currentSection}
+state.emoteModuleTabs.row=rowFrame(nextOrder(),30)
+state.emoteModuleTabs.mainButton=create("TextButton",{Size=UDim2.new(0.49,0,0,28),BackgroundColor3=Color3.fromRGB(78,55,135),
+    BorderSizePixel=0,Text="Main",TextColor3=Color3.new(1,1,1),TextSize=11,Font=Enum.Font.GothamSemibold,Parent=state.emoteModuleTabs.row})
+state.emoteModuleTabs.newButton=create("TextButton",{Size=UDim2.new(0.49,0,0,28),Position=UDim2.new(0.51,0,0,0),
+    BackgroundColor3=Color3.fromRGB(48,43,65),BorderSizePixel=0,Text="New",TextColor3=Color3.fromRGB(225,215,235),
+    TextSize=11,Font=Enum.Font.GothamSemibold,Parent=state.emoteModuleTabs.row})
+create("UICorner",{CornerRadius=UDim.new(0,6),Parent=state.emoteModuleTabs.mainButton})
+create("UICorner",{CornerRadius=UDim.new(0,6),Parent=state.emoteModuleTabs.newButton})
+state.emoteModuleTabs.main=create("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
+    BackgroundTransparency=1,Visible=true,LayoutOrder=nextOrder(),Parent=state.emoteModuleTabs.root})
+state.emoteModuleTabs.new=create("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
+    BackgroundTransparency=1,Visible=false,LayoutOrder=nextOrder(),Parent=state.emoteModuleTabs.root})
+create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6),Parent=state.emoteModuleTabs.main})
+create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6),Parent=state.emoteModuleTabs.new})
+state.emoteModuleTabs.set=function(tab)
+    local showMain=tab~="New"
+    state.emoteModuleTabs.main.Visible=showMain; state.emoteModuleTabs.new.Visible=not showMain
+    state.emoteModuleTabs.mainButton.BackgroundColor3=showMain and Color3.fromRGB(78,55,135) or Color3.fromRGB(48,43,65)
+    state.emoteModuleTabs.newButton.BackgroundColor3=showMain and Color3.fromRGB(48,43,65) or Color3.fromRGB(78,55,135)
+end
+state.emoteModuleTabs.mainButton.MouseButton1Click:Connect(function() state.emoteModuleTabs.set("Main") end)
+state.emoteModuleTabs.newButton.MouseButton1Click:Connect(function() state.emoteModuleTabs.set("New") end)
+currentSection=state.emoteModuleTabs.main
 sectionLabel("Marketplace Emote Browser", nextOrder())
 local EMOTE_FAVORITES_PATH="LucidPanel/emote_favorites.json"
 local function saveGlobalEmoteFavorites()
@@ -4041,6 +4065,7 @@ emoteResults.LayoutOrder=nextOrder()
 
 -- Advanced emote tools live in their own closure so Potassium does not add
 -- their locals to initializeV4Toolkit's register frame.
+currentSection=state.emoteModuleTabs.new
 state.initializeAdvancedEmotes=function(api)
     local paused=false
     local loopConnection=nil
@@ -4301,6 +4326,7 @@ state.initializeAdvancedEmotes({
         emoteRequestGeneration=emoteRequestGeneration+1; emoteLoading=false; emoteSearchButton.Text="Search"; emoteStatus.Text="Catalog search cancelled"
     end,
 })
+currentSection=state.emoteModuleTabs.root
 local emotesDock=categoryMeta["Emotes"] and categoryMeta["Emotes"].dock
 if emotesDock then
     track(emotesDock:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
@@ -4930,20 +4956,45 @@ actionButton("Save Current Backpack Order",function(button)
     local robloxGui=CoreGui:FindFirstChild("RobloxGui")
     local backpackGui=robloxGui and robloxGui:FindFirstChild("Backpack",true)
     local hotbar=backpackGui and backpackGui:FindFirstChild("Hotbar",true)
+    local numberedSlots={}
     local visualSlots={}
     if hotbar then
-        -- Slot frame names differ between Roblox CoreGui versions. Reading
-        -- the on-screen X position of each visible tool-name label captures
-        -- what the player actually sees instead of relying on those names.
+        -- Modern CoreGui uses auxiliary labels/tooltips whose X position does
+        -- not match the actual hotbar slot. Find the nearest small container
+        -- that also owns a numeric 1-10 label; its number is authoritative.
         for _,label in ipairs(hotbar:GetDescendants()) do
             if label:IsA("TextLabel") and available[label.Text] and label.Visible
                 and label.AbsoluteSize.X>0 and label.AbsoluteSize.Y>0 then
-                table.insert(visualSlots,{x=label.AbsolutePosition.X,name=label.Text})
+                local visible=true; local cursor=label.Parent
+                while cursor and cursor~=hotbar do
+                    if cursor:IsA("GuiObject") and not cursor.Visible then visible=false; break end
+                    cursor=cursor.Parent
+                end
+                if visible then
+                    local slotNumber=nil; local container=label.Parent
+                    while container and container~=hotbar and not slotNumber do
+                        if container:IsA("GuiObject") and container.AbsoluteSize.X<=math.max(140,hotbar.AbsoluteSize.X/3) then
+                            for _,candidate in ipairs(container:GetDescendants()) do
+                                if candidate:IsA("TextLabel") or candidate:IsA("TextButton") then
+                                    local number=tonumber(candidate.Text)
+                                    if number and number>=1 and number<=10 and number%1==0 then slotNumber=number; break end
+                                end
+                            end
+                        end
+                        container=container.Parent
+                    end
+                    if slotNumber then numberedSlots[slotNumber]=label.Text
+                    else table.insert(visualSlots,{x=label.AbsolutePosition.X,name=label.Text}) end
+                end
             end
         end
     end
     table.sort(visualSlots,function(a,b) return a.x<b.x end)
     local recorded={}
+    for index=1,10 do
+        local name=numberedSlots[index]
+        if name and not recorded[name] then table.insert(backpackCleanerOrder,name); recorded[name]=true end
+    end
     for _,slot in ipairs(visualSlots) do
         local name=slot.name
         if not recorded[name] then table.insert(backpackCleanerOrder,name); recorded[name]=true end
