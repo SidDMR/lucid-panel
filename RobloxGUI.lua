@@ -576,6 +576,7 @@ local function createCategory(name, order, openByDefault)
     }
 end
 
+createCategory("Home", -1, true)
 createCategory("Favorites", 0, false)
 createCategory("Player", 1, false)
 createCategory("Teleport & Coordinates", 2, false)
@@ -588,6 +589,37 @@ createCategory("Emotes", 8, false)
 createCategory("Misc", 9, false)
 createCategory("Diagnostics", 10, false)
 createCategory("Interface", 11, false)
+
+state.mainNavigation={active="Home",groups={
+    Home={Home=true,Favorites=true},
+    Player={Player=true,Camera=true},
+    World={["Teleport & Coordinates"]=true,Waypoints=true,Lighting=true,Servers=true},
+    Tools={Automation=true,Emotes=true,Misc=true},
+    Settings={Interface=true,Diagnostics=true},
+},categoryGroup={}}
+for group,names in pairs(state.mainNavigation.groups) do for name in pairs(names) do state.mainNavigation.categoryGroup[name]=group end end
+state.mainNavigation.row=create("Frame",{Size=UDim2.new(1,0,0,30),BackgroundTransparency=1,LayoutOrder=-30,Parent=content})
+state.mainNavigation.buttons={}
+for index,name in ipairs({"Home","Player","World","Tools","Settings"}) do
+    local button=create("TextButton",{Size=UDim2.new(0.19,0,0,27),Position=UDim2.new((index-1)*0.2025,0,0,0),
+        BackgroundColor3=Color3.fromRGB(48,43,65),BorderSizePixel=0,Text=name,TextColor3=Color3.fromRGB(220,210,235),
+        TextSize=9,Font=Enum.Font.GothamSemibold,Parent=state.mainNavigation.row})
+    create("UICorner",{CornerRadius=UDim.new(0,6),Parent=button}); state.mainNavigation.buttons[name]=button
+end
+state.mainNavigation.apply=function()
+    local visible=state.mainNavigation.groups[state.mainNavigation.active] or {}
+    for name,meta in pairs(categoryMeta) do meta.wrapper.Visible=visible[name]==true end
+    for name,button in pairs(state.mainNavigation.buttons) do
+        button.BackgroundColor3=name==state.mainNavigation.active and Color3.fromRGB(82,58,145) or Color3.fromRGB(48,43,65)
+        button.TextColor3=name==state.mainNavigation.active and Color3.new(1,1,1) or Color3.fromRGB(180,170,205)
+    end
+    content.CanvasPosition=Vector2.zero
+end
+state.mainNavigation.select=function(name)
+    if state.mainNavigation.groups[name] then state.mainNavigation.active=name; state.mainNavigation.apply() end
+end
+for name,button in pairs(state.mainNavigation.buttons) do button.MouseButton1Click:Connect(function() state.mainNavigation.select(name) end) end
+state.mainNavigation.apply()
 
 local searchRow = create("Frame", {
     Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1,
@@ -632,7 +664,8 @@ searchBox:GetPropertyChangedSignal("Text"):Connect(function()
     searchResults.Visible=query~=""
     local resultCount=0
     for name, meta in pairs(categoryMeta) do
-        meta.wrapper.Visible = query == "" or categoryMatches(name, meta.body, query)
+        meta.wrapper.Visible = query == "" and (state.mainNavigation.groups[state.mainNavigation.active] or {})[name]==true
+            or query~="" and categoryMatches(name, meta.body, query)
         if query ~= "" and meta.wrapper.Visible then meta.setOpen(true) end
         if query~="" and resultCount<8 then
             for _,item in ipairs(meta.body:GetDescendants()) do
@@ -642,6 +675,7 @@ searchBox:GetPropertyChangedSignal("Text"):Connect(function()
                     if label~="" and label:lower():find(query,1,true) then
                         resultCount=resultCount+1
                         local resultMeta=meta
+                        local resultCategory=name
                         local result=create("TextButton",{Size=UDim2.new(1,0,0,24),BackgroundColor3=Color3.fromRGB(46,40,64),
                             BorderSizePixel=0,Text="["..name.."]  "..label,TextColor3=Color3.fromRGB(225,215,240),
                             TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
@@ -649,6 +683,7 @@ searchBox:GetPropertyChangedSignal("Text"):Connect(function()
                         create("UICorner",{CornerRadius=UDim.new(0,5),Parent=result})
                         create("UIPadding",{PaddingLeft=UDim.new(0,7),Parent=result})
                         result.MouseButton1Click:Connect(function()
+                            state.mainNavigation.select(state.mainNavigation.categoryGroup[resultCategory] or "Home")
                             resultMeta.setOpen(true); searchBox.Text=""
                             task.defer(function()
                                 local target=resultMeta.wrapper.AbsolutePosition.Y-content.AbsolutePosition.Y+content.CanvasPosition.Y
@@ -720,6 +755,17 @@ end
 local favoriteRegistry = {}
 local favoriteStatusRegistry = {}
 local activeFeatures = {}
+state.featureNavigationGroups={}
+state.refreshNavigationCounts=function()
+    local counts={Home=0,Player=0,World=0,Tools=0,Settings=0}
+    for name,enabled in pairs(activeFeatures) do
+        local group=state.featureNavigationGroups[name]
+        if enabled and group then counts[group]=(counts[group] or 0)+1 end
+    end
+    for name,button in pairs(state.mainNavigation.buttons) do
+        local count=counts[name] or 0; button.Text=name..(count>0 and (" · "..count) or "")
+    end
+end
 local registerFavorite = (function()
     useCategory("Favorites")
     sectionLabel("Pinned Tools", nextOrder())
@@ -880,6 +926,12 @@ end
 
 local function createToggle(labelText, order, default, callback)
     local row = rowFrame(order)
+    for categoryName,body in pairs(categories) do
+        if row:IsDescendantOf(body) then
+            state.featureNavigationGroups[labelText]=state.mainNavigation.categoryGroup[categoryName]
+            break
+        end
+    end
 
     create("TextLabel", {
         Size                   = UDim2.new(0.6, 0, 1, 0),
@@ -923,6 +975,7 @@ local function createToggle(labelText, order, default, callback)
         toggleBg.BackgroundColor3 = enabled and Color3.fromRGB(80, 200, 120) or Color3.fromRGB(60, 60, 70)
         knob.Position = enabled and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
         activeFeatures[labelText] = enabled
+        state.refreshNavigationCounts()
         if favoriteStatusRegistry[labelText] then favoriteStatusRegistry[labelText](enabled) end
         refreshFeatureStatus()
         if callback then callback(enabled) end
@@ -937,6 +990,7 @@ local function createToggle(labelText, order, default, callback)
 
     toggleRegistry[labelText] = setToggle
     activeFeatures[labelText] = default == true
+    state.refreshNavigationCounts()
     return function() return enabled end, fireToggle, setToggle
 end
 
@@ -3594,11 +3648,13 @@ create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6
 create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6),Parent=state.emoteModuleTabs.new})
 create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6),Parent=state.emoteModuleTabs.favorites})
 state.emoteModuleTabs.set=function(tab)
+    state.emoteModuleTabs.active=tab
     local showMain=tab=="Main"; local showAdvanced=tab=="Advanced"; local showFavorites=tab=="Favorites"
     state.emoteModuleTabs.main.Visible=showMain; state.emoteModuleTabs.new.Visible=showAdvanced; state.emoteModuleTabs.favorites.Visible=showFavorites
     state.emoteModuleTabs.mainButton.BackgroundColor3=showMain and Color3.fromRGB(78,55,135) or Color3.fromRGB(48,43,65)
     state.emoteModuleTabs.newButton.BackgroundColor3=showAdvanced and Color3.fromRGB(78,55,135) or Color3.fromRGB(48,43,65)
     state.emoteModuleTabs.favoritesButton.BackgroundColor3=showFavorites and Color3.fromRGB(78,55,135) or Color3.fromRGB(48,43,65)
+    if state.updateEmoteResultsHeight then task.defer(state.updateEmoteResultsHeight) end
 end
 state.emoteModuleTabs.mainButton.MouseButton1Click:Connect(function()
     if state.emoteModuleTabs.showMain then state.emoteModuleTabs.showMain(true) else state.emoteModuleTabs.set("Main") end
@@ -4378,13 +4434,18 @@ state.initializeAdvancedEmotes({
 currentSection=state.emoteModuleTabs.root
 local emotesDock=categoryMeta["Emotes"] and categoryMeta["Emotes"].dock
 if emotesDock then
-    track(emotesDock:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+    state.updateEmoteResultsHeight=function()
         if emotesDock.Visible then
-            emoteResults.Size=UDim2.new(1,-4,0,math.max(100,emotesDock.AbsoluteSize.Y-255))
+            local active=state.emoteModuleTabs.active or "Main"
+            local reserved=active=="Favorites" and 125 or 255
+            local minimum=active=="Favorites" and 190 or 100
+            emoteResults.Size=UDim2.new(1,-4,0,math.max(minimum,emotesDock.AbsoluteSize.Y-reserved))
         else
             emoteResults.Size=UDim2.new(1,0,0,190)
         end
-    end))
+    end
+    track(emotesDock:GetPropertyChangedSignal("AbsoluteSize"):Connect(state.updateEmoteResultsHeight))
+    task.defer(state.updateEmoteResultsHeight)
 end
 track(LocalPlayer.CharacterAdded:Connect(function()
     local syncTarget=emoteSyncActive and emoteSyncPlayer or nil
@@ -5410,6 +5471,52 @@ track(RunService.RenderStepped:Connect(function(dt)
         warn("[Lucid v4 / Render] "..tostring(err))
     end
 end))
+
+state.initializeHomeDashboard=function()
+    useCategory("Home")
+    sectionLabel("Overview",nextOrder())
+    local profileSummary=create("TextLabel",{Size=UDim2.new(1,0,0,24),BackgroundColor3=Color3.fromRGB(35,32,48),
+        BackgroundTransparency=0.15,BorderSizePixel=0,Text="Profile: default",TextColor3=Color3.fromRGB(215,205,235),
+        TextSize=11,Font=Enum.Font.GothamSemibold,TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=nextOrder(),Parent=currentSection})
+    local activeSummary=create("TextLabel",{Size=UDim2.new(1,0,0,48),BackgroundColor3=Color3.fromRGB(35,32,48),
+        BackgroundTransparency=0.15,BorderSizePixel=0,Text="No optional features enabled",TextWrapped=true,
+        TextColor3=Color3.fromRGB(145,205,160),TextSize=10,Font=Enum.Font.Gotham,
+        TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,LayoutOrder=nextOrder(),Parent=currentSection})
+    create("UICorner",{CornerRadius=UDim.new(0,6),Parent=profileSummary}); create("UICorner",{CornerRadius=UDim.new(0,6),Parent=activeSummary})
+    create("UIPadding",{PaddingLeft=UDim.new(0,8),Parent=profileSummary}); create("UIPadding",{PaddingLeft=UDim.new(0,8),PaddingTop=UDim.new(0,5),Parent=activeSummary})
+    sectionLabel("Quick Actions",nextOrder())
+    actionButton("Open Favorites",function(button)
+        state.mainNavigation.select("Home"); categoryMeta.Home.setOpen(false); categoryMeta.Favorites.setOpen(true)
+        button.Text="Favorites opened"
+    end)
+    actionButton("Apply Migraine Comfort",function(button)
+        triggerMigraineComfort(); button.Text="Migraine Comfort applied"
+    end,Color3.fromRGB(48,88,105))
+    actionButton("Load Selected Profile",function(button) loadNamedProfile(button) end)
+    actionButton("Disable All Active Features",function(button)
+        for name,enabled in pairs(activeFeatures) do
+            if enabled and toggleRegistry[name] then pcall(toggleRegistry[name],false) end
+        end
+        button.Text="Active features disabled"
+    end,Color3.fromRGB(115,55,65))
+    actionButton("PANIC / Repair Character [End]",function(button)
+        panicReset(); button.Text="Character repaired"
+    end,Color3.fromRGB(145,50,65))
+    create("TextLabel",{Size=UDim2.new(1,0,0,40),BackgroundTransparency=1,
+        Text="Tip: use the top navigation to show only related modules. Search still checks every tool.",
+        TextWrapped=true,TextColor3=Color3.fromRGB(145,135,165),TextSize=10,Font=Enum.Font.Gotham,
+        TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=nextOrder(),Parent=currentSection})
+    task.spawn(function()
+        while screenGui.Parent do
+            local names={}; for name,enabled in pairs(activeFeatures) do if enabled then table.insert(names,name) end end
+            table.sort(names)
+            profileSummary.Text="Profile: "..tostring(profileNameBox.Text).."  |  Place: "..tostring(game.PlaceId)
+            activeSummary.Text=#names==0 and "No optional features enabled" or ("ON ("..#names.."): "..table.concat(names,", "))
+            task.wait(state.lowPerformanceMode and 2 or 0.75)
+        end
+    end)
+end
+state.initializeHomeDashboard()
 
 task.spawn(function()
     local diagnosticsFailed=false
