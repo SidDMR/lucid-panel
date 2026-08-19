@@ -152,6 +152,7 @@ local state = {
     freecamEnabled     = false,
     freecamSpeed       = 50,
     noCameraShake      = false,
+    cameraShakeStrength = "Strong",
     fovLocked          = false,
     fovValue           = 70,
     autoclickEnabled   = false,
@@ -3153,13 +3154,22 @@ local function setNoCameraShake(on)
     if on then
         RunService:BindToRenderStep("LucidNoCameraShake",Enum.RenderPriority.Last.Value,function()
             local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if humanoid and humanoid.CameraOffset~=Vector3.zero then humanoid.CameraOffset=Vector3.zero end
+            if humanoid and humanoid.CameraOffset~=Vector3.zero then
+                local strength=state.cameraShakeStrength
+                local removal=strength=="Light" and 0.35 or (strength=="Medium" and 0.7 or 1)
+                humanoid.CameraOffset=humanoid.CameraOffset*(1-removal)
+            end
         end)
     else
         local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
         if humanoid then humanoid.CameraOffset=Vector3.zero end
     end
 end
+local shakeStrengthButton=actionButton("Camera Shake Strength: Strong",function(button)
+    local current=state.cameraShakeStrength
+    state.cameraShakeStrength=current=="Light" and "Medium" or (current=="Medium" and "Strong" or "Light")
+    button.Text="Camera Shake Strength: "..state.cameraShakeStrength
+end)
 createToggle("Remove Camera Shake",nextOrder(),false,setNoCameraShake)
 local savedCamera = nil
 local freecamCFrame = nil
@@ -4155,6 +4165,10 @@ loadNamedProfile = function(button)
     end
     updateText(wsBox,state.walkspeedValue); updateText(jhBox,state.jumpHeightValue)
     updateText(zoomBox,state.maxZoomValue); updateText(flySpeedBox,state.flySpeed); updateText(freecamSpeedBox,state.freecamSpeed)
+    if state.cameraShakeStrength~="Light" and state.cameraShakeStrength~="Medium" and state.cameraShakeStrength~="Strong" then
+        state.cameraShakeStrength="Strong"
+    end
+    if shakeStrengthButton and shakeStrengthButton.Parent then shakeStrengthButton.Text="Camera Shake Strength: "..state.cameraShakeStrength end
     updateText(fovBox,state.fovValue); updateText(flingLinearBox,state.antiFlingLinear)
     updateText(flingAngularBox,state.antiFlingAngular); updateText(fogBox,state.fogEndValue)
     updateText(clockBox,state.nightClockTime); updateText(lightRangeBox,state.playerLightRange)
