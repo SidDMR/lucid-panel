@@ -3599,7 +3599,6 @@ local emoteSyncPlayer=nil
 local emoteSyncActive=false
 local emoteSyncAnimationId=nil
 local emoteSyncElapsed=0
-local emoteSyncAutoRotate=nil
 local emoteSyncRestoreAntiPush=nil
 createToggle("Keep Emote While Moving",nextOrder(),true,function(on)
     state.keepEmoteMoving=on
@@ -3633,9 +3632,6 @@ local emoteLoading=false
 local emoteRequestGeneration=0
 local function stopEmote()
     emoteSyncActive=false; emoteSyncPlayer=nil; emoteSyncAnimationId=nil; emoteSyncElapsed=0
-    local syncHumanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-    if syncHumanoid and emoteSyncAutoRotate~=nil then syncHumanoid.AutoRotate=emoteSyncAutoRotate end
-    emoteSyncAutoRotate=nil
     local restoreAntiPush=emoteSyncRestoreAntiPush==true
     emoteSyncRestoreAntiPush=nil
     if restoreAntiPush and toggleRegistry["Mobile Freeze / Anti Push"] then
@@ -3758,8 +3754,6 @@ local function loadSyncedTrack(sourceTrack)
     local animator=humanoid and humanoid:FindFirstChildOfClass("Animator")
     if not animator and humanoid then animator=Instance.new("Animator"); animator.Parent=humanoid end
     if not animator then return false end
-    if emoteSyncAutoRotate==nil then emoteSyncAutoRotate=humanoid.AutoRotate end
-    humanoid.AutoRotate=false
     local animation=Instance.new("Animation"); animation.AnimationId=animationId
     local ok,loaded=pcall(function() return animator:LoadAnimation(animation) end)
     if not ok or not loaded then animation:Destroy(); return false end
@@ -3788,7 +3782,6 @@ local function beginEmoteSync()
     end
     emoteSyncPlayer=player; emoteSyncActive=true; emoteSyncElapsed=1
     local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-    if humanoid then emoteSyncAutoRotate=humanoid.AutoRotate; humanoid.AutoRotate=false end
     local targetHumanoid=player.Character and player.Character:FindFirstChildOfClass("Humanoid")
     if humanoid and targetHumanoid and humanoid.RigType~=targetHumanoid.RigType then
         notifyLucid("Emote rig mismatch","Your rig and "..player.Name.." use different rig types; some poses may distort.",Color3.fromRGB(235,175,70))
