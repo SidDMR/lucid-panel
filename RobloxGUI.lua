@@ -3722,6 +3722,14 @@ local function stopEmote()
     emoteStatus.Text="Emote stopped"
 end
 local stopEmoteButton=actionButton("Stop Current Emote",function() stopEmote() end,Color3.fromRGB(85,48,62))
+state.emoteModuleTabs.favoriteStopRow=create("Frame",{Size=UDim2.new(1,0,0,32),BackgroundTransparency=1,
+    LayoutOrder=nextOrder(),Parent=state.emoteModuleTabs.favorites})
+state.emoteModuleTabs.favoriteStopButton=create("TextButton",{Size=UDim2.new(1,0,0,28),
+    BackgroundColor3=Color3.fromRGB(85,48,62),BorderSizePixel=0,Text="Stop Current Emote",
+    TextColor3=Color3.fromRGB(235,230,245),TextSize=12,Font=Enum.Font.GothamSemibold,
+    Parent=state.emoteModuleTabs.favoriteStopRow})
+create("UICorner",{CornerRadius=UDim.new(0,6),Parent=state.emoteModuleTabs.favoriteStopButton})
+state.emoteModuleTabs.favoriteStopButton.MouseButton1Click:Connect(stopEmote)
 emoteResults.LayoutOrder=nextOrder()
 local function playEmote(assetId,name)
     emoteSyncActive=false; emoteSyncPlayer=nil; emoteSyncAnimationId=nil
@@ -4118,6 +4126,7 @@ state.initializeAdvancedEmotes=function(api)
     state.emoteHotkeyName=state.emoteHotkeyName or "H"
 
     sectionLabel("Playback Controls",nextOrder())
+    actionButton("Stop Current Emote",function() api.stop() end,Color3.fromRGB(85,48,62))
     actionButton("Pause / Resume Emote",function(button)
         local track=api.getTrack()
         if not track then button.Text="No emote playing"; return end
