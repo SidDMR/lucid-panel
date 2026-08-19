@@ -4499,10 +4499,16 @@ local function arrangeBackpackTools()
     backpackArranging=true
     local rank={}; for index,name in ipairs(backpackCleanerOrder) do if rank[name]==nil then rank[name]=index end end
     local tools={}; for _,tool in ipairs(backpack:GetChildren()) do if tool:IsA("Tool") then table.insert(tools,tool) end end
+    local originalTools={}; for index,tool in ipairs(tools) do originalTools[index]=tool end
     table.sort(tools,function(a,b)
         local ar,br=rank[a.Name] or math.huge,rank[b.Name] or math.huge
         return ar==br and a.Name:lower()<b.Name:lower() or ar<br
     end)
+    local alreadyOrdered=true
+    for index,tool in ipairs(tools) do
+        if originalTools[index]~=tool then alreadyOrdered=false; break end
+    end
+    if alreadyOrdered then backpackArranging=false; return end
     for _,tool in ipairs(tools) do tool.Parent=nil end
     for _,tool in ipairs(tools) do tool.Parent=backpack end
     backpackArranging=false
@@ -4557,19 +4563,60 @@ end)
 actionButton("Save Current Backpack Order",function(button)
     table.clear(backpackCleanerOrder)
     local backpack=LocalPlayer:FindFirstChildOfClass("Backpack")
+    local available={}
+    local function collect(container)
+        if container then for _,tool in ipairs(container:GetChildren()) do if tool:IsA("Tool") then available[tool.Name]=true end end end
+    end
+    collect(backpack); collect(LocalPlayer.Character)
+    -- Core Backpack keeps the equipped Tool under Character, not Backpack.
+    -- Read numbered hotbar slots first so saving while holding an item does
+    -- not drop that item from the recorded order.
+    local robloxGui=CoreGui:FindFirstChild("RobloxGui")
+    local backpackGui=robloxGui and robloxGui:FindFirstChild("Backpack",true)
+    local hotbar=backpackGui and backpackGui:FindFirstChild("Hotbar",true)
+    local slots={}
+    if hotbar then
+        for _,slot in ipairs(hotbar:GetChildren()) do
+            local number=tonumber(slot.Name)
+            if number and slot:IsA("GuiObject") then
+                for _,label in ipairs(slot:GetDescendants()) do
+                    if label:IsA("TextLabel") and available[label.Text] then slots[number]=label.Text; break end
+                end
+            end
+        end
+    end
+    local recorded={}
+    for index=1,10 do
+        local name=slots[index]
+        if name and not recorded[name] then table.insert(backpackCleanerOrder,name); recorded[name]=true end
+    end
     if backpack then
-        for _,tool in ipairs(backpack:GetChildren()) do if tool:IsA("Tool") then table.insert(backpackCleanerOrder,tool.Name) end end
+        for _,tool in ipairs(backpack:GetChildren()) do
+            if tool:IsA("Tool") and not recorded[tool.Name] then table.insert(backpackCleanerOrder,tool.Name); recorded[tool.Name]=true end
+        end
+    end
+    if LocalPlayer.Character then
+        for _,tool in ipairs(LocalPlayer.Character:GetChildren()) do
+            if tool:IsA("Tool") and not recorded[tool.Name] then table.insert(backpackCleanerOrder,tool.Name); recorded[tool.Name]=true end
+        end
     end
     saveBackpackCleanerSelections(); button.Text=#backpackCleanerOrder>0 and ("Saved order: "..#backpackCleanerOrder.." tools") or "No tools to order"
 end)
 track(LocalPlayer.DescendantAdded:Connect(function(object)
     if not object:IsA("Tool") then return end
     backpackCleanerDiscovered[object.Name]=true
+    if backpackArranging then return end
     task.defer(function()
         removeSelectedBackpackTool(object)
         scheduleBackpackArrange()
         if backpackCleanerList.Parent then refreshBackpackCleanerList() end
     end)
+end))
+track(LocalPlayer.CharacterAdded:Connect(function()
+    -- Persistent inventories commonly arrive in several server-side waves.
+    for _,delaySeconds in ipairs({0.5,1.5,3,6}) do
+        task.delay(delaySeconds,function() if screenGui.Parent then scheduleBackpackArrange() end end)
+    end
 end))
 refreshBackpackCleanerList()
 scheduleBackpackArrange()
