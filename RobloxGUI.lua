@@ -4876,6 +4876,10 @@ local function arrangeBackpackTools()
     if not backpackCleanerAutoArrange or backpackArranging or #backpackCleanerOrder==0 then return end
     local backpack=LocalPlayer:FindFirstChildOfClass("Backpack"); if not backpack then return end
     backpackArranging=true
+    local character=LocalPlayer.Character
+    local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+    local originallyEquipped=character and character:FindFirstChildOfClass("Tool")
+    if humanoid and originallyEquipped then humanoid:UnequipTools(); RunService.Heartbeat:Wait() end
     local rank={}; for index,name in ipairs(backpackCleanerOrder) do if rank[name]==nil then rank[name]=index end end
     local tools={}; for _,tool in ipairs(backpack:GetChildren()) do if tool:IsA("Tool") then table.insert(tools,tool) end end
     local originalTools={}; for index,tool in ipairs(tools) do originalTools[index]=tool end
@@ -4887,12 +4891,16 @@ local function arrangeBackpackTools()
     for index,tool in ipairs(tools) do
         if originalTools[index]~=tool then alreadyOrdered=false; break end
     end
-    if alreadyOrdered then backpackArranging=false; return end
+    if alreadyOrdered then
+        if humanoid and originallyEquipped and originallyEquipped.Parent==backpack then pcall(function() humanoid:EquipTool(originallyEquipped) end) end
+        backpackArranging=false; return
+    end
     for _,tool in ipairs(tools) do tool.Parent=nil end
-    -- Give Roblox's Core Backpack one frame to unregister the old Slot
-    -- objects before the tools are inserted again in the saved sequence.
-    RunService.Heartbeat:Wait()
-    for _,tool in ipairs(tools) do tool.Parent=backpack end
+    -- Core Backpack batches same-frame changes and can retain its old Slot
+    -- table. Wait, then insert one Tool per frame to force deterministic slots.
+    task.wait(0.12)
+    for _,tool in ipairs(tools) do tool.Parent=backpack; RunService.Heartbeat:Wait() end
+    if humanoid and originallyEquipped and originallyEquipped.Parent==backpack then pcall(function() humanoid:EquipTool(originallyEquipped) end) end
     backpackArranging=false
 end
 local function scheduleBackpackArrange()
@@ -4945,71 +4953,36 @@ end)
 actionButton("Save Current Backpack Order",function(button)
     table.clear(backpackCleanerOrder)
     local backpack=LocalPlayer:FindFirstChildOfClass("Backpack")
-    local available={}
-    local function collect(container)
-        if container then for _,tool in ipairs(container:GetChildren()) do if tool:IsA("Tool") then available[tool.Name]=true end end end
-    end
-    collect(backpack); collect(LocalPlayer.Character)
-    -- Core Backpack keeps the equipped Tool under Character, not Backpack.
-    -- Read numbered hotbar slots first so saving while holding an item does
-    -- not drop that item from the recorded order.
-    local robloxGui=CoreGui:FindFirstChild("RobloxGui")
-    local backpackGui=robloxGui and robloxGui:FindFirstChild("Backpack",true)
-    local hotbar=backpackGui and backpackGui:FindFirstChild("Hotbar",true)
-    local numberedSlots={}
-    local visualSlots={}
-    if hotbar then
-        -- Modern CoreGui uses auxiliary labels/tooltips whose X position does
-        -- not match the actual hotbar slot. Find the nearest small container
-        -- that also owns a numeric 1-10 label; its number is authoritative.
-        for _,label in ipairs(hotbar:GetDescendants()) do
-            if label:IsA("TextLabel") and available[label.Text] and label.Visible
-                and label.AbsoluteSize.X>0 and label.AbsoluteSize.Y>0 then
-                local visible=true; local cursor=label.Parent
-                while cursor and cursor~=hotbar do
-                    if cursor:IsA("GuiObject") and not cursor.Visible then visible=false; break end
-                    cursor=cursor.Parent
-                end
-                if visible then
-                    local slotNumber=nil; local container=label.Parent
-                    while container and container~=hotbar and not slotNumber do
-                        if container:IsA("GuiObject") and container.AbsoluteSize.X<=math.max(140,hotbar.AbsoluteSize.X/3) then
-                            for _,candidate in ipairs(container:GetDescendants()) do
-                                if candidate:IsA("TextLabel") or candidate:IsA("TextButton") then
-                                    local number=tonumber(candidate.Text)
-                                    if number and number>=1 and number<=10 and number%1==0 then slotNumber=number; break end
-                                end
-                            end
-                        end
-                        container=container.Parent
-                    end
-                    if slotNumber then numberedSlots[slotNumber]=label.Text
-                    else table.insert(visualSlots,{x=label.AbsolutePosition.X,name=label.Text}) end
-                end
-            end
-        end
-    end
-    table.sort(visualSlots,function(a,b) return a.x<b.x end)
+    local character=LocalPlayer.Character
+    local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+    if not backpack or not character or not humanoid then button.Text="Character/Backpack unavailable"; return end
+    local originalEquipped=character:FindFirstChildOfClass("Tool")
+    local slotKeys={Enum.KeyCode.One,Enum.KeyCode.Two,Enum.KeyCode.Three,Enum.KeyCode.Four,Enum.KeyCode.Five,
+        Enum.KeyCode.Six,Enum.KeyCode.Seven,Enum.KeyCode.Eight,Enum.KeyCode.Nine,Enum.KeyCode.Zero}
     local recorded={}
-    for index=1,10 do
-        local name=numberedSlots[index]
-        if name and not recorded[name] then table.insert(backpackCleanerOrder,name); recorded[name]=true end
+    button.Text="Reading hotbar slots 1-0..."
+    backpackArranging=true
+    humanoid:UnequipTools(); RunService.Heartbeat:Wait()
+    for _,keyCode in ipairs(slotKeys) do
+        VirtualInputManager:SendKeyEvent(true,keyCode,false,game)
+        VirtualInputManager:SendKeyEvent(false,keyCode,false,game)
+        task.wait(0.08)
+        local equipped=character:FindFirstChildOfClass("Tool")
+        if equipped and not recorded[equipped.Name] then
+            table.insert(backpackCleanerOrder,equipped.Name); recorded[equipped.Name]=true
+        end
+        humanoid:UnequipTools(); task.wait(0.03)
     end
-    for _,slot in ipairs(visualSlots) do
-        local name=slot.name
-        if not recorded[name] then table.insert(backpackCleanerOrder,name); recorded[name]=true end
-    end
+    backpackArranging=false
     if backpack then
         for _,tool in ipairs(backpack:GetChildren()) do
             if tool:IsA("Tool") and not recorded[tool.Name] then table.insert(backpackCleanerOrder,tool.Name); recorded[tool.Name]=true end
         end
     end
-    if LocalPlayer.Character then
-        for _,tool in ipairs(LocalPlayer.Character:GetChildren()) do
-            if tool:IsA("Tool") and not recorded[tool.Name] then table.insert(backpackCleanerOrder,tool.Name); recorded[tool.Name]=true end
-        end
+    if originalEquipped and originalEquipped.Parent==backpack then
+        pcall(function() humanoid:EquipTool(originalEquipped) end)
     end
-    saveBackpackCleanerSelections(); scheduleBackpackArrange()
+    saveBackpackCleanerSelections()
     button.Text=#backpackCleanerOrder>0 and ("Saved: "..table.concat(backpackCleanerOrder," > ")) or "No tools to order"
 end)
 track(LocalPlayer.DescendantAdded:Connect(function(object)
