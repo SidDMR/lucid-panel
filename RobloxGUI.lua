@@ -3601,7 +3601,7 @@ state.emoteModuleTabs.set=function(tab)
     state.emoteModuleTabs.favoritesButton.BackgroundColor3=showFavorites and Color3.fromRGB(78,55,135) or Color3.fromRGB(48,43,65)
 end
 state.emoteModuleTabs.mainButton.MouseButton1Click:Connect(function()
-    if state.emoteModuleTabs.showMain then state.emoteModuleTabs.showMain() else state.emoteModuleTabs.set("Main") end
+    if state.emoteModuleTabs.showMain then state.emoteModuleTabs.showMain(true) else state.emoteModuleTabs.set("Main") end
 end)
 state.emoteModuleTabs.newButton.MouseButton1Click:Connect(function() state.emoteModuleTabs.set("Advanced") end)
 currentSection=state.emoteModuleTabs.main
@@ -3979,12 +3979,16 @@ local function showFavoriteEmotes()
     for _,info in ipairs(favorites) do createEmoteResult(info.id,info.name) end
     emoteStatus.Text=#favorites>0 and ("Favorite emotes: "..#favorites) or "No favorite emotes yet"
 end
-state.emoteModuleTabs.showMain=function()
+state.emoteModuleTabs.showMain=function(refreshContents)
     state.emoteModuleTabs.set("Main"); emoteResults.Parent=state.emoteModuleTabs.main
     mainFavoriteSearchRow.Visible=false
+    if refreshContents and emoteView~="browse" then
+        emoteView="browse"; emoteQuery=emoteSearchBox.Text:match("^%s*(.-)%s*$")
+        task.defer(function() if loadEmoteResults then loadEmoteResults(false) end end)
+    end
 end
 browseEmotesButton.MouseButton1Click:Connect(function()
-    state.emoteModuleTabs.showMain()
+    state.emoteModuleTabs.showMain(false)
     emoteView="browse"; browseEmotesButton.BackgroundColor3=Color3.fromRGB(78,55,135)
     favoriteEmotesButton.BackgroundColor3=Color3.fromRGB(48,43,65)
     mainFavoriteSearchRow.Visible=false
@@ -3999,7 +4003,7 @@ mainFavoriteSearchBox.FocusLost:Connect(function(enterPressed)
     if enterPressed then state.emoteFavoriteQuery=mainFavoriteSearchBox.Text:match("^%s*(.-)%s*$"); showFavoriteEmotes() end
 end)
 loadEmoteResults=function(append)
-    state.emoteModuleTabs.showMain()
+    state.emoteModuleTabs.showMain(false)
     emoteView="browse"
     mainFavoriteSearchRow.Visible=false
     browseEmotesButton.BackgroundColor3=Color3.fromRGB(78,55,135)
