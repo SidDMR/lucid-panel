@@ -164,6 +164,24 @@ local state = {
     emoteSpeed        = 1,
     keepEmoteMoving   = true,
     emoteSyncTolerance = 0.45,
+    emoteSyncMode     = "Precise",
+    emoteSyncDelay    = 0,
+    emoteLoopMode     = "Infinite",
+    emoteLoopCount    = 3,
+    emoteResultLimit  = 30,
+    emoteAutoInterval = 8,
+    emoteAutoMode     = "Off",
+    emoteResumeRespawn = false,
+    emoteAutoPlayJoin = false,
+    emoteStopOnJump   = false,
+    emoteStopOnSit    = false,
+    emoteStopOnTool   = false,
+    emoteAliases      = {},
+    emoteHistory      = {},
+    emotePlaylists    = {},
+    emoteSpeeds       = {},
+    emoteRecentSyncPlayers = {},
+    emoteSearchCache = {},
     lowPerformanceMode = false,
     gotoOffsetX       = 3,
     gotoOffsetY       = 1,
@@ -3560,13 +3578,30 @@ local function saveGlobalEmoteFavorites()
     pcall(function()
         if makefolder and (not isfolder or not isfolder("LucidPanel")) then makefolder("LucidPanel") end
     end)
-    local encodedOk,encoded=pcall(function() return HttpService:JSONEncode(state.emoteFavorites or {}) end)
+    local payload={version=2,favorites=state.emoteFavorites or {},aliases=state.emoteAliases or {},
+        history=state.emoteHistory or {},playlists=state.emotePlaylists or {},speeds=state.emoteSpeeds or {},
+        recentSyncPlayers=state.emoteRecentSyncPlayers or {},lastEmote=state.emoteLast,searchCache=state.emoteSearchCache or {}}
+    local encodedOk,encoded=pcall(function() return HttpService:JSONEncode(payload) end)
     return encodedOk and pcall(writefile,EMOTE_FAVORITES_PATH,encoded)
 end
 local function loadGlobalEmoteFavorites()
     if not readfile or (isfile and not isfile(EMOTE_FAVORITES_PATH)) then return end
     local ok,decoded=pcall(function() return HttpService:JSONDecode(readfile(EMOTE_FAVORITES_PATH)) end)
-    if ok and type(decoded)=="table" then state.emoteFavorites=decoded end
+    if ok and type(decoded)=="table" then
+        if type(decoded.favorites)=="table" then
+            state.emoteFavorites=decoded.favorites
+            state.emoteAliases=type(decoded.aliases)=="table" and decoded.aliases or {}
+            state.emoteHistory=type(decoded.history)=="table" and decoded.history or {}
+            state.emotePlaylists=type(decoded.playlists)=="table" and decoded.playlists or {}
+            state.emoteSpeeds=type(decoded.speeds)=="table" and decoded.speeds or {}
+            state.emoteRecentSyncPlayers=type(decoded.recentSyncPlayers)=="table" and decoded.recentSyncPlayers or {}
+            state.emoteLast=type(decoded.lastEmote)=="table" and decoded.lastEmote or nil
+            state.emoteSearchCache=type(decoded.searchCache)=="table" and decoded.searchCache or {}
+        else
+            -- Version 1 stored the favorites table directly.
+            state.emoteFavorites=decoded
+        end
+    end
 end
 local function mergeLegacyEmoteFavorites(legacyFavorites)
     if type(legacyFavorites)~="table" then return end
@@ -3653,6 +3688,11 @@ local function playEmote(assetId,name)
     local animator=humanoid and humanoid:FindFirstChildOfClass("Animator")
     if not animator and humanoid then animator=Instance.new("Animator"); animator.Parent=humanoid end
     if not animator then emoteStatus.Text="Character Animator unavailable"; return end
+    local savedSpeed=tonumber((state.emoteSpeeds or {})[tostring(assetId)])
+    if savedSpeed then
+        emoteSpeed=math.clamp(savedSpeed,0.1,5); state.emoteSpeed=emoteSpeed
+        emoteSpeedBox.Text=string.format("%.1f",emoteSpeed)
+    end
     local emoteKey="Lucid_"..tostring(assetId)
     local track=nil
     local tracksBefore={}
@@ -3677,8 +3717,10 @@ local function playEmote(assetId,name)
         emoteAnimation=animation; track=loaded; track:Play(0.15,1,emoteSpeed)
     end
     emoteTrack=track; currentEmoteName=name
-    track.Priority=Enum.AnimationPriority.Action4; track.Looped=true; track:AdjustSpeed(emoteSpeed)
+    state.emoteCurrent={id=tonumber(assetId) or assetId,name=name}; state.emoteLast=state.emoteCurrent
+    track.Priority=Enum.AnimationPriority.Action4; track.Looped=state.emoteLoopMode~="Once"; track:AdjustSpeed(emoteSpeed)
     emoteStatus.Text="Playing: "..name.."  |  "..string.format("%.1fx",emoteSpeed)
+    if state.emoteAdvancedOnPlayed then task.defer(state.emoteAdvancedOnPlayed,state.emoteCurrent,track) end
 end
 track(RunService.Heartbeat:Connect(function()
     if emoteSyncActive or not state.keepEmoteMoving or not currentEmoteName or not emoteTrack or emoteResumeBusy then return end
@@ -3781,6 +3823,12 @@ local function beginEmoteSync()
         notifyLucid("Compatibility manager","Anti-Push suspended during Emote Sync",Color3.fromRGB(235,175,70))
     end
     emoteSyncPlayer=player; emoteSyncActive=true; emoteSyncElapsed=1
+    table.insert(state.emoteRecentSyncPlayers,1,player.Name)
+    for index=#state.emoteRecentSyncPlayers,2,-1 do
+        if state.emoteRecentSyncPlayers[index]==player.Name then table.remove(state.emoteRecentSyncPlayers,index) end
+    end
+    while #state.emoteRecentSyncPlayers>6 do table.remove(state.emoteRecentSyncPlayers) end
+    saveGlobalEmoteFavorites()
     local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
     local targetHumanoid=player.Character and player.Character:FindFirstChildOfClass("Humanoid")
     if humanoid and targetHumanoid and humanoid.RigType~=targetHumanoid.RigType then
@@ -3819,17 +3867,28 @@ track(RunService.Heartbeat:Connect(function(dt)
     if not emoteTrack or sourceId~=emoteSyncAnimationId then
         if not loadSyncedTrack(sourceTrack) then emoteStatus.Text="Could not load target emote"; return end
     end
+    if state.emotePoseHeld then
+        pcall(function() emoteTrack:AdjustSpeed(0) end)
+        emoteStatus.Text="Synced pose held with "..emoteSyncPlayer.Name
+        return
+    end
     pcall(function()
         if not emoteTrack.IsPlaying then emoteTrack:Play(0.05,1,sourceTrack.Speed) end
-        emoteTrack:AdjustSpeed(sourceTrack.Speed)
+        local syncMode=state.emoteSyncMode
+        if syncMode=="Animation" then emoteTrack:AdjustSpeed(emoteSpeed) else emoteTrack:AdjustSpeed(sourceTrack.Speed) end
         local drift=math.abs(emoteTrack.TimePosition-sourceTrack.TimePosition)
         local trackLength=math.max(emoteTrack.Length,sourceTrack.Length)
         if trackLength>0 then drift=math.min(drift,math.abs(trackLength-drift)) end
-        if drift>state.emoteSyncTolerance then
-            emoteTrack.TimePosition=sourceTrack.TimePosition
+        local desired=math.max(0,sourceTrack.TimePosition+(tonumber(state.emoteSyncDelay) or 0))
+        if syncMode=="Precise" and drift>state.emoteSyncTolerance then
+            emoteTrack.TimePosition=desired
+        elseif syncMode=="Smooth" then
+            local signedDrift=desired-emoteTrack.TimePosition
+            if math.abs(signedDrift)>state.emoteSyncTolerance*3 then emoteTrack.TimePosition=desired
+            else emoteTrack:AdjustSpeed(math.clamp(sourceTrack.Speed+signedDrift*0.35,0.1,5)) end
         end
     end)
-    emoteStatus.Text="Synced with "..emoteSyncPlayer.Name
+    emoteStatus.Text="Synced with "..emoteSyncPlayer.Name.." | "..tostring(state.emoteSyncMode).." | "..tostring(sourceId)
 end))
 local function clearEmoteResults()
     for _,child in ipairs(emoteResults:GetChildren()) do if child:IsA("GuiObject") then child:Destroy() end end
@@ -3838,7 +3897,7 @@ local loadEmoteResults
 local function createEmoteResult(id,name)
     local row=create("Frame",{Size=UDim2.new(1,-4,0,30),BackgroundTransparency=1,Parent=emoteResults})
     local button=create("TextButton",{Size=UDim2.new(1,-36,0,28),BackgroundColor3=Color3.fromRGB(45,40,62),
-        BorderSizePixel=0,Text=name,TextColor3=Color3.fromRGB(230,225,240),TextSize=11,
+        BorderSizePixel=0,Text=(state.emoteAliases[tostring(id)] or name),TextColor3=Color3.fromRGB(230,225,240),TextSize=11,
         Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=row})
     create("UIPadding",{PaddingLeft=UDim.new(0,8),Parent=button})
     create("UICorner",{CornerRadius=UDim.new(0,5),Parent=button})
@@ -3863,8 +3922,15 @@ local function showFavoriteEmotes()
     browseEmotesButton.BackgroundColor3=Color3.fromRGB(48,43,65)
     favoriteEmotesButton.BackgroundColor3=Color3.fromRGB(78,55,135)
     local favorites={}
-    for _,info in pairs(state.emoteFavorites or {}) do table.insert(favorites,info) end
-    table.sort(favorites,function(a,b) return tostring(a.name):lower()<tostring(b.name):lower() end)
+    local query=tostring(state.emoteFavoriteQuery or ""):lower()
+    for id,info in pairs(state.emoteFavorites or {}) do
+        local shown=tostring(state.emoteAliases[tostring(id)] or info.name)
+        if query=="" or shown:lower():find(query,1,true) or tostring(info.name):lower():find(query,1,true) then table.insert(favorites,info) end
+    end
+    table.sort(favorites,function(a,b)
+        if state.emoteSortMode=="Recent" then return (tonumber(a.lastUsed) or 0)>(tonumber(b.lastUsed) or 0) end
+        return tostring(state.emoteAliases[tostring(a.id)] or a.name):lower()<tostring(state.emoteAliases[tostring(b.id)] or b.name):lower()
+    end)
     for _,info in ipairs(favorites) do createEmoteResult(info.id,info.name) end
     emoteStatus.Text=#favorites>0 and ("Favorite emotes: "..#favorites) or "No favorite emotes yet"
 end
@@ -3885,26 +3951,32 @@ loadEmoteResults=function(append)
     local completed=false
     local ok=false
     local data=nil
-    task.spawn(function()
+    local cacheKey=emoteQuery:lower()
+    local cached=not append and state.emoteSearchCache[cacheKey]
+    if cached and type(cached.items)=="table" and os.time()-(tonumber(cached.savedAt) or 0)<604800 then
+        ok=true; data=cached.items; completed=true
+    else task.spawn(function()
         ok,data=pcall(function()
             if append and emotePages then
                 if emotePages.IsFinished then return {} end
                 emotePages:AdvanceToNextPageAsync()
                 return emotePages:GetCurrentPage()
             end
+            if append and emoteCursor and not emotePages then error("Continue HTTP catalog cursor") end
             local params=CatalogSearchParams.new()
             params.SearchKeyword=emoteQuery
             params.AssetTypes={Enum.AvatarAssetType.EmoteAnimation}
             params.IncludeOffSale=false
             params.SalesTypeFilter=Enum.SalesTypeFilter.All
             params.SortType=Enum.CatalogSortType.Relevance
-            params.Limit=30
+            params.Limit=math.clamp(tonumber(state.emoteResultLimit) or 30,10,30)
             emotePages=AvatarEditorService:SearchCatalogAsync(params)
             return emotePages:GetCurrentPage()
         end)
         if not ok then
-            local url="https://catalog.roblox.com/v1/search/items/details?Category=12&Subcategory=39&IncludeNotForSale=false&salesTypeFilter=1&Limit=30&SortType=0&SortAggregation=5"
+            local url="https://catalog.roblox.com/v1/search/items/details?Category=12&Subcategory=39&IncludeNotForSale=false&salesTypeFilter=1&Limit="..math.clamp(tonumber(state.emoteResultLimit) or 30,10,30).."&SortType=0&SortAggregation=5"
             if emoteQuery~="" then url=url.."&Keyword="..HttpService:UrlEncode(emoteQuery) end
+            if append and emoteCursor then url=url.."&Cursor="..HttpService:UrlEncode(emoteCursor) end
             local httpOk,body=pcall(function() return game:HttpGet(url,true) end)
             if httpOk and type(body)=="string" and body:sub(1,1)=="{" then
                 local decoded=HttpService:JSONDecode(body)
@@ -3912,7 +3984,7 @@ loadEmoteResults=function(append)
             end
         end
         completed=true
-    end)
+    end) end
     local started=os.clock()
     while not completed and os.clock()-started<12 and generation==emoteRequestGeneration do task.wait(0.1) end
     if generation~=emoteRequestGeneration then return end
@@ -3922,14 +3994,33 @@ loadEmoteResults=function(append)
         return
     end
     if ok and type(data)=="table" then
+        local filtered={}
+        local cacheItems={}
         for _,item in ipairs(data) do
             local id=item.Id or item.id or item.AssetId or item.assetId
             if id then
                 local name=tostring(item.Name or item.name or ("Emote "..id))
-                createEmoteResult(id,name)
+                table.insert(cacheItems,{id=id,name=name})
+                local category=state.emoteCategoryFilter or "All"
+                local lower=name:lower()
+                local matches=category=="All"
+                    or (category=="Dance" and (lower:find("dance",1,true) or lower:find("shuffle",1,true)))
+                    or (category=="Pose" and (lower:find("pose",1,true) or lower:find("stance",1,true)))
+                    or (category=="Idle" and (lower:find("idle",1,true) or lower:find("sit",1,true)))
+                    or (category=="Movement" and (lower:find("walk",1,true) or lower:find("run",1,true) or lower:find("move",1,true)))
+                if matches then table.insert(filtered,{id=id,name=name}) end
             end
         end
-        emoteStatus.Text=#data>0 and ("Found "..#data.." — click a name to play") or "No on-sale emotes matched that name"
+        table.sort(filtered,function(a,b) return a.name:lower()<b.name:lower() end)
+        for _,item in ipairs(filtered) do createEmoteResult(item.id,item.name) end
+        if not append and not cached then
+            state.emoteSearchCache[cacheKey]={savedAt=os.time(),items=cacheItems}
+            local cacheKeys={}; for key,entry in pairs(state.emoteSearchCache) do table.insert(cacheKeys,{key=key,time=tonumber(entry.savedAt) or 0}) end
+            table.sort(cacheKeys,function(a,b) return a.time>b.time end)
+            for index=13,#cacheKeys do state.emoteSearchCache[cacheKeys[index].key]=nil end
+            saveGlobalEmoteFavorites()
+        end
+        emoteStatus.Text=#filtered>0 and ("Found "..#filtered.." — click a name to play") or "No emotes matched this search/filter"
     else
         emoteStatus.Text="Catalog search unavailable: "..tostring(data or "unknown error")
     end
@@ -3947,6 +4038,269 @@ local loadMoreEmotesButton=actionButton("Load More Emotes",function(button)
 end)
 loadMoreEmotesButton.Parent.LayoutOrder=emoteResults.LayoutOrder
 emoteResults.LayoutOrder=nextOrder()
+
+-- Advanced emote tools live in their own closure so Potassium does not add
+-- their locals to initializeV4Toolkit's register frame.
+state.initializeAdvancedEmotes=function(api)
+    local paused=false
+    local loopConnection=nil
+    local playlistGeneration=0
+    local poseHeld=false
+    local posePercent=0
+    state.emoteCategoryFilter=state.emoteCategoryFilter or "All"
+    state.emoteSortMode=state.emoteSortMode or "Name"
+    state.emoteFavoriteQuery=state.emoteFavoriteQuery or ""
+    state.emoteHotkeyName=state.emoteHotkeyName or "H"
+
+    sectionLabel("Playback Controls",nextOrder())
+    actionButton("Pause / Resume Emote",function(button)
+        local track=api.getTrack()
+        if not track then button.Text="No emote playing"; return end
+        paused=not paused
+        if paused then track:AdjustSpeed(0); button.Text="Resume Emote"
+        else track:AdjustSpeed(api.getSpeed()); button.Text="Pause Emote" end
+    end)
+    actionButton("Restart Current Emote",function(button)
+        local track=api.getTrack()
+        if track then track.TimePosition=0; track:AdjustSpeed(api.getSpeed()); paused=false; button.Text="Emote restarted"
+        else button.Text="No emote playing" end
+    end)
+    actionButton("Repeat Last Emote",function(button)
+        local last=state.emoteLast
+        if last then api.play(last.id,last.name); button.Text="Repeating "..last.name else button.Text="No recent emote" end
+    end)
+    local loopButton=actionButton("Loop Mode: "..state.emoteLoopMode,function(button)
+        local current=state.emoteLoopMode
+        state.emoteLoopMode=current=="Infinite" and "Once" or (current=="Once" and "Counted" or "Infinite")
+        button.Text="Loop Mode: "..state.emoteLoopMode
+        local track=api.getTrack(); if track then track.Looped=state.emoteLoopMode~="Once" end
+    end)
+    local loopCountRow=rowFrame(nextOrder(),28)
+    local loopCountBox=styledBox(loopCountRow,{Size=UDim2.new(1,0,0,24),Text=tostring(state.emoteLoopCount),PlaceholderText="Counted loop plays (2-100)"})
+    loopCountBox.FocusLost:Connect(function()
+        state.emoteLoopCount=math.clamp(math.floor(tonumber(loopCountBox.Text) or 3),2,100); loopCountBox.Text=tostring(state.emoteLoopCount)
+    end)
+    actionButton("Save Speed for Current Emote",function(button)
+        local current=state.emoteCurrent
+        if not current then button.Text="No emote playing"; return end
+        state.emoteSpeeds[tostring(current.id)]=api.getSpeed(); saveGlobalEmoteFavorites()
+        button.Text="Saved "..string.format("%.1fx",api.getSpeed()).." for "..current.name
+    end)
+
+    sectionLabel("Pose Hold / Timeline",nextOrder())
+    local poseRow=rowFrame(nextOrder(),28)
+    local poseBox=styledBox(poseRow,{Size=UDim2.new(1,0,0,24),Text="0",PlaceholderText="Timeline percent (0-100)"})
+    local function applyPose()
+        local track=api.getTrack(); if not track or track.Length<=0 then return end
+        posePercent=math.clamp(tonumber(poseBox.Text) or posePercent,0,100); poseBox.Text=tostring(math.floor(posePercent+0.5))
+        track.TimePosition=track.Length*(posePercent/100)
+        if poseHeld then track:AdjustSpeed(0) end
+    end
+    poseBox.FocusLost:Connect(applyPose)
+    createToggle("Pose Hold",nextOrder(),false,function(on)
+        poseHeld=on; state.emotePoseHeld=on; local track=api.getTrack()
+        if track then if on then applyPose(); track:AdjustSpeed(0) else track:AdjustSpeed(api.getSpeed()) end end
+    end)
+    actionButton("Timeline -5%",function() posePercent=math.max(0,posePercent-5); poseBox.Text=tostring(posePercent); applyPose() end)
+    actionButton("Timeline +5%",function() posePercent=math.min(100,posePercent+5); poseBox.Text=tostring(posePercent); applyPose() end)
+
+    sectionLabel("History, Aliases & Favorites",nextOrder())
+    local aliasRow=rowFrame(nextOrder(),28)
+    local aliasBox=styledBox(aliasRow,{Size=UDim2.new(1,0,0,24),Text="",PlaceholderText="Alias for current emote"})
+    actionButton("Save Alias for Current Emote",function(button)
+        local current=state.emoteCurrent; local alias=aliasBox.Text:match("^%s*(.-)%s*$")
+        if not current or alias=="" then button.Text="Play an emote and enter an alias"; return end
+        state.emoteAliases[tostring(current.id)]=alias; saveGlobalEmoteFavorites(); button.Text="Alias saved: "..alias
+    end)
+    local favoriteSearchRow=rowFrame(nextOrder(),28)
+    local favoriteSearchBox=styledBox(favoriteSearchRow,{Size=UDim2.new(1,0,0,24),Text=state.emoteFavoriteQuery,PlaceholderText="Search favorites/aliases"})
+    favoriteSearchBox.FocusLost:Connect(function(enter)
+        state.emoteFavoriteQuery=favoriteSearchBox.Text:match("^%s*(.-)%s*$"); if enter then api.showFavorites() end
+    end)
+    local sortButton=actionButton("Favorite Sort: "..state.emoteSortMode,function(button)
+        state.emoteSortMode=state.emoteSortMode=="Name" and "Recent" or "Name"; button.Text="Favorite Sort: "..state.emoteSortMode; api.showFavorites()
+    end)
+    actionButton("Show Emote History",function()
+        api.showItems(state.emoteHistory,"History is empty")
+    end)
+    actionButton("Clear Emote History",function(button)
+        table.clear(state.emoteHistory); saveGlobalEmoteFavorites(); button.Text="History cleared"
+    end,Color3.fromRGB(85,48,62))
+    local categoryButton=actionButton("Catalog Filter: "..state.emoteCategoryFilter,function(button)
+        local nextCategory={All="Dance",Dance="Pose",Pose="Idle",Idle="Movement",Movement="All"}
+        state.emoteCategoryFilter=nextCategory[state.emoteCategoryFilter] or "All"; button.Text="Catalog Filter: "..state.emoteCategoryFilter
+    end)
+    local resultLimitRow=rowFrame(nextOrder(),28)
+    local resultLimitBox=styledBox(resultLimitRow,{Size=UDim2.new(1,0,0,24),Text=tostring(state.emoteResultLimit),PlaceholderText="Catalog results (10-30)"})
+    resultLimitBox.FocusLost:Connect(function()
+        state.emoteResultLimit=math.clamp(math.floor(tonumber(resultLimitBox.Text) or 30),10,30); resultLimitBox.Text=tostring(state.emoteResultLimit)
+    end)
+    actionButton("Cancel Catalog Search",function(button) api.cancelSearch(); button.Text="Search cancelled" end,Color3.fromRGB(85,48,62))
+
+    sectionLabel("Playlists",nextOrder())
+    local playlistRow=rowFrame(nextOrder(),28)
+    local playlistBox=styledBox(playlistRow,{Size=UDim2.new(1,0,0,24),Text="default",PlaceholderText="Playlist name"})
+    actionButton("Add Current Emote to Playlist",function(button)
+        local current=state.emoteCurrent; local name=playlistBox.Text:match("^%s*(.-)%s*$")
+        if not current or name=="" then button.Text="Play an emote and name the playlist"; return end
+        state.emotePlaylists[name]=state.emotePlaylists[name] or {}
+        table.insert(state.emotePlaylists[name],{id=current.id,name=current.name}); saveGlobalEmoteFavorites(); button.Text="Added to "..name
+    end)
+    actionButton("Remove Current Emote from Playlist",function(button)
+        local current=state.emoteCurrent; local name=playlistBox.Text:match("^%s*(.-)%s*$"); local list=state.emotePlaylists[name]
+        if not current or type(list)~="table" then button.Text="Current emote/playlist unavailable"; return end
+        local removed=0
+        for index=#list,1,-1 do if tostring(list[index].id)==tostring(current.id) then table.remove(list,index); removed=removed+1 end end
+        saveGlobalEmoteFavorites(); button.Text=removed>0 and ("Removed from "..name) or "Emote not in playlist"
+    end)
+    actionButton("Show Selected Playlist",function(button)
+        local list=state.emotePlaylists[playlistBox.Text:match("^%s*(.-)%s*$")]
+        if list then api.showItems(list,"Playlist is empty") else button.Text="Playlist not found" end
+    end)
+    local function playPlaylist(randomize)
+        local list=state.emotePlaylists[playlistBox.Text:match("^%s*(.-)%s*$")]
+        if type(list)~="table" or #list==0 then return false end
+        playlistGeneration=playlistGeneration+1; local generation=playlistGeneration
+        task.spawn(function()
+            local index=1
+            while generation==playlistGeneration and screenGui.Parent do
+                local item=randomize and list[math.random(1,#list)] or list[index]
+                api.play(item.id,item.name); task.wait(math.max(1,tonumber(state.emoteAutoInterval) or 8))
+                index=index%#list+1
+            end
+        end)
+        return true
+    end
+    actionButton("Play Selected Playlist",function(button) if not playPlaylist(false) then button.Text="Playlist not found/empty" end end)
+    actionButton("List Playlist Names",function(button)
+        local names={}; for name in pairs(state.emotePlaylists) do table.insert(names,name) end; table.sort(names)
+        button.Text=#names>0 and table.concat(names," | ") or "No playlists"
+    end)
+    actionButton("Delete Selected Playlist",function(button)
+        local name=playlistBox.Text:match("^%s*(.-)%s*$")
+        if state.emotePlaylists[name] then state.emotePlaylists[name]=nil; saveGlobalEmoteFavorites(); button.Text="Deleted "..name else button.Text="Playlist not found" end
+    end,Color3.fromRGB(85,48,62))
+    actionButton("Stop Playlist / Automation",function(button) playlistGeneration=playlistGeneration+1; state.emoteAutoMode="Off"; button.Text="Automation stopped" end,Color3.fromRGB(85,48,62))
+
+    sectionLabel("Automation",nextOrder())
+    local intervalRow=rowFrame(nextOrder(),28)
+    local intervalBox=styledBox(intervalRow,{Size=UDim2.new(1,0,0,24),Text=tostring(state.emoteAutoInterval),PlaceholderText="Seconds between emotes"})
+    intervalBox.FocusLost:Connect(function() state.emoteAutoInterval=math.clamp(tonumber(intervalBox.Text) or 8,1,300); intervalBox.Text=tostring(state.emoteAutoInterval) end)
+    actionButton("Random Favorite Automation",function(button)
+        local favorites={}; for _,item in pairs(state.emoteFavorites) do table.insert(favorites,item) end
+        if #favorites==0 then button.Text="No favorites"; return end
+        playlistGeneration=playlistGeneration+1; local generation=playlistGeneration; state.emoteAutoMode="Random Favorites"
+        task.spawn(function()
+            while generation==playlistGeneration and screenGui.Parent do
+                local item=favorites[math.random(1,#favorites)]; api.play(item.id,item.name)
+                task.wait(math.max(1,tonumber(state.emoteAutoInterval) or 8))
+            end
+        end)
+    end)
+    createToggle("Resume Last Emote After Respawn",nextOrder(),state.emoteResumeRespawn,function(on) state.emoteResumeRespawn=on end)
+    createToggle("Auto-play Last Emote On Join",nextOrder(),state.emoteAutoPlayJoin,function(on) state.emoteAutoPlayJoin=on end)
+    createToggle("Stop Emote When Jumping",nextOrder(),state.emoteStopOnJump,function(on) state.emoteStopOnJump=on end)
+    createToggle("Stop Emote When Sitting",nextOrder(),state.emoteStopOnSit,function(on) state.emoteStopOnSit=on end)
+    createToggle("Stop Emote When Equipping Tool",nextOrder(),state.emoteStopOnTool,function(on) state.emoteStopOnTool=on end)
+    local hotkeyRow=rowFrame(nextOrder(),28)
+    local hotkeyBox=styledBox(hotkeyRow,{Size=UDim2.new(1,0,0,24),Text=state.emoteHotkeyName,PlaceholderText="Repeat-last key (example: H)"})
+    hotkeyBox.FocusLost:Connect(function()
+        local name=hotkeyBox.Text:match("^%s*(.-)%s*$"); if Enum.KeyCode[name] then state.emoteHotkeyName=name else hotkeyBox.Text=state.emoteHotkeyName end
+    end)
+    actionButton("Clear Repeat-Emote Hotkey",function(button)
+        state.emoteHotkeyName="Unbound"; hotkeyBox.Text="Unbound"; button.Text="Emote hotkey cleared"
+    end,Color3.fromRGB(85,48,62))
+
+    sectionLabel("Advanced Sync",nextOrder())
+    local syncModeButton=actionButton("Sync Mode: "..state.emoteSyncMode,function(button)
+        local nextMode={Animation="Speed",Speed="Precise",Precise="Smooth",Smooth="Animation"}
+        state.emoteSyncMode=nextMode[state.emoteSyncMode] or "Precise"; button.Text="Sync Mode: "..state.emoteSyncMode
+    end)
+    local delayRow=rowFrame(nextOrder(),28)
+    local delayBox=styledBox(delayRow,{Size=UDim2.new(1,0,0,24),Text=tostring(state.emoteSyncDelay),PlaceholderText="Sync delay, seconds (-2 to 2)"})
+    delayBox.FocusLost:Connect(function() state.emoteSyncDelay=math.clamp(tonumber(delayBox.Text) or 0,-2,2); delayBox.Text=string.format("%.2f",state.emoteSyncDelay) end)
+    actionButton("Use Most Recent Sync Player",function(button)
+        local name=state.emoteRecentSyncPlayers[1]
+        if name then api.setSyncName(name); api.beginSync(); button.Text="Syncing "..name else button.Text="No recent sync player" end
+    end)
+
+    sectionLabel("Backup / Transfer",nextOrder())
+    local transferRow=rowFrame(nextOrder(),52)
+    local transferBox=styledBox(transferRow,{Size=UDim2.new(1,0,0,48),Text="",PlaceholderText="Favorites JSON for import/export",MultiLine=true,TextWrapped=true})
+    actionButton("Export Emote Library",function(button)
+        local ok,text=pcall(function() return HttpService:JSONEncode({favorites=state.emoteFavorites,aliases=state.emoteAliases,playlists=state.emotePlaylists,speeds=state.emoteSpeeds}) end)
+        if ok then transferBox.Text=text; if setclipboard then setclipboard(text) end; button.Text="Library exported" else button.Text="Export failed" end
+    end)
+    actionButton("Import Emote Library",function(button)
+        local ok,data=pcall(function() return HttpService:JSONDecode(transferBox.Text) end)
+        if not ok or type(data)~="table" then button.Text="Invalid JSON"; return end
+        if type(data.favorites)=="table" then for id,item in pairs(data.favorites) do state.emoteFavorites[id]=item end end
+        if type(data.aliases)=="table" then for id,value in pairs(data.aliases) do state.emoteAliases[id]=value end end
+        if type(data.playlists)=="table" then for name,list in pairs(data.playlists) do state.emotePlaylists[name]=list end end
+        if type(data.speeds)=="table" then for id,value in pairs(data.speeds) do state.emoteSpeeds[id]=value end end
+        saveGlobalEmoteFavorites(); button.Text="Library imported"
+    end)
+
+    state.emoteAdvancedOnPlayed=function(item,track)
+        item.lastUsed=os.time()
+        local favorite=state.emoteFavorites[tostring(item.id)]; if favorite then favorite.lastUsed=item.lastUsed end
+        for index=#state.emoteHistory,1,-1 do if tostring(state.emoteHistory[index].id)==tostring(item.id) then table.remove(state.emoteHistory,index) end end
+        table.insert(state.emoteHistory,1,{id=item.id,name=item.name,lastUsed=item.lastUsed})
+        while #state.emoteHistory>20 do table.remove(state.emoteHistory) end
+        if loopConnection then loopConnection:Disconnect(); loopConnection=nil end
+        if state.emoteLoopMode=="Counted" then
+            local loops=0; track.Looped=true
+            loopConnection=track.DidLoop:Connect(function()
+                loops=loops+1
+                if loops>=math.max(1,(tonumber(state.emoteLoopCount) or 3)-1) then track.Looped=false; loopConnection:Disconnect(); loopConnection=nil end
+            end)
+        end
+        saveGlobalEmoteFavorites()
+    end
+    state.emoteAdvancedRefresh=function()
+        loopButton.Text="Loop Mode: "..tostring(state.emoteLoopMode)
+        sortButton.Text="Favorite Sort: "..tostring(state.emoteSortMode)
+        categoryButton.Text="Catalog Filter: "..tostring(state.emoteCategoryFilter)
+        syncModeButton.Text="Sync Mode: "..tostring(state.emoteSyncMode)
+        intervalBox.Text=tostring(state.emoteAutoInterval); resultLimitBox.Text=tostring(state.emoteResultLimit)
+        loopCountBox.Text=tostring(state.emoteLoopCount)
+        delayBox.Text=string.format("%.2f",tonumber(state.emoteSyncDelay) or 0); hotkeyBox.Text=tostring(state.emoteHotkeyName)
+    end
+    track(UserInputService.InputBegan:Connect(function(input,processed)
+        if state.emoteHotkeyName~="Unbound" and not processed and UserInputService:GetFocusedTextBox()==nil
+            and input.KeyCode==Enum.KeyCode[state.emoteHotkeyName] then
+            local last=state.emoteLast; if last then api.play(last.id,last.name) end
+        end
+    end))
+    local function bindJumpStop(character)
+        local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+        if humanoid then track(humanoid.StateChanged:Connect(function(_,newState)
+            if state.emoteStopOnJump and (newState==Enum.HumanoidStateType.Jumping or newState==Enum.HumanoidStateType.Freefall) then api.stop() end
+            if state.emoteStopOnSit and newState==Enum.HumanoidStateType.Seated then api.stop() end
+        end)) end
+        if character then track(character.ChildAdded:Connect(function(child)
+            if state.emoteStopOnTool and child:IsA("Tool") then api.stop() end
+        end)) end
+    end
+    if LocalPlayer.Character then bindJumpStop(LocalPlayer.Character) end
+    track(LocalPlayer.CharacterAdded:Connect(function(character) task.defer(bindJumpStop,character) end))
+    addCleanup(function() playlistGeneration=playlistGeneration+1; if loopConnection then loopConnection:Disconnect() end end)
+    if state.emoteAutoPlayJoin and state.emoteLast then
+        task.delay(1,function() if screenGui.Parent and state.emoteLast then api.play(state.emoteLast.id,state.emoteLast.name) end end)
+    end
+end
+state.initializeAdvancedEmotes({
+    play=playEmote,stop=stopEmote,getTrack=function() return emoteTrack end,getSpeed=function() return emoteSpeed end,
+    showFavorites=showFavoriteEmotes,showItems=function(items,emptyText)
+        emoteView="advanced"; clearEmoteResults()
+        for _,item in ipairs(items or {}) do if item.id then createEmoteResult(item.id,item.name or ("Emote "..item.id)) end end
+        emoteStatus.Text=#(items or {})>0 and ("Showing "..#items.." emotes") or emptyText
+    end,
+    setSyncName=function(name) emoteSyncBox.Text=name end,beginSync=beginEmoteSync,
+    cancelSearch=function()
+        emoteRequestGeneration=emoteRequestGeneration+1; emoteLoading=false; emoteSearchButton.Text="Search"; emoteStatus.Text="Catalog search cancelled"
+    end,
+})
 local emotesDock=categoryMeta["Emotes"] and categoryMeta["Emotes"].dock
 if emotesDock then
     track(emotesDock:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
@@ -3959,10 +4313,15 @@ if emotesDock then
 end
 track(LocalPlayer.CharacterAdded:Connect(function()
     local syncTarget=emoteSyncActive and emoteSyncPlayer or nil
+    local resumeItem=state.emoteResumeRespawn and state.emoteLast or nil
     if currentEmoteName or emoteTrack then stopEmote() end
     if syncTarget and syncTarget.Parent==Players then
         emoteSyncPlayer=syncTarget; emoteSyncActive=true; emoteSyncElapsed=1
         emoteStatus.Text="Resuming sync with "..syncTarget.Name.."..."
+    elseif resumeItem then
+        task.delay(1,function()
+            if screenGui.Parent and LocalPlayer.Character and state.emoteResumeRespawn then playEmote(resumeItem.id,resumeItem.name) end
+        end)
     end
 end))
 addCleanup(stopEmote)
@@ -4162,6 +4521,7 @@ loadNamedProfile = function(button)
         state.cameraShakeStrength="Strong"
     end
     if shakeStrengthButton and shakeStrengthButton.Parent then shakeStrengthButton.Text="Camera Shake Strength: "..state.cameraShakeStrength end
+    if state.emoteAdvancedRefresh then state.emoteAdvancedRefresh() end
     updateText(fovBox,state.fovValue); updateText(flingLinearBox,state.antiFlingLinear)
     updateText(flingAngularBox,state.antiFlingAngular); updateText(fogBox,state.fogEndValue)
     updateText(clockBox,state.nightClockTime); updateText(lightRangeBox,state.playerLightRange)
