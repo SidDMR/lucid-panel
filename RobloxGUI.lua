@@ -150,6 +150,8 @@ local state = {
     flyEnabled         = false,
     flySpeed           = 50,
     freecamEnabled     = false,
+    freecamSpeed       = 50,
+    noCameraShake      = false,
     fovLocked          = false,
     fovValue           = 70,
     autoclickEnabled   = false,
@@ -2488,6 +2490,7 @@ local function initializePlayerESP()
     local espShowDetails=true
     local espHideDead=true
     local espUseHighlight=false
+    local yellowNames={}
     local running = true
     local setAll
     local setTarget
@@ -2587,10 +2590,12 @@ local function initializePlayerESP()
         folder.Name = player.Name.."_LucidESP"
         folder.Parent = screenGui
 
+        local priorityYellow=yellowNames[player.Name]==true
         if espUseHighlight then
             local highlight=Instance.new("Highlight"); highlight.Name=player.Name
             highlight.Adornee=character; highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
-            highlight.FillColor=player.TeamColor.Color; highlight.OutlineColor=Color3.new(1,1,1)
+            highlight.FillColor=priorityYellow and Color3.fromRGB(255,225,45) or player.TeamColor.Color
+            highlight.OutlineColor=priorityYellow and Color3.fromRGB(255,245,110) or Color3.new(1,1,1)
             highlight.FillTransparency=espTransparency; highlight.OutlineTransparency=math.clamp(espTransparency-0.15,0,1)
             highlight.Parent=folder
         end
@@ -2605,7 +2610,7 @@ local function initializePlayerESP()
                 adornment.ZIndex = 10
                 adornment.Size = part.Size
                 adornment.Transparency = espTransparency
-                adornment.Color = player.TeamColor
+                if priorityYellow then adornment.Color3=Color3.fromRGB(255,225,45) else adornment.Color=player.TeamColor end
                 adornment.Parent = folder
             end
         end
@@ -2741,7 +2746,6 @@ local function initializePlayerESP()
     end)
 
     sectionLabel("Yellow Player Highlights",nextOrder())
-    local yellowNames={}
     local yellowHighlights={}
     local yellowCharacterConnections={}
     local yellowRow=rowFrame(nextOrder(),30)
@@ -2787,7 +2791,7 @@ local function initializePlayerESP()
     local function addYellowPlayer()
         local player=findGotoPlayer(yellowBox.Text)
         if not player then yellowBox.Text="Player not found"; return end
-        yellowNames[player.Name]=true; yellowBox.Text=""; watchYellowPlayer(player); applyYellowHighlight(player); refreshYellowStatus()
+        yellowNames[player.Name]=true; yellowBox.Text=""; watchYellowPlayer(player); applyYellowHighlight(player); refreshYellowStatus(); refreshESP()
     end
     local function removeYellowPlayer()
         local query=yellowBox.Text:match("^%s*(.-)%s*$"):lower(); local removedName=nil
@@ -2801,7 +2805,7 @@ local function initializePlayerESP()
             yellowNames[removedName]=nil
             for playerKey in pairs(yellowHighlights) do if playerKey.Name==removedName then removeYellowHighlight(playerKey) end end
         end
-        yellowBox.Text=""; refreshYellowStatus()
+        yellowBox.Text=""; refreshYellowStatus(); refreshESP()
     end
     yellowAdd.MouseButton1Click:Connect(addYellowPlayer); yellowRemove.MouseButton1Click:Connect(removeYellowPlayer)
     yellowBox.FocusLost:Connect(function(enterPressed) if enterPressed then addYellowPlayer() end end)
@@ -2816,7 +2820,7 @@ local function initializePlayerESP()
         if type(names)=="table" then for _,name in ipairs(names) do if type(name)=="string" then yellowNames[name]=true end end end
         for player in pairs(yellowHighlights) do removeYellowHighlight(player) end
         for _,player in ipairs(Players:GetPlayers()) do watchYellowPlayer(player); applyYellowHighlight(player) end
-        refreshYellowStatus()
+        refreshYellowStatus(); refreshESP()
     end
 
     task.spawn(function()
@@ -3134,6 +3138,29 @@ fovBox.FocusLost:Connect(function()
     if workspace.CurrentCamera then workspace.CurrentCamera.FieldOfView = state.fovValue end
 end)
 createToggle("Lock FOV", nextOrder(), false, function(on) state.fovLocked = on end)
+local freecamSpeedRow=rowFrame(nextOrder())
+create("TextLabel",{Size=UDim2.new(0.65,0,1,0),BackgroundTransparency=1,Text="Freecam speed",
+    TextColor3=Color3.fromRGB(210,210,220),TextSize=13,Font=Enum.Font.Gotham,
+    TextXAlignment=Enum.TextXAlignment.Left,Parent=freecamSpeedRow})
+local freecamSpeedBox=styledBox(freecamSpeedRow,{Size=UDim2.new(0,70,0,24),Position=UDim2.new(1,-70,0.5,-12),Text="50"})
+freecamSpeedBox.FocusLost:Connect(function()
+    state.freecamSpeed=math.clamp(tonumber(freecamSpeedBox.Text) or state.freecamSpeed,1,500)
+    freecamSpeedBox.Text=tostring(state.freecamSpeed)
+end)
+local function setNoCameraShake(on)
+    state.noCameraShake=on
+    pcall(function() RunService:UnbindFromRenderStep("LucidNoCameraShake") end)
+    if on then
+        RunService:BindToRenderStep("LucidNoCameraShake",Enum.RenderPriority.Last.Value,function()
+            local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if humanoid and humanoid.CameraOffset~=Vector3.zero then humanoid.CameraOffset=Vector3.zero end
+        end)
+    else
+        local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then humanoid.CameraOffset=Vector3.zero end
+    end
+end
+createToggle("Remove Camera Shake",nextOrder(),false,setNoCameraShake)
 local savedCamera = nil
 local freecamCFrame = nil
 local freecamYaw = 0
@@ -3201,6 +3228,7 @@ local _, fireFreecam, setFreecam = createToggle("Freecam", nextOrder(), false, f
     end
 end)
 addCleanup(function()
+    pcall(function() RunService:UnbindFromRenderStep("LucidNoCameraShake") end)
     ContextActionService:UnbindAction("LucidFreecamSink")
     if state.freecamEnabled and savedCamera and workspace.CurrentCamera then
         local camera=workspace.CurrentCamera
@@ -4126,7 +4154,7 @@ loadNamedProfile = function(button)
         if control and control.Parent then control.Text=tostring(value) end
     end
     updateText(wsBox,state.walkspeedValue); updateText(jhBox,state.jumpHeightValue)
-    updateText(zoomBox,state.maxZoomValue); updateText(flySpeedBox,state.flySpeed)
+    updateText(zoomBox,state.maxZoomValue); updateText(flySpeedBox,state.flySpeed); updateText(freecamSpeedBox,state.freecamSpeed)
     updateText(fovBox,state.fovValue); updateText(flingLinearBox,state.antiFlingLinear)
     updateText(flingAngularBox,state.antiFlingAngular); updateText(fogBox,state.fogEndValue)
     updateText(clockBox,state.nightClockTime); updateText(lightRangeBox,state.playerLightRange)
@@ -4860,7 +4888,7 @@ track(RunService.RenderStepped:Connect(function(dt)
         if root then root.AssemblyLinearVelocity=Vector3.zero; root.CFrame=root.CFrame + direction*state.flySpeed*dt end
         if h then h.PlatformStand=true end
     elseif state.freecamEnabled and camera and freecamCFrame then
-        freecamCFrame = freecamCFrame + direction*state.flySpeed*dt
+        freecamCFrame = freecamCFrame + direction*state.freecamSpeed*dt
         camera.CFrame=freecamCFrame
     end
     if state.fovLocked and camera then camera.FieldOfView=state.fovValue end
