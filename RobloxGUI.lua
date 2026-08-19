@@ -4503,6 +4503,9 @@ local function arrangeBackpackTools()
     end
     if alreadyOrdered then backpackArranging=false; return end
     for _,tool in ipairs(tools) do tool.Parent=nil end
+    -- Give Roblox's Core Backpack one frame to unregister the old Slot
+    -- objects before the tools are inserted again in the saved sequence.
+    RunService.Heartbeat:Wait()
     for _,tool in ipairs(tools) do tool.Parent=backpack end
     backpackArranging=false
 end
@@ -4567,21 +4570,23 @@ actionButton("Save Current Backpack Order",function(button)
     local robloxGui=CoreGui:FindFirstChild("RobloxGui")
     local backpackGui=robloxGui and robloxGui:FindFirstChild("Backpack",true)
     local hotbar=backpackGui and backpackGui:FindFirstChild("Hotbar",true)
-    local slots={}
+    local visualSlots={}
     if hotbar then
-        for _,slot in ipairs(hotbar:GetChildren()) do
-            local number=tonumber(slot.Name)
-            if number and slot:IsA("GuiObject") then
-                for _,label in ipairs(slot:GetDescendants()) do
-                    if label:IsA("TextLabel") and available[label.Text] then slots[number]=label.Text; break end
-                end
+        -- Slot frame names differ between Roblox CoreGui versions. Reading
+        -- the on-screen X position of each visible tool-name label captures
+        -- what the player actually sees instead of relying on those names.
+        for _,label in ipairs(hotbar:GetDescendants()) do
+            if label:IsA("TextLabel") and available[label.Text] and label.Visible
+                and label.AbsoluteSize.X>0 and label.AbsoluteSize.Y>0 then
+                table.insert(visualSlots,{x=label.AbsolutePosition.X,name=label.Text})
             end
         end
     end
+    table.sort(visualSlots,function(a,b) return a.x<b.x end)
     local recorded={}
-    for index=1,10 do
-        local name=slots[index]
-        if name and not recorded[name] then table.insert(backpackCleanerOrder,name); recorded[name]=true end
+    for _,slot in ipairs(visualSlots) do
+        local name=slot.name
+        if not recorded[name] then table.insert(backpackCleanerOrder,name); recorded[name]=true end
     end
     if backpack then
         for _,tool in ipairs(backpack:GetChildren()) do
@@ -4593,7 +4598,8 @@ actionButton("Save Current Backpack Order",function(button)
             if tool:IsA("Tool") and not recorded[tool.Name] then table.insert(backpackCleanerOrder,tool.Name); recorded[tool.Name]=true end
         end
     end
-    saveBackpackCleanerSelections(); button.Text=#backpackCleanerOrder>0 and ("Saved order: "..#backpackCleanerOrder.." tools") or "No tools to order"
+    saveBackpackCleanerSelections(); scheduleBackpackArrange()
+    button.Text=#backpackCleanerOrder>0 and ("Saved: "..table.concat(backpackCleanerOrder," > ")) or "No tools to order"
 end)
 track(LocalPlayer.DescendantAdded:Connect(function(object)
     if not object:IsA("Tool") then return end
