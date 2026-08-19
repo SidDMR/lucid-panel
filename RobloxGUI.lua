@@ -3573,27 +3573,37 @@ end)
 useCategory("Emotes")
 state.emoteModuleTabs={root=currentSection}
 state.emoteModuleTabs.row=rowFrame(nextOrder(),30)
-state.emoteModuleTabs.mainButton=create("TextButton",{Size=UDim2.new(0.49,0,0,28),BackgroundColor3=Color3.fromRGB(78,55,135),
+state.emoteModuleTabs.mainButton=create("TextButton",{Size=UDim2.new(0.32,0,0,28),BackgroundColor3=Color3.fromRGB(78,55,135),
     BorderSizePixel=0,Text="Main",TextColor3=Color3.new(1,1,1),TextSize=11,Font=Enum.Font.GothamSemibold,Parent=state.emoteModuleTabs.row})
-state.emoteModuleTabs.newButton=create("TextButton",{Size=UDim2.new(0.49,0,0,28),Position=UDim2.new(0.51,0,0,0),
-    BackgroundColor3=Color3.fromRGB(48,43,65),BorderSizePixel=0,Text="New",TextColor3=Color3.fromRGB(225,215,235),
+state.emoteModuleTabs.newButton=create("TextButton",{Size=UDim2.new(0.32,0,0,28),Position=UDim2.new(0.34,0,0,0),
+    BackgroundColor3=Color3.fromRGB(48,43,65),BorderSizePixel=0,Text="Advanced",TextColor3=Color3.fromRGB(225,215,235),
+    TextSize=11,Font=Enum.Font.GothamSemibold,Parent=state.emoteModuleTabs.row})
+state.emoteModuleTabs.favoritesButton=create("TextButton",{Size=UDim2.new(0.32,0,0,28),Position=UDim2.new(0.68,0,0,0),
+    BackgroundColor3=Color3.fromRGB(48,43,65),BorderSizePixel=0,Text="Favorites",TextColor3=Color3.fromRGB(225,215,235),
     TextSize=11,Font=Enum.Font.GothamSemibold,Parent=state.emoteModuleTabs.row})
 create("UICorner",{CornerRadius=UDim.new(0,6),Parent=state.emoteModuleTabs.mainButton})
 create("UICorner",{CornerRadius=UDim.new(0,6),Parent=state.emoteModuleTabs.newButton})
+create("UICorner",{CornerRadius=UDim.new(0,6),Parent=state.emoteModuleTabs.favoritesButton})
 state.emoteModuleTabs.main=create("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
     BackgroundTransparency=1,Visible=true,LayoutOrder=nextOrder(),Parent=state.emoteModuleTabs.root})
 state.emoteModuleTabs.new=create("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
     BackgroundTransparency=1,Visible=false,LayoutOrder=nextOrder(),Parent=state.emoteModuleTabs.root})
+state.emoteModuleTabs.favorites=create("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
+    BackgroundTransparency=1,Visible=false,LayoutOrder=nextOrder(),Parent=state.emoteModuleTabs.root})
 create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6),Parent=state.emoteModuleTabs.main})
 create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6),Parent=state.emoteModuleTabs.new})
+create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6),Parent=state.emoteModuleTabs.favorites})
 state.emoteModuleTabs.set=function(tab)
-    local showMain=tab~="New"
-    state.emoteModuleTabs.main.Visible=showMain; state.emoteModuleTabs.new.Visible=not showMain
+    local showMain=tab=="Main"; local showAdvanced=tab=="Advanced"; local showFavorites=tab=="Favorites"
+    state.emoteModuleTabs.main.Visible=showMain; state.emoteModuleTabs.new.Visible=showAdvanced; state.emoteModuleTabs.favorites.Visible=showFavorites
     state.emoteModuleTabs.mainButton.BackgroundColor3=showMain and Color3.fromRGB(78,55,135) or Color3.fromRGB(48,43,65)
-    state.emoteModuleTabs.newButton.BackgroundColor3=showMain and Color3.fromRGB(48,43,65) or Color3.fromRGB(78,55,135)
+    state.emoteModuleTabs.newButton.BackgroundColor3=showAdvanced and Color3.fromRGB(78,55,135) or Color3.fromRGB(48,43,65)
+    state.emoteModuleTabs.favoritesButton.BackgroundColor3=showFavorites and Color3.fromRGB(78,55,135) or Color3.fromRGB(48,43,65)
 end
-state.emoteModuleTabs.mainButton.MouseButton1Click:Connect(function() state.emoteModuleTabs.set("Main") end)
-state.emoteModuleTabs.newButton.MouseButton1Click:Connect(function() state.emoteModuleTabs.set("New") end)
+state.emoteModuleTabs.mainButton.MouseButton1Click:Connect(function()
+    if state.emoteModuleTabs.showMain then state.emoteModuleTabs.showMain() else state.emoteModuleTabs.set("Main") end
+end)
+state.emoteModuleTabs.newButton.MouseButton1Click:Connect(function() state.emoteModuleTabs.set("Advanced") end)
 currentSection=state.emoteModuleTabs.main
 sectionLabel("Marketplace Emote Browser", nextOrder())
 local EMOTE_FAVORITES_PATH="LucidPanel/emote_favorites.json"
@@ -3678,6 +3688,15 @@ local favoriteEmotesButton=create("TextButton",{Size=UDim2.new(0.49,0,0,26),Posi
     BackgroundColor3=Color3.fromRGB(48,43,65),BorderSizePixel=0,Text="Favorites",
     TextColor3=Color3.fromRGB(225,215,235),TextSize=11,Font=Enum.Font.GothamSemibold,Parent=emoteTabRow})
 create("UICorner",{CornerRadius=UDim.new(0,5),Parent=browseEmotesButton}); create("UICorner",{CornerRadius=UDim.new(0,5),Parent=favoriteEmotesButton})
+emoteTabRow.Visible=false
+local mainFavoriteSearchRow=rowFrame(nextOrder(),30)
+mainFavoriteSearchRow.Parent=state.emoteModuleTabs.favorites
+mainFavoriteSearchRow.Visible=false
+local mainFavoriteSearchBox=styledBox(mainFavoriteSearchRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="Search favorite emotes/aliases..."})
+local mainFavoriteSearchButton=create("TextButton",{Size=UDim2.new(0,64,0,26),Position=UDim2.new(1,-64,0,0),
+    BackgroundColor3=Color3.fromRGB(75,50,160),BorderSizePixel=0,Text="Search",TextColor3=Color3.new(1,1,1),
+    TextSize=10,Font=Enum.Font.GothamSemibold,Parent=mainFavoriteSearchRow})
+create("UICorner",{CornerRadius=UDim.new(0,6),Parent=mainFavoriteSearchButton})
 local emoteResults=create("ScrollingFrame",{Size=UDim2.new(1,0,0,190),CanvasSize=UDim2.new(),
     AutomaticCanvasSize=Enum.AutomaticSize.Y,BackgroundColor3=Color3.fromRGB(29,27,39),
     BackgroundTransparency=0.2,BorderSizePixel=0,ScrollBarThickness=3,LayoutOrder=nextOrder(),Parent=currentSection})
@@ -3943,6 +3962,8 @@ local function createEmoteResult(id,name)
 end
 local function showFavoriteEmotes()
     emoteView="favorites"; clearEmoteResults()
+    state.emoteModuleTabs.set("Favorites"); emoteResults.Parent=state.emoteModuleTabs.favorites
+    mainFavoriteSearchRow.Visible=true; mainFavoriteSearchBox.Text=tostring(state.emoteFavoriteQuery or "")
     browseEmotesButton.BackgroundColor3=Color3.fromRGB(48,43,65)
     favoriteEmotesButton.BackgroundColor3=Color3.fromRGB(78,55,135)
     local favorites={}
@@ -3958,14 +3979,29 @@ local function showFavoriteEmotes()
     for _,info in ipairs(favorites) do createEmoteResult(info.id,info.name) end
     emoteStatus.Text=#favorites>0 and ("Favorite emotes: "..#favorites) or "No favorite emotes yet"
 end
+state.emoteModuleTabs.showMain=function()
+    state.emoteModuleTabs.set("Main"); emoteResults.Parent=state.emoteModuleTabs.main
+    mainFavoriteSearchRow.Visible=false
+end
 browseEmotesButton.MouseButton1Click:Connect(function()
+    state.emoteModuleTabs.showMain()
     emoteView="browse"; browseEmotesButton.BackgroundColor3=Color3.fromRGB(78,55,135)
     favoriteEmotesButton.BackgroundColor3=Color3.fromRGB(48,43,65)
+    mainFavoriteSearchRow.Visible=false
     emoteQuery=emoteSearchBox.Text:match("^%s*(.-)%s*$"); loadEmoteResults(false)
 end)
 favoriteEmotesButton.MouseButton1Click:Connect(showFavoriteEmotes)
+state.emoteModuleTabs.favoritesButton.MouseButton1Click:Connect(showFavoriteEmotes)
+mainFavoriteSearchButton.MouseButton1Click:Connect(function()
+    state.emoteFavoriteQuery=mainFavoriteSearchBox.Text:match("^%s*(.-)%s*$"); showFavoriteEmotes()
+end)
+mainFavoriteSearchBox.FocusLost:Connect(function(enterPressed)
+    if enterPressed then state.emoteFavoriteQuery=mainFavoriteSearchBox.Text:match("^%s*(.-)%s*$"); showFavoriteEmotes() end
+end)
 loadEmoteResults=function(append)
+    state.emoteModuleTabs.showMain()
     emoteView="browse"
+    mainFavoriteSearchRow.Visible=false
     browseEmotesButton.BackgroundColor3=Color3.fromRGB(78,55,135)
     favoriteEmotesButton.BackgroundColor3=Color3.fromRGB(48,43,65)
     emoteLoading=true; emoteSearchButton.Text="Loading..."
@@ -4317,7 +4353,7 @@ end
 state.initializeAdvancedEmotes({
     play=playEmote,stop=stopEmote,getTrack=function() return emoteTrack end,getSpeed=function() return emoteSpeed end,
     showFavorites=showFavoriteEmotes,showItems=function(items,emptyText)
-        emoteView="advanced"; clearEmoteResults()
+        emoteView="advanced"; emoteResults.Parent=state.emoteModuleTabs.new; clearEmoteResults()
         for _,item in ipairs(items or {}) do if item.id then createEmoteResult(item.id,item.name or ("Emote "..item.id)) end end
         emoteStatus.Text=#(items or {})>0 and ("Showing "..#items.." emotes") or emptyText
     end,
