@@ -4823,6 +4823,9 @@ local backpackCleanerOrder={}
 local backpackCleanerAutoArrange=false
 local backpackArrangeGeneration=0
 local backpackArranging=false
+local backpackRespawnGeneration=0
+local backpackWaitingForRespawnTools=false
+local backpackLastRespawnToolArrival=0
 local BACKPACK_CLEANER_PATH="LucidPanel/backpack_cleaner.json"
 local function readBackpackCleanerData()
     if not readfile or (isfile and not isfile(BACKPACK_CLEANER_PATH)) then return {byPlace={}} end
@@ -4988,21 +4991,37 @@ end)
 track(LocalPlayer.DescendantAdded:Connect(function(object)
     if not object:IsA("Tool") then return end
     backpackCleanerDiscovered[object.Name]=true
+    if backpackWaitingForRespawnTools then backpackLastRespawnToolArrival=os.clock() end
     if backpackArranging then return end
     task.defer(function()
         removeSelectedBackpackTool(object)
-        scheduleBackpackArrange()
         if backpackCleanerList.Parent then refreshBackpackCleanerList() end
     end)
 end))
 track(LocalPlayer.CharacterAdded:Connect(function()
-    -- Persistent inventories commonly arrive in several server-side waves.
-    for _,delaySeconds in ipairs({0.5,1.5,3,6}) do
-        task.delay(delaySeconds,function() if screenGui.Parent then scheduleBackpackArrange() end end)
-    end
+    -- Persistent inventories arrive in waves. Wait until Tool arrivals have
+    -- been quiet, then arrange exactly once for this respawn.
+    backpackRespawnGeneration=backpackRespawnGeneration+1
+    local generation=backpackRespawnGeneration
+    backpackWaitingForRespawnTools=true; backpackLastRespawnToolArrival=os.clock()
+    task.spawn(function()
+        local started=os.clock()
+        while generation==backpackRespawnGeneration and screenGui.Parent do
+            if os.clock()-started>=1.5 and os.clock()-backpackLastRespawnToolArrival>=1 then
+                backpackWaitingForRespawnTools=false
+                arrangeBackpackTools()
+                return
+            end
+            if os.clock()-started>=7 then
+                backpackWaitingForRespawnTools=false
+                arrangeBackpackTools()
+                return
+            end
+            task.wait(0.2)
+        end
+    end)
 end))
 refreshBackpackCleanerList()
-scheduleBackpackArrange()
 end
 
 -- Place-specific obstacle cleanup for Climb Scary Worm Tower 3.
