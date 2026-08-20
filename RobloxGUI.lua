@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v4.4
+--// Lucid Panel v4.4.1
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -330,7 +330,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v4.4",
+    Text                   = ">>  Lucid Panel v4.4.1",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -5478,7 +5478,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v4.4 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v4.4.1 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -5979,7 +5979,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v4.4] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v4.4.1] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v4.4] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v4.4.1] Loaded, but this executor does not expose queue_on_teleport")
 end
