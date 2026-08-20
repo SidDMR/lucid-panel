@@ -3724,7 +3724,6 @@ local emoteSyncPlayer=nil
 local emoteSyncActive=false
 local emoteSyncAnimationId=nil
 local emoteSyncElapsed=0
-local emoteSyncRestoreAntiPush=nil
 createToggle("Keep Emote While Moving",nextOrder(),true,function(on)
     state.keepEmoteMoving=on
 end)
@@ -3766,11 +3765,6 @@ local emoteLoading=false
 local emoteRequestGeneration=0
 local function stopEmote()
     emoteSyncActive=false; emoteSyncPlayer=nil; emoteSyncAnimationId=nil; emoteSyncElapsed=0
-    local restoreAntiPush=emoteSyncRestoreAntiPush==true
-    emoteSyncRestoreAntiPush=nil
-    if restoreAntiPush and toggleRegistry["Mobile Freeze / Anti Push"] then
-        toggleRegistry["Mobile Freeze / Anti Push"](true)
-    end
     if emoteTrack then pcall(function() emoteTrack:Stop(0.15) end) end
     if emoteAnimation then emoteAnimation:Destroy() end
     emoteTrack=nil; emoteAnimation=nil; currentEmoteName=nil
@@ -3924,11 +3918,6 @@ local function beginEmoteSync()
     local player=findEmoteSyncPlayer(emoteSyncBox.Text)
     if not player then emoteStatus.Text="Sync player not found"; return end
     stopEmote()
-    emoteSyncRestoreAntiPush=state.antiPushEnabled==true
-    if state.antiPushEnabled and toggleRegistry["Mobile Freeze / Anti Push"] then
-        toggleRegistry["Mobile Freeze / Anti Push"](false)
-        notifyLucid("Compatibility manager","Anti-Push suspended during Emote Sync",Color3.fromRGB(235,175,70))
-    end
     emoteSyncPlayer=player; emoteSyncActive=true; emoteSyncElapsed=1
     table.insert(state.emoteRecentSyncPlayers,1,player.Name)
     for index=#state.emoteRecentSyncPlayers,2,-1 do
@@ -3954,10 +3943,6 @@ end,Color3.fromRGB(85,48,62))
 
 track(RunService.Heartbeat:Connect(function(dt)
     if not emoteSyncActive then return end
-    if state.antiPushEnabled and toggleRegistry["Mobile Freeze / Anti Push"] then
-        emoteSyncRestoreAntiPush=true
-        toggleRegistry["Mobile Freeze / Anti Push"](false)
-    end
     emoteSyncElapsed=emoteSyncElapsed+dt
     if emoteSyncElapsed<(state.lowPerformanceMode and 0.25 or 0.12) then return end
     emoteSyncElapsed=0
@@ -5668,10 +5653,21 @@ track(RunService.Heartbeat:Connect(function(dt)
         elseif state.antiPushStrength=="Normal" then
             intendedHorizontal=Vector3.new(currentVelocity.X,0,currentVelocity.Z):Lerp(intendedHorizontal,0.8)
         end
-        -- Keep ordinary jump/fall motion, but remove extreme vertical impulses
-        -- from slap tools as well.
-        local verticalLimit=state.antiPushStrength=="Strict" and 55 or (state.antiPushStrength=="Normal" and 85 or 130)
-        local vertical = math.clamp(currentVelocity.Y,-verticalLimit,verticalLimit)
+        -- Keep ordinary jump/fall motion. Strict rejects upward/downward tool
+        -- impulses much sooner while retaining enough range for normal jumps.
+        local vertical
+        if state.antiPushStrength=="Strict" then
+            local humanoidState=h:GetState()
+            if humanoidState==Enum.HumanoidStateType.Jumping
+                or humanoidState==Enum.HumanoidStateType.Freefall then
+                vertical=math.clamp(currentVelocity.Y,-45,45)
+            else
+                vertical=math.clamp(currentVelocity.Y,-20,12)
+            end
+        else
+            local verticalLimit=state.antiPushStrength=="Normal" and 85 or 130
+            vertical=math.clamp(currentVelocity.Y,-verticalLimit,verticalLimit)
+        end
         hrp.AssemblyLinearVelocity = Vector3.new(
             intendedHorizontal.X,
             vertical,
