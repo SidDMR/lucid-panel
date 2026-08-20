@@ -2903,10 +2903,14 @@ local function initializePlayerESP()
         refreshYellowStatus(); refreshESP()
         if state.pinkHighlightApi.refresh then state.pinkHighlightApi.refresh() end
     end
-    actionButton("Clear Yellow Highlights",function(button)
-        state.yellowHighlightApi.setNames({}); button.Text="Yellow highlights cleared"
-        task.delay(1,function() if button.Parent then button.Text="Clear Yellow Highlights" end end)
-    end,Color3.fromRGB(105,82,34))
+    local clearYellowButton=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(105,82,34),
+        BorderSizePixel=0,Text="Clear Yellow Highlights",TextColor3=Color3.fromRGB(240,235,245),TextSize=11,
+        Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
+    create("UICorner",{CornerRadius=UDim.new(0,6),Parent=clearYellowButton})
+    clearYellowButton.MouseButton1Click:Connect(function()
+        state.yellowHighlightApi.setNames({}); clearYellowButton.Text="Yellow highlights cleared"
+        task.delay(1,function() if clearYellowButton.Parent then clearYellowButton.Text="Clear Yellow Highlights" end end)
+    end)
 
     sectionLabel("Light Pink Player Highlights",nextOrder())
     do
@@ -2984,10 +2988,14 @@ local function initializePlayerESP()
         state.pinkHighlightApi.refresh=function()
             for _,player in ipairs(Players:GetPlayers()) do applyPinkHighlight(player) end
         end
-        actionButton("Clear Pink Highlights",function(button)
-            setPinkNames({}); button.Text="Pink highlights cleared"
-            task.delay(1,function() if button.Parent then button.Text="Clear Pink Highlights" end end)
-        end,Color3.fromRGB(120,65,92))
+        local clearPinkButton=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(120,65,92),
+            BorderSizePixel=0,Text="Clear Pink Highlights",TextColor3=Color3.fromRGB(240,235,245),TextSize=11,
+            Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
+        create("UICorner",{CornerRadius=UDim.new(0,6),Parent=clearPinkButton})
+        clearPinkButton.MouseButton1Click:Connect(function()
+            setPinkNames({}); clearPinkButton.Text="Pink highlights cleared"
+            task.delay(1,function() if clearPinkButton.Parent then clearPinkButton.Text="Clear Pink Highlights" end end)
+        end)
         addCleanup(function() for player in pairs(pinkHighlights) do removePinkHighlight(player) end end)
     end
 
