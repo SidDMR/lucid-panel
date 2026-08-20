@@ -2320,6 +2320,8 @@ end)
 -- IY goto, grouped with Lucid's other character/location teleport tools.
 local gotoApi={}
 state.yellowHighlightApi={}
+state.pinkHighlightApi={}
+state.pinkHighlightNames={}
 local function initializeTeleportAndESP()
 useCategory("Teleport & Coordinates")
 local teleportCategory=categories["Teleport & Coordinates"]
@@ -2664,11 +2666,14 @@ local function initializePlayerESP()
         folder.Parent = screenGui
 
         local priorityYellow=yellowNames[player.Name]==true
+        local priorityPink=not priorityYellow and state.pinkHighlightNames[player.Name]==true
         if espUseHighlight then
             local highlight=Instance.new("Highlight"); highlight.Name=player.Name
             highlight.Adornee=character; highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
-            highlight.FillColor=priorityYellow and Color3.fromRGB(255,225,45) or player.TeamColor.Color
-            highlight.OutlineColor=priorityYellow and Color3.fromRGB(255,245,110) or Color3.new(1,1,1)
+            highlight.FillColor=priorityYellow and Color3.fromRGB(255,225,45)
+                or (priorityPink and Color3.fromRGB(255,182,213) or player.TeamColor.Color)
+            highlight.OutlineColor=priorityYellow and Color3.fromRGB(255,245,110)
+                or (priorityPink and Color3.fromRGB(255,215,232) or Color3.new(1,1,1))
             highlight.FillTransparency=espTransparency; highlight.OutlineTransparency=math.clamp(espTransparency-0.15,0,1)
             highlight.Parent=folder
         end
@@ -2865,6 +2870,7 @@ local function initializePlayerESP()
         local player=findGotoPlayer(yellowBox.Text)
         if not player then yellowBox.Text="Player not found"; return end
         yellowNames[player.Name]=true; yellowBox.Text=""; watchYellowPlayer(player); applyYellowHighlight(player); refreshYellowStatus(); refreshESP()
+        if state.pinkHighlightApi.refresh then state.pinkHighlightApi.refresh() end
     end
     local function removeYellowPlayer()
         local query=yellowBox.Text:match("^%s*(.-)%s*$"):lower(); local removedName=nil
@@ -2879,6 +2885,7 @@ local function initializePlayerESP()
             for playerKey in pairs(yellowHighlights) do if playerKey.Name==removedName then removeYellowHighlight(playerKey) end end
         end
         yellowBox.Text=""; refreshYellowStatus(); refreshESP()
+        if state.pinkHighlightApi.refresh then state.pinkHighlightApi.refresh() end
     end
     yellowAdd.MouseButton1Click:Connect(addYellowPlayer); yellowRemove.MouseButton1Click:Connect(removeYellowPlayer)
     yellowBox.FocusLost:Connect(function(enterPressed) if enterPressed then addYellowPlayer() end end)
@@ -2894,6 +2901,94 @@ local function initializePlayerESP()
         for player in pairs(yellowHighlights) do removeYellowHighlight(player) end
         for _,player in ipairs(Players:GetPlayers()) do watchYellowPlayer(player); applyYellowHighlight(player) end
         refreshYellowStatus(); refreshESP()
+        if state.pinkHighlightApi.refresh then state.pinkHighlightApi.refresh() end
+    end
+    actionButton("Clear Yellow Highlights",function(button)
+        state.yellowHighlightApi.setNames({}); button.Text="Yellow highlights cleared"
+        task.delay(1,function() if button.Parent then button.Text="Clear Yellow Highlights" end end)
+    end,Color3.fromRGB(105,82,34))
+
+    sectionLabel("Light Pink Player Highlights",nextOrder())
+    do
+        local pinkHighlights={}
+        local pinkConnections={}
+        local pinkRow=rowFrame(nextOrder(),30)
+        local pinkBox=styledBox(pinkRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="Username or display name"})
+        local pinkAdd=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-64,0,0),
+            BackgroundColor3=Color3.fromRGB(184,103,143),BorderSizePixel=0,Text="+",TextColor3=Color3.new(1,1,1),
+            TextSize=18,Font=Enum.Font.GothamBold,Parent=pinkRow})
+        local pinkRemove=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-30,0,0),
+            BackgroundColor3=Color3.fromRGB(95,55,70),BorderSizePixel=0,Text="-",TextColor3=Color3.new(1,1,1),
+            TextSize=18,Font=Enum.Font.GothamBold,Parent=pinkRow})
+        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=pinkAdd}); create("UICorner",{CornerRadius=UDim.new(0,5),Parent=pinkRemove})
+        local pinkStatus=create("TextLabel",{Size=UDim2.new(1,0,0,24),BackgroundTransparency=1,Text="Highlighted: none",
+            TextColor3=Color3.fromRGB(255,190,220),TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
+            TextTruncate=Enum.TextTruncate.AtEnd,LayoutOrder=nextOrder(),Parent=currentSection})
+        local function refreshPinkStatus()
+            local names={}; for name in pairs(state.pinkHighlightNames) do table.insert(names,name) end
+            table.sort(names,function(a,b) return a:lower()<b:lower() end)
+            pinkStatus.Text=#names>0 and ("Highlighted: "..table.concat(names,", ")) or "Highlighted: none"
+        end
+        local function removePinkHighlight(player)
+            local highlight=pinkHighlights[player]
+            if highlight and highlight.Parent then highlight:Destroy() end
+            pinkHighlights[player]=nil
+        end
+        local function applyPinkHighlight(player)
+            removePinkHighlight(player)
+            if not player or not state.pinkHighlightNames[player.Name] or yellowNames[player.Name] or not player.Character then return end
+            local highlight=Instance.new("Highlight")
+            highlight.Name="LucidPinkPlayerHighlight"; highlight.Adornee=player.Character
+            highlight.FillColor=Color3.fromRGB(255,182,213); highlight.FillTransparency=0.82
+            highlight.OutlineColor=Color3.fromRGB(255,215,232); highlight.OutlineTransparency=0.2
+            highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; highlight.Parent=player.Character
+            pinkHighlights[player]=highlight
+        end
+        local function watchPinkPlayer(player)
+            if player==LocalPlayer or pinkConnections[player] then return end
+            pinkConnections[player]=track(player.CharacterAdded:Connect(function() task.defer(function() applyPinkHighlight(player) end) end))
+            applyPinkHighlight(player)
+        end
+        local function setPinkNames(names)
+            table.clear(state.pinkHighlightNames)
+            if type(names)=="table" then for _,name in ipairs(names) do if type(name)=="string" then state.pinkHighlightNames[name]=true end end end
+            for player in pairs(pinkHighlights) do removePinkHighlight(player) end
+            for _,player in ipairs(Players:GetPlayers()) do watchPinkPlayer(player); applyPinkHighlight(player) end
+            refreshPinkStatus(); refreshESP()
+        end
+        local function addPinkPlayer()
+            local player=findGotoPlayer(pinkBox.Text)
+            if not player then pinkBox.Text="Player not found"; return end
+            state.pinkHighlightNames[player.Name]=true; pinkBox.Text=""; watchPinkPlayer(player); applyPinkHighlight(player); refreshPinkStatus(); refreshESP()
+        end
+        pinkAdd.MouseButton1Click:Connect(addPinkPlayer)
+        pinkRemove.MouseButton1Click:Connect(function()
+            local query=pinkBox.Text:match("^%s*(.-)%s*$"):lower(); local removedName=nil
+            if query=="" then pinkBox.Text="Enter a player name"; return end
+            local player=findGotoPlayer(query)
+            if player and state.pinkHighlightNames[player.Name] then removedName=player.Name end
+            if not removedName then for name in pairs(state.pinkHighlightNames) do if name:lower():sub(1,#query)==query then removedName=name; break end end end
+            if removedName then
+                state.pinkHighlightNames[removedName]=nil
+                for playerKey in pairs(pinkHighlights) do if playerKey.Name==removedName then removePinkHighlight(playerKey) end end
+            end
+            pinkBox.Text=""; refreshPinkStatus(); refreshESP()
+        end)
+        pinkBox.FocusLost:Connect(function(enterPressed) if enterPressed then addPinkPlayer() end end)
+        track(Players.PlayerAdded:Connect(watchPinkPlayer)); track(Players.PlayerRemoving:Connect(removePinkHighlight))
+        for _,player in ipairs(Players:GetPlayers()) do watchPinkPlayer(player) end
+        state.pinkHighlightApi.getNames=function()
+            local names={}; for name in pairs(state.pinkHighlightNames) do table.insert(names,name) end; return names
+        end
+        state.pinkHighlightApi.setNames=setPinkNames
+        state.pinkHighlightApi.refresh=function()
+            for _,player in ipairs(Players:GetPlayers()) do applyPinkHighlight(player) end
+        end
+        actionButton("Clear Pink Highlights",function(button)
+            setPinkNames({}); button.Text="Pink highlights cleared"
+            task.delay(1,function() if button.Parent then button.Text="Clear Pink Highlights" end end)
+        end,Color3.fromRGB(120,65,92))
+        addCleanup(function() for player in pairs(pinkHighlights) do removePinkHighlight(player) end end)
     end
 
     task.spawn(function()
@@ -4567,6 +4662,7 @@ actionButton("Save Named Profile", function(button)
     payload.favorites={}
     for name in pairs(state.favoriteNames or {}) do payload.favorites[name]=true end
     payload.yellowHighlights=state.yellowHighlightApi.getNames and state.yellowHighlightApi.getNames() or {}
+    payload.pinkHighlights=state.pinkHighlightApi.getNames and state.pinkHighlightApi.getNames() or {}
     -- Emote favorites are global and saved independently of named profiles.
     payload.keybinds={}
     for name,key in pairs(shortcutKeys or {}) do payload.keybinds[name]=key and key.Name or "Unbound" end
@@ -4658,6 +4754,7 @@ loadNamedProfile = function(button)
     -- global collection or tying it to this profile/place.
     mergeLegacyEmoteFavorites(payload.emoteFavorites)
     if state.yellowHighlightApi.setNames then state.yellowHighlightApi.setNames(payload.yellowHighlights or {}) end
+    if state.pinkHighlightApi.setNames then state.pinkHighlightApi.setNames(payload.pinkHighlights or {}) end
     for name,setter in pairs(favoriteRegistry or {}) do setter((payload.favorites or {})[name]==true) end
     for name,value in pairs(payload.keybinds or {}) do
         local key=value~="Unbound" and Enum.KeyCode[value] or nil
