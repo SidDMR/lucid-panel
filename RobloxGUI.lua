@@ -161,6 +161,7 @@ local state = {
     autoclickAvoidGui  = true,
     espTransparency   = 0.78,
     espMaxDistance    = 5000,
+    espHighlightStyle = "Hard",
     emoteSpeed        = 1,
     keepEmoteMoving   = true,
     emoteSyncTolerance = 0.45,
@@ -2322,6 +2323,8 @@ local gotoApi={}
 state.yellowHighlightApi={}
 state.pinkHighlightApi={}
 state.pinkHighlightNames={}
+state.blackHighlightApi={}
+state.blackHighlightNames={}
 local function initializeTeleportAndESP()
 useCategory("Teleport & Coordinates")
 local teleportCategory=categories["Teleport & Coordinates"]
@@ -2667,14 +2670,18 @@ local function initializePlayerESP()
 
         local priorityYellow=yellowNames[player.Name]==true
         local priorityPink=not priorityYellow and state.pinkHighlightNames[player.Name]==true
+        local priorityBlack=not priorityYellow and not priorityPink and state.blackHighlightNames[player.Name]==true
         if espUseHighlight then
             local highlight=Instance.new("Highlight"); highlight.Name=player.Name
             highlight.Adornee=character; highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
             highlight.FillColor=priorityYellow and Color3.fromRGB(255,225,45)
-                or (priorityPink and Color3.fromRGB(255,182,213) or player.TeamColor.Color)
+                or (priorityPink and Color3.fromRGB(255,182,213)
+                or (priorityBlack and Color3.fromRGB(8,8,10) or player.TeamColor.Color))
             highlight.OutlineColor=priorityYellow and Color3.fromRGB(255,245,110)
-                or (priorityPink and Color3.fromRGB(255,215,232) or Color3.new(1,1,1))
-            highlight.FillTransparency=espTransparency; highlight.OutlineTransparency=math.clamp(espTransparency-0.15,0,1)
+                or (priorityPink and Color3.fromRGB(255,215,232)
+                or (priorityBlack and Color3.fromRGB(35,35,40) or Color3.new(1,1,1)))
+            highlight.FillTransparency=state.espHighlightStyle=="Soft" and math.clamp(espTransparency+0.14,0,0.97) or espTransparency
+            highlight.OutlineTransparency=state.espHighlightStyle=="Soft" and 0.72 or math.clamp(espTransparency-0.15,0,1)
             highlight.Parent=folder
         end
         for _, part in ipairs(character:GetChildren()) do
@@ -2822,6 +2829,18 @@ local function initializePlayerESP()
     createToggle("ESP Highlight Mode",nextOrder(),false,function(on)
         espUseHighlight=on; clearESP(); refreshESP()
     end)
+    local highlightStyleButton=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(54,46,76),
+        BorderSizePixel=0,Text="Highlight Style: Hard",TextColor3=Color3.fromRGB(225,215,240),TextSize=11,
+        Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
+    create("UICorner",{CornerRadius=UDim.new(0,6),Parent=highlightStyleButton})
+    highlightStyleButton.MouseButton1Click:Connect(function()
+        state.espHighlightStyle=state.espHighlightStyle=="Hard" and "Soft" or "Hard"
+        highlightStyleButton.Text="Highlight Style: "..state.espHighlightStyle
+        clearESP(); refreshESP()
+        if state.yellowHighlightApi.refresh then state.yellowHighlightApi.refresh() end
+        if state.pinkHighlightApi.refresh then state.pinkHighlightApi.refresh() end
+        if state.blackHighlightApi.refresh then state.blackHighlightApi.refresh() end
+    end)
 
     sectionLabel("Yellow Player Highlights",nextOrder())
     local yellowHighlights={}
@@ -2854,8 +2873,10 @@ local function initializePlayerESP()
         if not player or not yellowNames[player.Name] or not player.Character then return end
         local highlight=Instance.new("Highlight")
         highlight.Name="LucidYellowPlayerHighlight"; highlight.Adornee=player.Character
-        highlight.FillColor=Color3.fromRGB(255,225,45); highlight.FillTransparency=0.82
-        highlight.OutlineColor=Color3.fromRGB(255,235,80); highlight.OutlineTransparency=0.2
+        highlight.FillColor=Color3.fromRGB(255,225,45)
+        highlight.FillTransparency=state.espHighlightStyle=="Soft" and math.clamp(espTransparency+0.14,0,0.97) or espTransparency
+        highlight.OutlineColor=Color3.fromRGB(255,235,80)
+        highlight.OutlineTransparency=state.espHighlightStyle=="Soft" and 0.72 or math.clamp(espTransparency-0.15,0,1)
         highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; highlight.Parent=player.Character
         yellowHighlights[player]=highlight
     end
@@ -2871,6 +2892,7 @@ local function initializePlayerESP()
         if not player then yellowBox.Text="Player not found"; return end
         yellowNames[player.Name]=true; yellowBox.Text=""; watchYellowPlayer(player); applyYellowHighlight(player); refreshYellowStatus(); refreshESP()
         if state.pinkHighlightApi.refresh then state.pinkHighlightApi.refresh() end
+        if state.blackHighlightApi.refresh then state.blackHighlightApi.refresh() end
     end
     local function removeYellowPlayer()
         local query=yellowBox.Text:match("^%s*(.-)%s*$"):lower(); local removedName=nil
@@ -2886,6 +2908,7 @@ local function initializePlayerESP()
         end
         yellowBox.Text=""; refreshYellowStatus(); refreshESP()
         if state.pinkHighlightApi.refresh then state.pinkHighlightApi.refresh() end
+        if state.blackHighlightApi.refresh then state.blackHighlightApi.refresh() end
     end
     yellowAdd.MouseButton1Click:Connect(addYellowPlayer); yellowRemove.MouseButton1Click:Connect(removeYellowPlayer)
     yellowBox.FocusLost:Connect(function(enterPressed) if enterPressed then addYellowPlayer() end end)
@@ -2902,6 +2925,10 @@ local function initializePlayerESP()
         for _,player in ipairs(Players:GetPlayers()) do watchYellowPlayer(player); applyYellowHighlight(player) end
         refreshYellowStatus(); refreshESP()
         if state.pinkHighlightApi.refresh then state.pinkHighlightApi.refresh() end
+        if state.blackHighlightApi.refresh then state.blackHighlightApi.refresh() end
+    end
+    state.yellowHighlightApi.refresh=function()
+        for _,player in ipairs(Players:GetPlayers()) do applyYellowHighlight(player) end
     end
     local clearYellowButton=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(105,82,34),
         BorderSizePixel=0,Text="Clear Yellow Highlights",TextColor3=Color3.fromRGB(240,235,245),TextSize=11,
@@ -2943,8 +2970,10 @@ local function initializePlayerESP()
             if not player or not state.pinkHighlightNames[player.Name] or yellowNames[player.Name] or not player.Character then return end
             local highlight=Instance.new("Highlight")
             highlight.Name="LucidPinkPlayerHighlight"; highlight.Adornee=player.Character
-            highlight.FillColor=Color3.fromRGB(255,182,213); highlight.FillTransparency=0.82
-            highlight.OutlineColor=Color3.fromRGB(255,215,232); highlight.OutlineTransparency=0.2
+            highlight.FillColor=Color3.fromRGB(255,182,213)
+            highlight.FillTransparency=state.espHighlightStyle=="Soft" and math.clamp(espTransparency+0.14,0,0.97) or espTransparency
+            highlight.OutlineColor=Color3.fromRGB(255,215,232)
+            highlight.OutlineTransparency=state.espHighlightStyle=="Soft" and 0.72 or math.clamp(espTransparency-0.15,0,1)
             highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; highlight.Parent=player.Character
             pinkHighlights[player]=highlight
         end
@@ -2964,6 +2993,7 @@ local function initializePlayerESP()
             local player=findGotoPlayer(pinkBox.Text)
             if not player then pinkBox.Text="Player not found"; return end
             state.pinkHighlightNames[player.Name]=true; pinkBox.Text=""; watchPinkPlayer(player); applyPinkHighlight(player); refreshPinkStatus(); refreshESP()
+            if state.blackHighlightApi.refresh then state.blackHighlightApi.refresh() end
         end
         pinkAdd.MouseButton1Click:Connect(addPinkPlayer)
         pinkRemove.MouseButton1Click:Connect(function()
@@ -2977,6 +3007,7 @@ local function initializePlayerESP()
                 for playerKey in pairs(pinkHighlights) do if playerKey.Name==removedName then removePinkHighlight(playerKey) end end
             end
             pinkBox.Text=""; refreshPinkStatus(); refreshESP()
+            if state.blackHighlightApi.refresh then state.blackHighlightApi.refresh() end
         end)
         pinkBox.FocusLost:Connect(function(enterPressed) if enterPressed then addPinkPlayer() end end)
         track(Players.PlayerAdded:Connect(watchPinkPlayer)); track(Players.PlayerRemoving:Connect(removePinkHighlight))
@@ -2997,6 +3028,78 @@ local function initializePlayerESP()
             task.delay(1,function() if clearPinkButton.Parent then clearPinkButton.Text="Clear Pink Highlights" end end)
         end)
         addCleanup(function() for player in pairs(pinkHighlights) do removePinkHighlight(player) end end)
+    end
+
+    sectionLabel("Black Player Highlights (Exploiters)",nextOrder())
+    do
+        local blackHighlights={}
+        local blackConnections={}
+        local blackRow=rowFrame(nextOrder(),30)
+        local blackBox=styledBox(blackRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="Username or display name"})
+        local blackAdd=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-64,0,0),
+            BackgroundColor3=Color3.fromRGB(42,42,48),BorderSizePixel=0,Text="+",TextColor3=Color3.new(1,1,1),TextSize=18,Font=Enum.Font.GothamBold,Parent=blackRow})
+        local blackRemove=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-30,0,0),
+            BackgroundColor3=Color3.fromRGB(95,55,60),BorderSizePixel=0,Text="-",TextColor3=Color3.new(1,1,1),TextSize=18,Font=Enum.Font.GothamBold,Parent=blackRow})
+        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=blackAdd}); create("UICorner",{CornerRadius=UDim.new(0,5),Parent=blackRemove})
+        local blackStatus=create("TextLabel",{Size=UDim2.new(1,0,0,24),BackgroundTransparency=1,Text="Marked: none",
+            TextColor3=Color3.fromRGB(145,145,155),TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
+            TextTruncate=Enum.TextTruncate.AtEnd,LayoutOrder=nextOrder(),Parent=currentSection})
+        local function refreshBlackStatus()
+            local names={}; for name in pairs(state.blackHighlightNames) do table.insert(names,name) end
+            table.sort(names,function(a,b) return a:lower()<b:lower() end)
+            blackStatus.Text=#names>0 and ("Marked: "..table.concat(names,", ")) or "Marked: none"
+        end
+        local function removeBlackHighlight(player)
+            local highlight=blackHighlights[player]; if highlight and highlight.Parent then highlight:Destroy() end; blackHighlights[player]=nil
+        end
+        local function applyBlackHighlight(player)
+            removeBlackHighlight(player)
+            if not player or not state.blackHighlightNames[player.Name] or yellowNames[player.Name]
+                or state.pinkHighlightNames[player.Name] or not player.Character then return end
+            local highlight=Instance.new("Highlight")
+            highlight.Name="LucidBlackPlayerHighlight"; highlight.Adornee=player.Character
+            highlight.FillColor=Color3.fromRGB(8,8,10)
+            highlight.FillTransparency=state.espHighlightStyle=="Soft" and math.clamp(espTransparency+0.14,0,0.97) or espTransparency
+            highlight.OutlineColor=Color3.fromRGB(35,35,40)
+            highlight.OutlineTransparency=state.espHighlightStyle=="Soft" and 0.72 or math.clamp(espTransparency-0.15,0,1)
+            highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; highlight.Parent=player.Character; blackHighlights[player]=highlight
+        end
+        local function watchBlackPlayer(player)
+            if player==LocalPlayer or blackConnections[player] then return end
+            blackConnections[player]=track(player.CharacterAdded:Connect(function() task.defer(function() applyBlackHighlight(player) end) end)); applyBlackHighlight(player)
+        end
+        local function setBlackNames(names)
+            table.clear(state.blackHighlightNames)
+            if type(names)=="table" then for _,name in ipairs(names) do if type(name)=="string" then state.blackHighlightNames[name]=true end end end
+            for player in pairs(blackHighlights) do removeBlackHighlight(player) end
+            for _,player in ipairs(Players:GetPlayers()) do watchBlackPlayer(player); applyBlackHighlight(player) end
+            refreshBlackStatus(); refreshESP()
+        end
+        local function addBlackPlayer()
+            local player=findGotoPlayer(blackBox.Text)
+            if not player then blackBox.Text="Player not found"; return end
+            state.blackHighlightNames[player.Name]=true; blackBox.Text=""; watchBlackPlayer(player); applyBlackHighlight(player); refreshBlackStatus(); refreshESP()
+        end
+        blackAdd.MouseButton1Click:Connect(addBlackPlayer)
+        blackRemove.MouseButton1Click:Connect(function()
+            local query=blackBox.Text:match("^%s*(.-)%s*$"):lower(); local removedName=nil
+            if query=="" then blackBox.Text="Enter a player name"; return end
+            local player=findGotoPlayer(query); if player and state.blackHighlightNames[player.Name] then removedName=player.Name end
+            if not removedName then for name in pairs(state.blackHighlightNames) do if name:lower():sub(1,#query)==query then removedName=name; break end end end
+            if removedName then state.blackHighlightNames[removedName]=nil; for playerKey in pairs(blackHighlights) do if playerKey.Name==removedName then removeBlackHighlight(playerKey) end end end
+            blackBox.Text=""; refreshBlackStatus(); refreshESP()
+        end)
+        blackBox.FocusLost:Connect(function(enterPressed) if enterPressed then addBlackPlayer() end end)
+        track(Players.PlayerAdded:Connect(watchBlackPlayer)); track(Players.PlayerRemoving:Connect(removeBlackHighlight))
+        for _,player in ipairs(Players:GetPlayers()) do watchBlackPlayer(player) end
+        state.blackHighlightApi.getNames=function() local names={}; for name in pairs(state.blackHighlightNames) do table.insert(names,name) end; return names end
+        state.blackHighlightApi.setNames=setBlackNames
+        state.blackHighlightApi.refresh=function() for _,player in ipairs(Players:GetPlayers()) do applyBlackHighlight(player) end end
+        local clearBlackButton=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(48,48,55),BorderSizePixel=0,
+            Text="Clear Black Highlights",TextColor3=Color3.fromRGB(230,230,235),TextSize=11,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
+        create("UICorner",{CornerRadius=UDim.new(0,6),Parent=clearBlackButton})
+        clearBlackButton.MouseButton1Click:Connect(function() setBlackNames({}); clearBlackButton.Text="Black highlights cleared"; task.delay(1,function() if clearBlackButton.Parent then clearBlackButton.Text="Clear Black Highlights" end end) end)
+        addCleanup(function() for player in pairs(blackHighlights) do removeBlackHighlight(player) end end)
     end
 
     task.spawn(function()
@@ -4671,6 +4774,7 @@ actionButton("Save Named Profile", function(button)
     for name in pairs(state.favoriteNames or {}) do payload.favorites[name]=true end
     payload.yellowHighlights=state.yellowHighlightApi.getNames and state.yellowHighlightApi.getNames() or {}
     payload.pinkHighlights=state.pinkHighlightApi.getNames and state.pinkHighlightApi.getNames() or {}
+    payload.blackHighlights=state.blackHighlightApi.getNames and state.blackHighlightApi.getNames() or {}
     -- Emote favorites are global and saved independently of named profiles.
     payload.keybinds={}
     for name,key in pairs(shortcutKeys or {}) do payload.keybinds[name]=key and key.Name or "Unbound" end
@@ -4754,6 +4858,10 @@ loadNamedProfile = function(button)
     if antiPushStrengthButton and antiPushStrengthButton.Parent then
         antiPushStrengthButton.Text="Anti Push Strength: "..tostring(state.antiPushStrength)
     end
+    if highlightStyleButton and highlightStyleButton.Parent then
+        if state.espHighlightStyle~="Soft" then state.espHighlightStyle="Hard" end
+        highlightStyleButton.Text="Highlight Style: "..state.espHighlightStyle
+    end
     emoteSpeed=state.emoteSpeed; updateText(emoteSpeedBox,string.format("%.1f",emoteSpeed))
     updateText(emoteSyncToleranceBox,string.format("%.2f",state.emoteSyncTolerance))
     if gotoApi.setOffset then gotoApi.setOffset(state.gotoOffsetX,state.gotoOffsetY,state.gotoOffsetZ) end
@@ -4763,6 +4871,7 @@ loadNamedProfile = function(button)
     mergeLegacyEmoteFavorites(payload.emoteFavorites)
     if state.yellowHighlightApi.setNames then state.yellowHighlightApi.setNames(payload.yellowHighlights or {}) end
     if state.pinkHighlightApi.setNames then state.pinkHighlightApi.setNames(payload.pinkHighlights or {}) end
+    if state.blackHighlightApi.setNames then state.blackHighlightApi.setNames(payload.blackHighlights or {}) end
     for name,setter in pairs(favoriteRegistry or {}) do setter((payload.favorites or {})[name]==true) end
     for name,value in pairs(payload.keybinds or {}) do
         local key=value~="Unbound" and Enum.KeyCode[value] or nil
