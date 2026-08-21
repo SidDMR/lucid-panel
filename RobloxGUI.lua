@@ -184,6 +184,7 @@ local state = {
     emoteRecentSyncPlayers = {},
     emoteSearchCache = {},
     lowPerformanceMode = false,
+    rendering3dDisabled = false,
     gotoOffsetX       = 3,
     gotoOffsetY       = 1,
     gotoOffsetZ       = 0,
@@ -2675,13 +2676,14 @@ local function initializePlayerESP()
             local highlight=Instance.new("Highlight"); highlight.Name=player.Name
             highlight.Adornee=character; highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
             highlight.FillColor=priorityYellow and Color3.fromRGB(255,225,45)
-                or (priorityPink and Color3.fromRGB(255,182,213)
-                or (priorityBlack and Color3.fromRGB(8,8,10) or player.TeamColor.Color))
+                or (priorityPink and Color3.fromRGB(255,155,205)
+                or (priorityBlack and Color3.fromRGB(205,35,75) or player.TeamColor.Color))
             highlight.OutlineColor=priorityYellow and Color3.fromRGB(255,245,110)
-                or (priorityPink and Color3.fromRGB(255,215,232)
-                or (priorityBlack and Color3.fromRGB(35,35,40) or Color3.new(1,1,1)))
-            highlight.FillTransparency=state.espHighlightStyle=="Soft" and math.clamp(espTransparency+0.14,0,0.97) or espTransparency
-            highlight.OutlineTransparency=state.espHighlightStyle=="Soft" and 0.72 or math.clamp(espTransparency-0.15,0,1)
+                or (priorityPink and Color3.fromRGB(255,195,225)
+                or (priorityBlack and Color3.fromRGB(255,90,120) or Color3.new(1,1,1)))
+            highlight.FillTransparency=state.espHighlightStyle=="Hard" and 1
+                or (priorityPink and math.clamp(espTransparency-0.08,0,0.88) or math.clamp(espTransparency+0.08,0,0.94))
+            highlight.OutlineTransparency=state.espHighlightStyle=="Hard" and math.clamp(espTransparency-0.7,0,0.3) or 0.58
             highlight.Parent=folder
         end
         for _, part in ipairs(character:GetChildren()) do
@@ -2874,9 +2876,9 @@ local function initializePlayerESP()
         local highlight=Instance.new("Highlight")
         highlight.Name="LucidYellowPlayerHighlight"; highlight.Adornee=player.Character
         highlight.FillColor=Color3.fromRGB(255,225,45)
-        highlight.FillTransparency=state.espHighlightStyle=="Soft" and math.clamp(espTransparency+0.14,0,0.97) or espTransparency
+        highlight.FillTransparency=state.espHighlightStyle=="Hard" and 1 or math.clamp(espTransparency+0.08,0,0.94)
         highlight.OutlineColor=Color3.fromRGB(255,235,80)
-        highlight.OutlineTransparency=state.espHighlightStyle=="Soft" and 0.72 or math.clamp(espTransparency-0.15,0,1)
+        highlight.OutlineTransparency=state.espHighlightStyle=="Hard" and math.clamp(espTransparency-0.7,0,0.3) or 0.58
         highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; highlight.Parent=player.Character
         yellowHighlights[player]=highlight
     end
@@ -2970,10 +2972,10 @@ local function initializePlayerESP()
             if not player or not state.pinkHighlightNames[player.Name] or yellowNames[player.Name] or not player.Character then return end
             local highlight=Instance.new("Highlight")
             highlight.Name="LucidPinkPlayerHighlight"; highlight.Adornee=player.Character
-            highlight.FillColor=Color3.fromRGB(255,182,213)
-            highlight.FillTransparency=state.espHighlightStyle=="Soft" and math.clamp(espTransparency+0.14,0,0.97) or espTransparency
-            highlight.OutlineColor=Color3.fromRGB(255,215,232)
-            highlight.OutlineTransparency=state.espHighlightStyle=="Soft" and 0.72 or math.clamp(espTransparency-0.15,0,1)
+            highlight.FillColor=Color3.fromRGB(255,155,205)
+            highlight.FillTransparency=state.espHighlightStyle=="Hard" and 1 or math.clamp(espTransparency-0.08,0,0.88)
+            highlight.OutlineColor=Color3.fromRGB(255,195,225)
+            highlight.OutlineTransparency=state.espHighlightStyle=="Hard" and math.clamp(espTransparency-0.7,0,0.3) or 0.48
             highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; highlight.Parent=player.Character
             pinkHighlights[player]=highlight
         end
@@ -3030,19 +3032,19 @@ local function initializePlayerESP()
         addCleanup(function() for player in pairs(pinkHighlights) do removePinkHighlight(player) end end)
     end
 
-    sectionLabel("Black Player Highlights (Exploiters)",nextOrder())
+    sectionLabel("Crimson Player Highlights (Exploiters)",nextOrder())
     do
         local blackHighlights={}
         local blackConnections={}
         local blackRow=rowFrame(nextOrder(),30)
         local blackBox=styledBox(blackRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="Username or display name"})
         local blackAdd=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-64,0,0),
-            BackgroundColor3=Color3.fromRGB(42,42,48),BorderSizePixel=0,Text="+",TextColor3=Color3.new(1,1,1),TextSize=18,Font=Enum.Font.GothamBold,Parent=blackRow})
+            BackgroundColor3=Color3.fromRGB(145,38,62),BorderSizePixel=0,Text="+",TextColor3=Color3.new(1,1,1),TextSize=18,Font=Enum.Font.GothamBold,Parent=blackRow})
         local blackRemove=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-30,0,0),
             BackgroundColor3=Color3.fromRGB(95,55,60),BorderSizePixel=0,Text="-",TextColor3=Color3.new(1,1,1),TextSize=18,Font=Enum.Font.GothamBold,Parent=blackRow})
         create("UICorner",{CornerRadius=UDim.new(0,5),Parent=blackAdd}); create("UICorner",{CornerRadius=UDim.new(0,5),Parent=blackRemove})
         local blackStatus=create("TextLabel",{Size=UDim2.new(1,0,0,24),BackgroundTransparency=1,Text="Marked: none",
-            TextColor3=Color3.fromRGB(145,145,155),TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
+            TextColor3=Color3.fromRGB(235,120,145),TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
             TextTruncate=Enum.TextTruncate.AtEnd,LayoutOrder=nextOrder(),Parent=currentSection})
         local function refreshBlackStatus()
             local names={}; for name in pairs(state.blackHighlightNames) do table.insert(names,name) end
@@ -3058,10 +3060,10 @@ local function initializePlayerESP()
                 or state.pinkHighlightNames[player.Name] or not player.Character then return end
             local highlight=Instance.new("Highlight")
             highlight.Name="LucidBlackPlayerHighlight"; highlight.Adornee=player.Character
-            highlight.FillColor=Color3.fromRGB(8,8,10)
-            highlight.FillTransparency=state.espHighlightStyle=="Soft" and math.clamp(espTransparency+0.14,0,0.97) or espTransparency
-            highlight.OutlineColor=Color3.fromRGB(35,35,40)
-            highlight.OutlineTransparency=state.espHighlightStyle=="Soft" and 0.72 or math.clamp(espTransparency-0.15,0,1)
+            highlight.FillColor=Color3.fromRGB(205,35,75)
+            highlight.FillTransparency=state.espHighlightStyle=="Hard" and 1 or math.clamp(espTransparency,0,0.9)
+            highlight.OutlineColor=Color3.fromRGB(255,90,120)
+            highlight.OutlineTransparency=state.espHighlightStyle=="Hard" and math.clamp(espTransparency-0.7,0,0.3) or 0.5
             highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; highlight.Parent=player.Character; blackHighlights[player]=highlight
         end
         local function watchBlackPlayer(player)
@@ -3095,10 +3097,10 @@ local function initializePlayerESP()
         state.blackHighlightApi.getNames=function() local names={}; for name in pairs(state.blackHighlightNames) do table.insert(names,name) end; return names end
         state.blackHighlightApi.setNames=setBlackNames
         state.blackHighlightApi.refresh=function() for _,player in ipairs(Players:GetPlayers()) do applyBlackHighlight(player) end end
-        local clearBlackButton=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(48,48,55),BorderSizePixel=0,
-            Text="Clear Black Highlights",TextColor3=Color3.fromRGB(230,230,235),TextSize=11,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
+        local clearBlackButton=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(105,35,52),BorderSizePixel=0,
+            Text="Clear Exploiter Highlights",TextColor3=Color3.fromRGB(240,220,225),TextSize=11,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
         create("UICorner",{CornerRadius=UDim.new(0,6),Parent=clearBlackButton})
-        clearBlackButton.MouseButton1Click:Connect(function() setBlackNames({}); clearBlackButton.Text="Black highlights cleared"; task.delay(1,function() if clearBlackButton.Parent then clearBlackButton.Text="Clear Black Highlights" end end) end)
+        clearBlackButton.MouseButton1Click:Connect(function() setBlackNames({}); clearBlackButton.Text="Exploiter highlights cleared"; task.delay(1,function() if clearBlackButton.Parent then clearBlackButton.Text="Clear Exploiter Highlights" end end) end)
         addCleanup(function() for player in pairs(blackHighlights) do removeBlackHighlight(player) end end)
     end
 
@@ -5037,6 +5039,20 @@ createToggle("Low Performance Mode",nextOrder(),false,function(on)
     notifyLucid("Performance mode",on and "Reduced update frequency enabled" or "Normal update frequency restored",
         on and Color3.fromRGB(235,175,70) or Color3.fromRGB(75,210,120))
 end)
+createToggle("Disable 3D Rendering",nextOrder(),false,function(on)
+    local ok=pcall(function() RunService:Set3dRenderingEnabled(not on) end)
+    state.rendering3dDisabled=ok and on or false
+    if ok then
+        notifyLucid("3D rendering",on and "World rendering disabled; scripts remain active" or "World rendering restored",
+            on and Color3.fromRGB(235,175,70) or Color3.fromRGB(75,210,120))
+    else
+        notifyLucid("3D rendering unavailable","This executor cannot control 3D rendering",Color3.fromRGB(230,90,105))
+    end
+end)
+addCleanup(function()
+    state.rendering3dDisabled=false
+    pcall(function() RunService:Set3dRenderingEnabled(true) end)
+end)
 actionButton("Show All Detached Windows",function(button)
     local shown=0
     for _,item in ipairs(detachableWindows) do
@@ -5600,6 +5616,7 @@ end)
 actionButton("Emergency Cleanup Only",function(button)
     ContextActionService:UnbindAction("LucidFreecamSink")
     state.freecamEnabled=false; releaseFreecamMouse()
+    state.rendering3dDisabled=false; pcall(function() RunService:Set3dRenderingEnabled(true) end)
     restoreNoclipCollisions(); destroyPlatform(); removePlayerLight()
     for _,item in ipairs(workspace:GetChildren()) do
         if item.Name:match("^LucidWaypoint_") or item.Name=="LucidFloatPlatform" then item:Destroy() end
