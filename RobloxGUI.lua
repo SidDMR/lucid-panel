@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v4.4.1
+--// Lucid Panel v4.4.2
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -162,6 +162,9 @@ local state = {
     espTransparency   = 0.78,
     espMaxDistance    = 5000,
     espHighlightStyle = "Hard",
+    specialHighlightColor = "#FFE12D",
+    superSpecialHighlightColor = "#FF9BCD",
+    exploiterHighlightColor = "#CD234B",
     namedHighlightsSuppressed = false,
     emoteSpeed        = 1,
     keepEmoteMoving   = true,
@@ -333,7 +336,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v4.4.1",
+    Text                   = ">>  Lucid Panel v4.4.2",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -632,7 +635,7 @@ local searchBox = create("TextBox", {
     Size = UDim2.new(1, -94, 0, 26), BackgroundColor3 = Color3.fromRGB(38, 36, 52),
     BorderSizePixel = 0, Text = "", PlaceholderText = "Search tools...",
     TextColor3 = Color3.fromRGB(230, 225, 245), PlaceholderColor3 = Color3.fromRGB(120, 110, 150),
-    TextSize = 12, Font = Enum.Font.Gotham, ClearTextOnFocus = false, Parent = searchRow,
+    TextSize = 12, Font = Enum.Font.Gotham, ClearTextOnFocus = true, Parent = searchRow,
 })
 create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = searchBox })
 local collapseBtn = create("TextButton", {
@@ -738,7 +741,7 @@ local function styledBox(parent, props)
         TextSize               = 13,
         Font                   = Enum.Font.GothamSemibold,
         BorderSizePixel        = 0,
-        ClearTextOnFocus       = false,
+        ClearTextOnFocus       = true,
         Parent                 = parent,
     })
     for k, v in pairs(props) do box[k] = v end
@@ -2562,6 +2565,13 @@ local function initializePlayerESP()
     useCategory("Player")
     sectionLabel("Player ESP", nextOrder())
 
+    local function highlightColor(hex,fallback)
+        local clean=tostring(hex or ""):gsub("#","")
+        local value=#clean==6 and tonumber(clean,16) or nil
+        if not value then return fallback end
+        return Color3.fromRGB(math.floor(value/65536)%256,math.floor(value/256)%256,value%256)
+    end
+
     local mode = "off"
     local holders = {}
     local selectedPlayers = {}
@@ -2676,15 +2686,15 @@ local function initializePlayerESP()
         local priorityYellow=yellowNames[player.Name]==true
         local priorityPink=not priorityYellow and state.pinkHighlightNames[player.Name]==true
         local priorityBlack=not priorityYellow and not priorityPink and state.blackHighlightNames[player.Name]==true
+        local priorityColor=priorityYellow and highlightColor(state.specialHighlightColor,Color3.fromRGB(255,225,45))
+            or (priorityPink and highlightColor(state.superSpecialHighlightColor,Color3.fromRGB(255,155,205))
+            or (priorityBlack and highlightColor(state.exploiterHighlightColor,Color3.fromRGB(205,35,75)) or player.TeamColor.Color))
         if espUseHighlight then
             local highlight=Instance.new("Highlight"); highlight.Name=player.Name
             highlight.Adornee=character; highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
-            highlight.FillColor=priorityYellow and Color3.fromRGB(255,225,45)
-                or (priorityPink and Color3.fromRGB(255,155,205)
-                or (priorityBlack and Color3.fromRGB(205,35,75) or player.TeamColor.Color))
-            highlight.OutlineColor=priorityYellow and Color3.fromRGB(255,245,110)
-                or (priorityPink and Color3.fromRGB(255,195,225)
-                or (priorityBlack and Color3.fromRGB(255,90,120) or Color3.new(1,1,1)))
+            highlight.FillColor=priorityColor
+            highlight.OutlineColor=(priorityYellow or priorityPink or priorityBlack)
+                and priorityColor:Lerp(Color3.new(1,1,1),0.35) or Color3.new(1,1,1)
             highlight.FillTransparency=state.espHighlightStyle=="Hard" and 1
                 or (priorityPink and math.clamp(espTransparency-0.08,0,0.88) or math.clamp(espTransparency+0.08,0,0.94))
             highlight.OutlineTransparency=state.espHighlightStyle=="Hard" and math.clamp(espTransparency-0.7,0,0.3) or 0.58
@@ -2701,7 +2711,7 @@ local function initializePlayerESP()
                 adornment.ZIndex = 10
                 adornment.Size = part.Size
                 adornment.Transparency = espTransparency
-                if priorityYellow then adornment.Color3=Color3.fromRGB(255,225,45) else adornment.Color=player.TeamColor end
+                if priorityYellow or priorityPink or priorityBlack then adornment.Color3=priorityColor else adornment.Color=player.TeamColor end
                 adornment.Parent = folder
             end
         end
@@ -2864,11 +2874,13 @@ local function initializePlayerESP()
         if state.blackHighlightApi.refresh then state.blackHighlightApi.refresh() end
     end)
 
-    sectionLabel("Yellow Player Highlights",nextOrder())
+    sectionLabel("Special Player Highlights",nextOrder())
     local yellowHighlights={}
     local yellowCharacterConnections={}
+    local specialColorRow=rowFrame(nextOrder(),28)
+    local specialColorBox=styledBox(specialColorRow,{Size=UDim2.new(1,0,0,26),Text=state.specialHighlightColor,PlaceholderText="Special color — #RRGGBB"})
     local yellowRow=rowFrame(nextOrder(),30)
-    local yellowBox=styledBox(yellowRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="Friend username/display name"})
+    local yellowBox=styledBox(yellowRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="Special username/display name"})
     local yellowAdd=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-64,0,0),
         BackgroundColor3=Color3.fromRGB(125,105,38),BorderSizePixel=0,Text="+",TextColor3=Color3.new(1,1,1),
         TextSize=18,Font=Enum.Font.GothamBold,Parent=yellowRow})
@@ -2895,9 +2907,10 @@ local function initializePlayerESP()
         if state.namedHighlightsSuppressed or not player or not yellowNames[player.Name] or not player.Character then return end
         local highlight=Instance.new("Highlight")
         highlight.Name="LucidYellowPlayerHighlight"; highlight.Adornee=player.Character
-        highlight.FillColor=Color3.fromRGB(255,225,45)
+        local color=highlightColor(state.specialHighlightColor,Color3.fromRGB(255,225,45))
+        highlight.FillColor=color
         highlight.FillTransparency=state.espHighlightStyle=="Hard" and 1 or math.clamp(espTransparency+0.08,0,0.94)
-        highlight.OutlineColor=Color3.fromRGB(255,235,80)
+        highlight.OutlineColor=color:Lerp(Color3.new(1,1,1),0.35)
         highlight.OutlineTransparency=state.espHighlightStyle=="Hard" and math.clamp(espTransparency-0.7,0,0.3) or 0.58
         highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; highlight.Parent=player.Character
         yellowHighlights[player]=highlight
@@ -2952,21 +2965,29 @@ local function initializePlayerESP()
     state.yellowHighlightApi.refresh=function()
         for _,player in ipairs(Players:GetPlayers()) do applyYellowHighlight(player) end
     end
+    specialColorBox.FocusLost:Connect(function()
+        local clean=specialColorBox.Text:gsub("#",""):upper()
+        if #clean==6 and tonumber(clean,16) then state.specialHighlightColor="#"..clean end
+        specialColorBox.Text=state.specialHighlightColor; clearESP(); refreshESP(); state.yellowHighlightApi.refresh()
+    end)
+    state.yellowHighlightApi.refreshColor=function() specialColorBox.Text=state.specialHighlightColor end
     local clearYellowButton=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(105,82,34),
-        BorderSizePixel=0,Text="Clear Yellow Highlights",TextColor3=Color3.fromRGB(240,235,245),TextSize=11,
+        BorderSizePixel=0,Text="Clear Special Highlights",TextColor3=Color3.fromRGB(240,235,245),TextSize=11,
         Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
     create("UICorner",{CornerRadius=UDim.new(0,6),Parent=clearYellowButton})
     clearYellowButton.MouseButton1Click:Connect(function()
         state.yellowHighlightApi.setNames({}); clearYellowButton.Text="Yellow highlights cleared"
-        task.delay(1,function() if clearYellowButton.Parent then clearYellowButton.Text="Clear Yellow Highlights" end end)
+        task.delay(1,function() if clearYellowButton.Parent then clearYellowButton.Text="Clear Special Highlights" end end)
     end)
 
-    sectionLabel("Light Pink Player Highlights",nextOrder())
+    sectionLabel("Super Special Player Highlights",nextOrder())
     do
         local pinkHighlights={}
         local pinkConnections={}
+        local superColorRow=rowFrame(nextOrder(),28)
+        local superColorBox=styledBox(superColorRow,{Size=UDim2.new(1,0,0,26),Text=state.superSpecialHighlightColor,PlaceholderText="Super Special color — #RRGGBB"})
         local pinkRow=rowFrame(nextOrder(),30)
-        local pinkBox=styledBox(pinkRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="Username or display name"})
+        local pinkBox=styledBox(pinkRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="Super Special username/display name"})
         local pinkAdd=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-64,0,0),
             BackgroundColor3=Color3.fromRGB(184,103,143),BorderSizePixel=0,Text="+",TextColor3=Color3.new(1,1,1),
             TextSize=18,Font=Enum.Font.GothamBold,Parent=pinkRow})
@@ -2992,9 +3013,10 @@ local function initializePlayerESP()
             if state.namedHighlightsSuppressed or not player or not state.pinkHighlightNames[player.Name] or yellowNames[player.Name] or not player.Character then return end
             local highlight=Instance.new("Highlight")
             highlight.Name="LucidPinkPlayerHighlight"; highlight.Adornee=player.Character
-            highlight.FillColor=Color3.fromRGB(255,155,205)
+            local color=highlightColor(state.superSpecialHighlightColor,Color3.fromRGB(255,155,205))
+            highlight.FillColor=color
             highlight.FillTransparency=state.espHighlightStyle=="Hard" and 1 or math.clamp(espTransparency-0.08,0,0.88)
-            highlight.OutlineColor=Color3.fromRGB(255,195,225)
+            highlight.OutlineColor=color:Lerp(Color3.new(1,1,1),0.35)
             highlight.OutlineTransparency=state.espHighlightStyle=="Hard" and math.clamp(espTransparency-0.7,0,0.3) or 0.48
             highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; highlight.Parent=player.Character
             pinkHighlights[player]=highlight
@@ -3041,23 +3063,31 @@ local function initializePlayerESP()
         state.pinkHighlightApi.refresh=function()
             for _,player in ipairs(Players:GetPlayers()) do applyPinkHighlight(player) end
         end
+        superColorBox.FocusLost:Connect(function()
+            local clean=superColorBox.Text:gsub("#",""):upper()
+            if #clean==6 and tonumber(clean,16) then state.superSpecialHighlightColor="#"..clean end
+            superColorBox.Text=state.superSpecialHighlightColor; clearESP(); refreshESP(); state.pinkHighlightApi.refresh()
+        end)
+        state.pinkHighlightApi.refreshColor=function() superColorBox.Text=state.superSpecialHighlightColor end
         local clearPinkButton=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(120,65,92),
-            BorderSizePixel=0,Text="Clear Pink Highlights",TextColor3=Color3.fromRGB(240,235,245),TextSize=11,
+            BorderSizePixel=0,Text="Clear Super Special Highlights",TextColor3=Color3.fromRGB(240,235,245),TextSize=11,
             Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
         create("UICorner",{CornerRadius=UDim.new(0,6),Parent=clearPinkButton})
         clearPinkButton.MouseButton1Click:Connect(function()
             setPinkNames({}); clearPinkButton.Text="Pink highlights cleared"
-            task.delay(1,function() if clearPinkButton.Parent then clearPinkButton.Text="Clear Pink Highlights" end end)
+            task.delay(1,function() if clearPinkButton.Parent then clearPinkButton.Text="Clear Super Special Highlights" end end)
         end)
         addCleanup(function() for player in pairs(pinkHighlights) do removePinkHighlight(player) end end)
     end
 
-    sectionLabel("Crimson Player Highlights (Exploiters)",nextOrder())
+    sectionLabel("Exploiter Player Highlights",nextOrder())
     do
         local blackHighlights={}
         local blackConnections={}
+        local exploiterColorRow=rowFrame(nextOrder(),28)
+        local exploiterColorBox=styledBox(exploiterColorRow,{Size=UDim2.new(1,0,0,26),Text=state.exploiterHighlightColor,PlaceholderText="Exploiter color — #RRGGBB"})
         local blackRow=rowFrame(nextOrder(),30)
-        local blackBox=styledBox(blackRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="Username or display name"})
+        local blackBox=styledBox(blackRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="Exploiter username/display name"})
         local blackAdd=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-64,0,0),
             BackgroundColor3=Color3.fromRGB(145,38,62),BorderSizePixel=0,Text="+",TextColor3=Color3.new(1,1,1),TextSize=18,Font=Enum.Font.GothamBold,Parent=blackRow})
         local blackRemove=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-30,0,0),
@@ -3080,9 +3110,10 @@ local function initializePlayerESP()
                 or state.pinkHighlightNames[player.Name] or not player.Character then return end
             local highlight=Instance.new("Highlight")
             highlight.Name="LucidBlackPlayerHighlight"; highlight.Adornee=player.Character
-            highlight.FillColor=Color3.fromRGB(205,35,75)
+            local color=highlightColor(state.exploiterHighlightColor,Color3.fromRGB(205,35,75))
+            highlight.FillColor=color
             highlight.FillTransparency=state.espHighlightStyle=="Hard" and 1 or math.clamp(espTransparency,0,0.9)
-            highlight.OutlineColor=Color3.fromRGB(255,90,120)
+            highlight.OutlineColor=color:Lerp(Color3.new(1,1,1),0.35)
             highlight.OutlineTransparency=state.espHighlightStyle=="Hard" and math.clamp(espTransparency-0.7,0,0.3) or 0.5
             highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; highlight.Parent=player.Character; blackHighlights[player]=highlight
         end
@@ -3117,6 +3148,12 @@ local function initializePlayerESP()
         state.blackHighlightApi.getNames=function() local names={}; for name in pairs(state.blackHighlightNames) do table.insert(names,name) end; return names end
         state.blackHighlightApi.setNames=setBlackNames
         state.blackHighlightApi.refresh=function() for _,player in ipairs(Players:GetPlayers()) do applyBlackHighlight(player) end end
+        exploiterColorBox.FocusLost:Connect(function()
+            local clean=exploiterColorBox.Text:gsub("#",""):upper()
+            if #clean==6 and tonumber(clean,16) then state.exploiterHighlightColor="#"..clean end
+            exploiterColorBox.Text=state.exploiterHighlightColor; clearESP(); refreshESP(); state.blackHighlightApi.refresh()
+        end)
+        state.blackHighlightApi.refreshColor=function() exploiterColorBox.Text=state.exploiterHighlightColor end
         local clearBlackButton=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(105,35,52),BorderSizePixel=0,
             Text="Clear Exploiter Highlights",TextColor3=Color3.fromRGB(240,220,225),TextSize=11,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
         create("UICorner",{CornerRadius=UDim.new(0,6),Parent=clearBlackButton})
@@ -4845,6 +4882,7 @@ actionButton("Save Named Profile", function(button)
     notifyLucid(ok and "Profile saved" or "Profile save failed",
         ok and profileNameBox.Text or button.Text,ok and Color3.fromRGB(75,210,120) or Color3.fromRGB(230,90,105))
     if ok and profileListOpen then refreshProfileList() end
+    task.delay(1.5,function() if button.Parent then button.Text="Save Named Profile" end end)
 end)
 loadNamedProfile = function(button)
     local profilePath=getProfilePath()
@@ -4860,6 +4898,9 @@ loadNamedProfile = function(button)
     end
     if not ok or type(payload)~="table" then button.Text="Profile invalid/missing"; notifyLucid("Profile load failed",profileNameBox.Text,Color3.fromRGB(230,90,105)); return end
     for key,value in pairs(payload.values or {}) do if state[key] ~= nil then state[key]=value end end
+    if state.yellowHighlightApi.refreshColor then state.yellowHighlightApi.refreshColor() end
+    if state.pinkHighlightApi.refreshColor then state.pinkHighlightApi.refreshColor() end
+    if state.blackHighlightApi.refreshColor then state.blackHighlightApi.refreshColor() end
     if type(payload.lighting)=="table" and type(payload.lighting.playerLightEnabled)=="boolean" then
         state.playerLightEnabled=payload.lighting.playerLightEnabled
     end
@@ -5623,7 +5664,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v4.4.1 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v4.4.2 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -6125,7 +6166,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v4.4.1] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v4.4.2] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v4.4.1] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v4.4.2] Loaded, but this executor does not expose queue_on_teleport")
 end
