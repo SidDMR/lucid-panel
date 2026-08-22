@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v4.4.3
+--// Lucid Panel v4.4.4
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -151,6 +151,7 @@ local state = {
     flySpeed           = 50,
     freecamEnabled     = false,
     freecamSpeed       = 50,
+    photoModeEnabled   = false,
     noCameraShake      = false,
     cameraShakeStrength = "Strong",
     fovLocked          = false,
@@ -337,7 +338,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v4.4.3",
+    Text                   = ">>  Lucid Panel v4.4.4",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -3595,6 +3596,89 @@ actionButton("Third Person / Restore", function()
     releaseFreecamMouse()
 end)
 
+sectionLabel("Clean Photo Mode",nextOrder())
+do
+    local hiddenVisuals={}
+    local hiddenWindows={}
+    local savedMainVisible=true
+    local savedBackpackEnabled=true
+    local photoStartedFreecam=false
+    local function rememberVisual(instance,property)
+        if hiddenVisuals[instance] then return end
+        local ok,value=pcall(function() return instance[property] end)
+        if ok then hiddenVisuals[instance]={property=property,value=value}; pcall(function() instance[property]=false end) end
+    end
+    local function lucidEspVisual(instance)
+        local ancestor=instance.Parent
+        while ancestor and ancestor~=game do
+            if ancestor.Name:match("_LucidESP$") or ancestor.Name=="LucidHazardGhost"
+                or ancestor.Name:match("^LucidWaypoint_") then return true end
+            ancestor=ancestor.Parent
+        end
+        return instance.Name:match("^Lucid.*ESP")~=nil
+            or instance.Name:match("^Lucid.*PlayerHighlight$")~=nil
+            or instance.Name=="GhostOutline" or instance.Name=="GhostLabel"
+    end
+    local function hideEspVisual(instance)
+        if not lucidEspVisual(instance) then return end
+        if instance:IsA("Highlight") or instance:IsA("BillboardGui") then rememberVisual(instance,"Enabled")
+        elseif instance:IsA("BoxHandleAdornment") then rememberVisual(instance,"Visible") end
+    end
+    local function hideCustomBackpack(instance)
+        local lower=instance.Name:lower()
+        if not (lower:find("backpack",1,true) or lower:find("hotbar",1,true)) then return end
+        if instance:IsA("ScreenGui") then rememberVisual(instance,"Enabled")
+        elseif instance:IsA("GuiObject") then rememberVisual(instance,"Visible") end
+    end
+    local function scanPhotoVisuals()
+        for _,instance in ipairs(screenGui:GetDescendants()) do hideEspVisual(instance) end
+        for _,instance in ipairs(workspace:GetDescendants()) do hideEspVisual(instance) end
+        local playerGui=LocalPlayer:FindFirstChildOfClass("PlayerGui")
+        if playerGui then for _,instance in ipairs(playerGui:GetDescendants()) do hideCustomBackpack(instance) end end
+    end
+    local function restorePhotoVisuals()
+        for instance,record in pairs(hiddenVisuals) do
+            if instance and instance.Parent then pcall(function() instance[record.property]=record.value end) end
+        end
+        table.clear(hiddenVisuals)
+    end
+    local function setPhotoMode(on)
+        if state.photoModeEnabled==on then return end
+        state.photoModeEnabled=on
+        if on then
+            savedMainVisible=mainFrame.Visible
+            table.clear(hiddenWindows)
+            if notificationHost and notificationHost.Parent then
+                hiddenWindows[notificationHost]=notificationHost.Visible; notificationHost.Visible=false
+            end
+            for _,item in ipairs(detachableWindows) do
+                if item.window and item.window.Parent then hiddenWindows[item.window]=item.window.Visible; item.window.Visible=false end
+            end
+            local starterGui=game:GetService("StarterGui")
+            pcall(function() savedBackpackEnabled=starterGui:GetCoreGuiEnabled(Enum.CoreGuiType.Backpack) end)
+            pcall(function() starterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack,false) end)
+            scanPhotoVisuals()
+            photoStartedFreecam=not state.freecamEnabled
+            if photoStartedFreecam then setFreecam(true) end
+            mainFrame.Visible=false
+        else
+            restorePhotoVisuals()
+            pcall(function() game:GetService("StarterGui"):SetCoreGuiEnabled(Enum.CoreGuiType.Backpack,savedBackpackEnabled) end)
+            for window,wasVisible in pairs(hiddenWindows) do if window and window.Parent then window.Visible=wasVisible end end
+            table.clear(hiddenWindows)
+            if photoStartedFreecam and state.freecamEnabled then setFreecam(false) end
+            photoStartedFreecam=false; mainFrame.Visible=savedMainVisible
+            notifyLucid("Photo Mode disabled","Backpack, ESP and Lucid windows restored",Color3.fromRGB(75,210,120))
+        end
+    end
+    createToggle("Photo Mode — Clean Freecam",nextOrder(),false,setPhotoMode)
+    track(screenGui.DescendantAdded:Connect(function(instance) if state.photoModeEnabled then task.defer(hideEspVisual,instance) end end))
+    track(workspace.DescendantAdded:Connect(function(instance) if state.photoModeEnabled then task.defer(hideEspVisual,instance) end end))
+    local playerGui=LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if playerGui then track(playerGui.DescendantAdded:Connect(function(instance) if state.photoModeEnabled then task.defer(hideCustomBackpack,instance) end end)) end
+    addCleanup(function() if state.photoModeEnabled then setPhotoMode(false) end end)
+end
+
 sectionLabel("Photo Isolation",nextOrder())
 state.initializePhotoIsolation=function()
     local exceptions={}
@@ -5680,7 +5764,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v4.4.3 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v4.4.4 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -6144,7 +6228,7 @@ track(UserInputService.InputBegan:Connect(function(input, processed)
         mainFrame.Visible = not mainFrame.Visible
         for _,detachable in ipairs(detachableWindows) do
             if detachable.window and detachable.window.Parent and detachable.isDetached() then
-                detachable.window.Visible=detachable.isPinned() or mainFrame.Visible
+                detachable.window.Visible=not state.photoModeEnabled and (detachable.isPinned() or mainFrame.Visible)
             end
         end
     end
@@ -6186,7 +6270,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v4.4.3] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v4.4.4] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v4.4.3] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v4.4.4] Loaded, but this executor does not expose queue_on_teleport")
 end
