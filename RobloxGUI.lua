@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v4.4.4
+--// Lucid Panel v4.4.5
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -338,7 +338,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v4.4.4",
+    Text                   = ">>  Lucid Panel v4.4.5",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -3411,8 +3411,9 @@ end)
 -- control in the root chunk makes loadstring return nil before Lucid starts.
 local function initializeV4Toolkit()
 local AvatarEditorService=game:GetService("AvatarEditorService")
-local shortcutKeys = { Fly=Enum.KeyCode.F, Noclip=Enum.KeyCode.N, Freecam=Enum.KeyCode.P, Migraine=Enum.KeyCode.F8 }
+local shortcutKeys = { Migraine=Enum.KeyCode.F8 }
 local shortcutBoxes = {}
+local setPhotoModeToggle
 local function actionButton(textValue, callback, color)
     local row = rowFrame(nextOrder(), 32)
     local button = create("TextButton", {
@@ -3671,7 +3672,8 @@ do
             notifyLucid("Photo Mode disabled","Backpack, ESP and Lucid windows restored",Color3.fromRGB(75,210,120))
         end
     end
-    createToggle("Photo Mode — Clean Freecam",nextOrder(),false,setPhotoMode)
+    local _,_,photoModeSetter=createToggle("Photo Mode — Clean Freecam",nextOrder(),false,setPhotoMode)
+    setPhotoModeToggle=photoModeSetter
     track(screenGui.DescendantAdded:Connect(function(instance) if state.photoModeEnabled then task.defer(hideEspVisual,instance) end end))
     track(workspace.DescendantAdded:Connect(function(instance) if state.photoModeEnabled then task.defer(hideEspVisual,instance) end end))
     local playerGui=LocalPlayer:FindFirstChildOfClass("PlayerGui")
@@ -4922,7 +4924,7 @@ actionButton("Save Named Profile", function(button)
         pcall(function() payload=HttpService:JSONDecode(readfile(profilePath)) end)
     end
     if type(payload)~="table" then payload={} end
-    payload.version=3
+    payload.version=4
     payload.savedAt=os.time()
     payload.values={}
     for key,value in pairs(state) do
@@ -4937,7 +4939,7 @@ actionButton("Save Named Profile", function(button)
     -- Emote favorites are global and saved independently of named profiles.
     payload.keybinds={}
     for name,key in pairs(shortcutKeys or {}) do payload.keybinds[name]=key and key.Name or "Unbound" end
-    for _,name in ipairs({"Fly","Noclip","Freecam","Migraine"}) do
+    for _,name in ipairs({"Fly","Noclip","Freecam","Migraine","Photo Mode"}) do
         if not shortcutKeys[name] then payload.keybinds[name]="Unbound" end
     end
     payload.interface={opacity=1-mainFrame.BackgroundTransparency,
@@ -5037,9 +5039,11 @@ loadNamedProfile = function(button)
     if state.blackHighlightApi.setNames then state.blackHighlightApi.setNames(payload.blackHighlights or {}) end
     for name,setter in pairs(favoriteRegistry or {}) do setter((payload.favorites or {})[name]==true) end
     for name,value in pairs(payload.keybinds or {}) do
-        local key=value~="Unbound" and Enum.KeyCode[value] or nil
+        local legacyDefault=tonumber(payload.version or 0)<4 and ((name=="Fly" and value=="F")
+            or (name=="Noclip" and value=="N") or (name=="Freecam" and value=="P"))
+        local key=not legacyDefault and value~="Unbound" and Enum.KeyCode[value] or nil
         shortcutKeys[name]=key
-        if shortcutBoxes and shortcutBoxes[name] then shortcutBoxes[name].Text=key and key.Name or "Unbound" end
+        if shortcutBoxes and shortcutBoxes[name] then shortcutBoxes[name].Text=key and key.Name or "" end
     end
     local interface=payload.interface or {}
     if type(interface.opacity)=="number" then setOpacity(math.floor(math.clamp(interface.opacity,0,1)*100+0.5)) end
@@ -5267,7 +5271,15 @@ actionButton("PANIC / Reset Features [End]", function(button)
     panicReset(); button.Text="Reset complete"; task.delay(1,function() if button.Parent then button.Text="PANIC / Reset Features [End]" end end)
 end, Color3.fromRGB(145,50,65))
 sectionLabel("Quick Keybinds", nextOrder())
-for _, name in ipairs({"Fly","Noclip","Freecam","Migraine"}) do
+local function findShortcutKey(text)
+    local requested=tostring(text or ""):match("^%s*(.-)%s*$"):lower()
+    if requested=="" then return nil end
+    for _,keyCode in ipairs(Enum.KeyCode:GetEnumItems()) do
+        if keyCode.Name:lower()==requested then return keyCode end
+    end
+    return nil
+end
+for _, name in ipairs({"Fly","Noclip","Freecam","Migraine","Photo Mode"}) do
     local shortcutRow = rowFrame(nextOrder(), 30)
     create("TextLabel", {
         Size=UDim2.new(0,72,1,0), BackgroundTransparency=1, Text=name,
@@ -5275,7 +5287,7 @@ for _, name in ipairs({"Fly","Noclip","Freecam","Migraine"}) do
         TextXAlignment=Enum.TextXAlignment.Left, Parent=shortcutRow,
     })
     local box = styledBox(shortcutRow, { Size=UDim2.new(0,100,0,26), Position=UDim2.new(0,76,0.5,-13),
-        Text=shortcutKeys[name].Name, PlaceholderText="Key name" })
+        Text=shortcutKeys[name] and shortcutKeys[name].Name or "", PlaceholderText="Unbound" })
     shortcutBoxes[name]=box
     local clearButton=create("TextButton", {
         Size=UDim2.new(0,60,0,24), Position=UDim2.new(1,-60,0.5,-12),
@@ -5286,15 +5298,14 @@ for _, name in ipairs({"Fly","Noclip","Freecam","Migraine"}) do
     create("UICorner", { CornerRadius=UDim.new(0,5), Parent=clearButton })
     clearButton.MouseButton1Click:Connect(function()
         shortcutKeys[name]=nil
-        box.Text="Unbound"
+        box.Text=""
     end)
     box.FocusLost:Connect(function()
-        local requested=box.Text:match("^%s*(%w+)%s*$")
-        local key=requested and Enum.KeyCode[requested]
+        local key=findShortcutKey(box.Text)
         if key and key ~= Enum.KeyCode.Unknown and key ~= Enum.KeyCode.RightAlt and key ~= Enum.KeyCode.End then
             shortcutKeys[name]=key
         end
-        box.Text=shortcutKeys[name] and shortcutKeys[name].Name or "Unbound"
+        box.Text=shortcutKeys[name] and shortcutKeys[name].Name or ""
     end)
 end
 
@@ -5764,7 +5775,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v4.4.4 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v4.4.5 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -5797,6 +5808,8 @@ track(UserInputService.InputBegan:Connect(function(input, processed)
             fireFly()
         elseif input.KeyCode == shortcutKeys.Noclip then fireNoclip()
         elseif input.KeyCode == shortcutKeys.Freecam then fireFreecam()
+        elseif input.KeyCode == shortcutKeys["Photo Mode"] and setPhotoModeToggle then
+            setPhotoModeToggle(not state.photoModeEnabled)
         elseif input.KeyCode == shortcutKeys.Migraine then
             triggerMigraineComfort()
             notifyLucid("Migraine Comfort","Emergency lighting preset applied",Color3.fromRGB(105,180,220))
@@ -6270,7 +6283,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v4.4.4] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v4.4.5] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v4.4.4] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v4.4.5] Loaded, but this executor does not expose queue_on_teleport")
 end
