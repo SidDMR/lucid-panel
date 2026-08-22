@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v4.4.2
+--// Lucid Panel v4.4.3
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -165,6 +165,7 @@ local state = {
     specialHighlightColor = "#FFE12D",
     superSpecialHighlightColor = "#FF9BCD",
     exploiterHighlightColor = "#CD234B",
+    unavailableEmoteIds = {},
     namedHighlightsSuppressed = false,
     emoteSpeed        = 1,
     keepEmoteMoving   = true,
@@ -336,7 +337,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v4.4.2",
+    Text                   = ">>  Lucid Panel v4.4.3",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -4053,7 +4054,7 @@ local function playEmote(assetId,name)
     local humanoid=character and character:FindFirstChildOfClass("Humanoid")
     local animator=humanoid and humanoid:FindFirstChildOfClass("Animator")
     if not animator and humanoid then animator=Instance.new("Animator"); animator.Parent=humanoid end
-    if not animator then emoteStatus.Text="Character Animator unavailable"; return end
+    if not animator then emoteStatus.Text="Character Animator unavailable"; return false end
     local savedSpeed=tonumber((state.emoteSpeeds or {})[tostring(assetId)])
     if savedSpeed then
         emoteSpeed=math.clamp(savedSpeed,0.1,5); state.emoteSpeed=emoteSpeed
@@ -4079,7 +4080,12 @@ local function playEmote(assetId,name)
     if not track then
         local animation=Instance.new("Animation"); animation.AnimationId="rbxassetid://"..tostring(assetId)
         local ok,loaded=pcall(function() return animator:LoadAnimation(animation) end)
-        if not ok or not loaded then animation:Destroy(); emoteStatus.Text="This emote could not load"; return end
+        if not ok or not loaded then
+            animation:Destroy(); state.unavailableEmoteIds[tostring(assetId)]=true
+            emoteStatus.Text="Unavailable/private emote: "..tostring(name)
+            notifyLucid("Emote unavailable",tostring(name).." was denied by Roblox",Color3.fromRGB(230,90,105))
+            return false
+        end
         emoteAnimation=animation; track=loaded; track:Play(0.15,1,emoteSpeed)
     end
     emoteTrack=track; currentEmoteName=name
@@ -4087,6 +4093,7 @@ local function playEmote(assetId,name)
     track.Priority=Enum.AnimationPriority.Action4; track.Looped=state.emoteLoopMode~="Once"; track:AdjustSpeed(emoteSpeed)
     emoteStatus.Text="Playing: "..name.."  |  "..string.format("%.1fx",emoteSpeed)
     if state.emoteAdvancedOnPlayed then task.defer(state.emoteAdvancedOnPlayed,state.emoteCurrent,track) end
+    return true
 end
 track(RunService.Heartbeat:Connect(function()
     if emoteSyncActive or not state.keepEmoteMoving or not currentEmoteName or not emoteTrack or emoteResumeBusy then return end
@@ -4253,8 +4260,10 @@ end
 local loadEmoteResults
 local function createEmoteResult(id,name)
     local row=create("Frame",{Size=UDim2.new(1,-4,0,30),BackgroundTransparency=1,Parent=emoteResults})
+    local unavailable=state.unavailableEmoteIds[tostring(id)]==true
     local button=create("TextButton",{Size=UDim2.new(1,-36,0,28),BackgroundColor3=Color3.fromRGB(45,40,62),
-        BorderSizePixel=0,Text=(state.emoteAliases[tostring(id)] or name),TextColor3=Color3.fromRGB(230,225,240),TextSize=11,
+        BorderSizePixel=0,Text=unavailable and ("Unavailable — "..name) or (state.emoteAliases[tostring(id)] or name),
+        TextColor3=unavailable and Color3.fromRGB(220,120,135) or Color3.fromRGB(230,225,240),TextSize=11,
         Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=row})
     create("UIPadding",{PaddingLeft=UDim.new(0,8),Parent=button})
     create("UICorner",{CornerRadius=UDim.new(0,5),Parent=button})
@@ -4264,7 +4273,14 @@ local function createEmoteResult(id,name)
         TextColor3=state.emoteFavorites[tostring(id)] and Color3.fromRGB(255,215,55) or Color3.fromRGB(155,145,175),
         TextSize=17,Font=Enum.Font.GothamBold,Parent=row})
     create("UICorner",{CornerRadius=UDim.new(0,5),Parent=star})
-    button.MouseButton1Click:Connect(function() playEmote(id,name) end)
+    button.MouseButton1Click:Connect(function()
+        if state.unavailableEmoteIds[tostring(id)] then
+            button.Text="Unavailable — "..name; button.TextColor3=Color3.fromRGB(220,120,135); return
+        end
+        if playEmote(id,name)==false then
+            button.Text="Unavailable — "..name; button.TextColor3=Color3.fromRGB(220,120,135)
+        end
+    end)
     star.MouseButton1Click:Connect(function()
         local key=tostring(id)
         if state.emoteFavorites[key] then state.emoteFavorites[key]=nil else state.emoteFavorites[key]={id=id,name=name} end
@@ -5664,7 +5680,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v4.4.2 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v4.4.3 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -5787,8 +5803,12 @@ state.initializeHomeDashboard=function()
         while screenGui.Parent do
             local names={}; for name,enabled in pairs(activeFeatures) do if enabled then table.insert(names,name) end end
             table.sort(names)
-            profileSummary.Text="Profile: "..tostring(profileNameBox.Text).."  |  Place: "..tostring(game.PlaceId)
-            activeSummary.Text=#names==0 and "No optional features enabled" or ("ON ("..#names.."): "..table.concat(names,", "))
+            if profileSummary and profileSummary.Parent then
+                profileSummary.Text="Profile: "..tostring(profileNameBox and profileNameBox.Text or "unknown").."  |  Place: "..tostring(game.PlaceId)
+            end
+            if activeSummary and activeSummary.Parent then
+                activeSummary.Text=#names==0 and "No optional features enabled" or ("ON ("..#names.."): "..table.concat(names,", "))
+            end
             task.wait(state.lowPerformanceMode and 2 or 0.75)
         end
     end)
@@ -6166,7 +6186,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v4.4.2] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v4.4.3] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v4.4.2] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v4.4.3] Loaded, but this executor does not expose queue_on_teleport")
 end
