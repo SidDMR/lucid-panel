@@ -162,6 +162,7 @@ local state = {
     espTransparency   = 0.78,
     espMaxDistance    = 5000,
     espHighlightStyle = "Hard",
+    namedHighlightsSuppressed = false,
     emoteSpeed        = 1,
     keepEmoteMoving   = true,
     emoteSyncTolerance = 0.45,
@@ -2574,6 +2575,9 @@ local function initializePlayerESP()
     local setAll
     local setTarget
     local setEnemy
+    local setHighlight
+    local switchingEspMode=false
+    local restoreHighlightAfterAll=false
 
     local selectRow = rowFrame(nextOrder(), 30)
     local selectBox = styledBox(selectRow, {
@@ -2790,8 +2794,23 @@ local function initializePlayerESP()
             if setTarget then setTarget(false) end
             if setEnemy then setEnemy(false) end
             mode = "all"
+            state.namedHighlightsSuppressed=false
+            if restoreHighlightAfterAll and setHighlight then
+                setHighlight(true); restoreHighlightAfterAll=false
+            end
+            if state.yellowHighlightApi.refresh then state.yellowHighlightApi.refresh() end
+            if state.pinkHighlightApi.refresh then state.pinkHighlightApi.refresh() end
+            if state.blackHighlightApi.refresh then state.blackHighlightApi.refresh() end
         elseif mode == "all" then
             mode = "off"
+            if not switchingEspMode then
+                restoreHighlightAfterAll=espUseHighlight
+                if setHighlight then setHighlight(false) end
+                state.namedHighlightsSuppressed=true
+                if state.yellowHighlightApi.refresh then state.yellowHighlightApi.refresh() end
+                if state.pinkHighlightApi.refresh then state.pinkHighlightApi.refresh() end
+                if state.blackHighlightApi.refresh then state.blackHighlightApi.refresh() end
+            end
         end
         refreshESP()
     end)
@@ -2805,7 +2824,7 @@ local function initializePlayerESP()
                 task.defer(function() if setTarget then setTarget(false) end end)
                 return
             end
-            if setAll then setAll(false) end
+            if setAll then switchingEspMode=true; setAll(false); switchingEspMode=false end
             if setEnemy then setEnemy(false) end
             mode = "target"
         elseif mode == "target" then
@@ -2817,7 +2836,7 @@ local function initializePlayerESP()
 
     local _, _, enemySetter = createToggle("ESP Enemy Team", nextOrder(), false, function(on)
         if on then
-            if setAll then setAll(false) end
+            if setAll then switchingEspMode=true; setAll(false); switchingEspMode=false end
             if setTarget then setTarget(false) end
             mode = "enemy"
         elseif mode == "enemy" then
@@ -2828,9 +2847,10 @@ local function initializePlayerESP()
     setEnemy = enemySetter
     createToggle("ESP Show Health/Distance",nextOrder(),true,function(on) espShowDetails=on end)
     createToggle("ESP Hide Dead",nextOrder(),true,function(on) espHideDead=on; refreshESP() end)
-    createToggle("ESP Highlight Mode",nextOrder(),false,function(on)
+    local _,_,highlightSetter=createToggle("ESP Highlight Mode",nextOrder(),false,function(on)
         espUseHighlight=on; clearESP(); refreshESP()
     end)
+    setHighlight=highlightSetter
     local highlightStyleButton=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(54,46,76),
         BorderSizePixel=0,Text="Highlight Style: Hard",TextColor3=Color3.fromRGB(225,215,240),TextSize=11,
         Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
@@ -2872,7 +2892,7 @@ local function initializePlayerESP()
     end
     local function applyYellowHighlight(player)
         removeYellowHighlight(player)
-        if not player or not yellowNames[player.Name] or not player.Character then return end
+        if state.namedHighlightsSuppressed or not player or not yellowNames[player.Name] or not player.Character then return end
         local highlight=Instance.new("Highlight")
         highlight.Name="LucidYellowPlayerHighlight"; highlight.Adornee=player.Character
         highlight.FillColor=Color3.fromRGB(255,225,45)
@@ -2969,7 +2989,7 @@ local function initializePlayerESP()
         end
         local function applyPinkHighlight(player)
             removePinkHighlight(player)
-            if not player or not state.pinkHighlightNames[player.Name] or yellowNames[player.Name] or not player.Character then return end
+            if state.namedHighlightsSuppressed or not player or not state.pinkHighlightNames[player.Name] or yellowNames[player.Name] or not player.Character then return end
             local highlight=Instance.new("Highlight")
             highlight.Name="LucidPinkPlayerHighlight"; highlight.Adornee=player.Character
             highlight.FillColor=Color3.fromRGB(255,155,205)
@@ -3056,7 +3076,7 @@ local function initializePlayerESP()
         end
         local function applyBlackHighlight(player)
             removeBlackHighlight(player)
-            if not player or not state.blackHighlightNames[player.Name] or yellowNames[player.Name]
+            if state.namedHighlightsSuppressed or not player or not state.blackHighlightNames[player.Name] or yellowNames[player.Name]
                 or state.pinkHighlightNames[player.Name] or not player.Character then return end
             local highlight=Instance.new("Highlight")
             highlight.Name="LucidBlackPlayerHighlight"; highlight.Adornee=player.Character
