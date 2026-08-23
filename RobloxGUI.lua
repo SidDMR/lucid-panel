@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v4.4.5
+--// Lucid Panel v4.4.6
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -157,8 +157,9 @@ local state = {
     fovLocked          = false,
     fovValue           = 70,
     autoclickEnabled   = false,
-    autoclickInterval  = 0.01, -- 10 ms
-    autoclickToolOnly  = true,
+    autoclickInterval  = 0.001, -- 1 ms requested; effective rate is scheduler-limited
+    autoclickMode      = "Hybrid",
+    autoclickToolOnly  = false, -- legacy profile compatibility
     autoclickAvoidGui  = true,
     espTransparency   = 0.78,
     espMaxDistance    = 5000,
@@ -338,7 +339,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v4.4.5",
+    Text                   = ">>  Lucid Panel v4.4.6",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -2102,18 +2103,35 @@ create("TextLabel", {
 })
 
 -- ════════════════════════════════════════════════════════════
---  SECTION 7 ─ AUTOCLICK  (10ms interval) + Keybind
+--  SECTION 7 ─ AUTOCLICK modes + Keybind
 -- ════════════════════════════════════════════════════════════
-sectionLabel("AutoClick (10ms)", nextOrder())
+sectionLabel("AutoClick", nextOrder())
 
 local _, acFireToggle = createToggle("Enable AutoClick", nextOrder(), false, function(on)
     state.autoclickEnabled = on
 end)
-createToggle("AutoClick Equipped Tool Only",nextOrder(),true,function(on)
-    state.autoclickToolOnly=on
+local autoclickModeButton=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(54,46,76),
+    BorderSizePixel=0,Text="AutoClick Mode: Hybrid",TextColor3=Color3.fromRGB(225,215,240),TextSize=11,
+    Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
+create("UICorner",{CornerRadius=UDim.new(0,6),Parent=autoclickModeButton})
+autoclickModeButton.MouseButton1Click:Connect(function()
+    local nextMode={Hybrid="Mouse",Mouse="Tool",Tool="Center",Center="Hybrid"}
+    state.autoclickMode=nextMode[state.autoclickMode] or "Hybrid"
+    autoclickModeButton.Text="AutoClick Mode: "..state.autoclickMode
 end)
 createToggle("AutoClick Avoid GUI Buttons",nextOrder(),true,function(on)
     state.autoclickAvoidGui=on
+end)
+local autoclickIntervalRow=rowFrame(nextOrder(),28)
+create("TextLabel",{Size=UDim2.new(1,-88,1,0),BackgroundTransparency=1,Text="Interval (ms, min 1)",
+    TextColor3=Color3.fromRGB(190,180,205),TextSize=11,Font=Enum.Font.Gotham,
+    TextXAlignment=Enum.TextXAlignment.Left,Parent=autoclickIntervalRow})
+local autoclickIntervalBox=styledBox(autoclickIntervalRow,{Size=UDim2.new(0,80,0,24),Position=UDim2.new(1,-80,0.5,-12),
+    Text="1",PlaceholderText="1 ms"})
+autoclickIntervalBox.FocusLost:Connect(function()
+    local milliseconds=math.clamp(tonumber(autoclickIntervalBox.Text) or state.autoclickInterval*1000,1,60000)
+    state.autoclickInterval=milliseconds/1000
+    autoclickIntervalBox.Text=string.format("%.3g",milliseconds)
 end)
 
 -- Keybind row
@@ -5010,6 +5028,11 @@ loadNamedProfile = function(button)
         if control and control.Parent then control.Text=tostring(value) end
     end
     updateText(wsBox,state.walkspeedValue); updateText(jhBox,state.jumpHeightValue)
+    updateText(autoclickIntervalBox,string.format("%.3g",math.max(1,(tonumber(state.autoclickInterval) or 0.001)*1000)))
+    if state.autoclickMode~="Mouse" and state.autoclickMode~="Tool" and state.autoclickMode~="Center" then
+        state.autoclickMode="Hybrid"
+    end
+    if autoclickModeButton and autoclickModeButton.Parent then autoclickModeButton.Text="AutoClick Mode: "..state.autoclickMode end
     updateText(zoomBox,state.maxZoomValue); updateText(flySpeedBox,state.flySpeed); updateText(freecamSpeedBox,state.freecamSpeed)
     if state.cameraShakeStrength~="Light" and state.cameraShakeStrength~="Medium" and state.cameraShakeStrength~="Strong" then
         state.cameraShakeStrength="Strong"
@@ -5775,7 +5798,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v4.4.5 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v4.4.6 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -6192,7 +6215,7 @@ task.spawn(function()
     end
 end)
 
--- AutoClick (10ms loop — works even when alt-tabbed)
+-- AutoClick modes. Requested intervals below one frame remain scheduler-limited.
 local function hasInteractiveGuiAt(x,y)
     if not state.autoclickAvoidGui then return false end
     for _,container in ipairs({LocalPlayer:FindFirstChildOfClass("PlayerGui"),CoreGui}) do
@@ -6207,26 +6230,42 @@ local function hasInteractiveGuiAt(x,y)
     end
     return false
 end
+state.sendAutoMouseClick=function(x,y,useExecutorCursor)
+    if useExecutorCursor and type(mouse1click)=="function" then
+        local ok=pcall(mouse1click)
+        if ok then return true end
+    end
+    local ok=pcall(function()
+        VirtualInputManager:SendMouseButtonEvent(x,y,0,true,game,0)
+        VirtualInputManager:SendMouseButtonEvent(x,y,0,false,game,0)
+    end)
+    if ok then return true end
+    return pcall(function()
+        VirtualUser:CaptureController()
+        VirtualUser:Button1Down(Vector2.new(x,y),workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.new())
+        VirtualUser:Button1Up(Vector2.new(x,y),workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.new())
+    end)
+end
 task.spawn(function()
     while screenGui.Parent do
         if state.autoclickEnabled then
-            local success = pcall(function()
-                if state.autoclickToolOnly then
-                    local character=LocalPlayer.Character
-                    local tool=character and character:FindFirstChildOfClass("Tool")
-                    if tool then tool:Activate() end
-                    return
+            local mode=state.autoclickMode or "Hybrid"
+            if mode=="Tool" or mode=="Hybrid" then
+                local character=LocalPlayer.Character
+                local tool=character and character:FindFirstChildOfClass("Tool")
+                if tool then pcall(function() tool:Activate() end) end
+            end
+            if mode=="Mouse" or mode=="Hybrid" or mode=="Center" then
+                local camera=workspace.CurrentCamera
+                if camera then
+                    local x,y
+                    if mode=="Center" then
+                        local viewport=camera.ViewportSize; x,y=viewport.X/2,viewport.Y/2
+                    else
+                        local pointer=UserInputService:GetMouseLocation(); x,y=pointer.X,pointer.Y
+                    end
+                    if not hasInteractiveGuiAt(x,y) then state.sendAutoMouseClick(x,y,mode~="Center") end
                 end
-                local camera = workspace.CurrentCamera
-                if not camera then return end
-                local vpSize = camera.ViewportSize
-                local cx, cy = vpSize.X / 2, vpSize.Y / 2
-                if hasInteractiveGuiAt(cx,cy) then return end
-                VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
-                VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
-            end)
-            if not success and not state.autoclickToolOnly and mouse1click then
-                pcall(mouse1click)
             end
         end
         task.wait(state.autoclickInterval)
@@ -6283,7 +6322,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v4.4.5] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v4.4.6] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v4.4.5] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v4.4.6] Loaded, but this executor does not expose queue_on_teleport")
 end
