@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v4.4.8
+--// Lucid Panel v4.5.0
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -190,6 +190,11 @@ local state = {
     emoteSpeeds       = {},
     emoteRecentSyncPlayers = {},
     emoteSearchCache = {},
+    emoteCustoms     = {},
+    emoteStateAnimations = {Idle="",Walk="",Run="",Jump="",Fall="",Climb="",Swim=""},
+    emoteStateSpeeds = {Idle=1,Walk=1,Run=1,Jump=1,Fall=1,Climb=1,Swim=1},
+    emoteStatePresets = {},
+    emotePresetEnabled = false,
     lowPerformanceMode = false,
     rendering3dDisabled = false,
     gotoOffsetX       = 3,
@@ -339,7 +344,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v4.4.8",
+    Text                   = ">>  Lucid Panel v4.5.0",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -4103,39 +4108,41 @@ end)
 useCategory("Emotes")
 state.emoteModuleTabs={root=currentSection}
 state.emoteModuleTabs.row=rowFrame(nextOrder(),30)
-state.emoteModuleTabs.mainButton=create("TextButton",{Size=UDim2.new(0.32,0,0,28),BackgroundColor3=Color3.fromRGB(78,55,135),
-    BorderSizePixel=0,Text="Main",TextColor3=Color3.new(1,1,1),TextSize=11,Font=Enum.Font.GothamSemibold,Parent=state.emoteModuleTabs.row})
-state.emoteModuleTabs.newButton=create("TextButton",{Size=UDim2.new(0.32,0,0,28),Position=UDim2.new(0.34,0,0,0),
-    BackgroundColor3=Color3.fromRGB(48,43,65),BorderSizePixel=0,Text="Advanced",TextColor3=Color3.fromRGB(225,215,235),
-    TextSize=11,Font=Enum.Font.GothamSemibold,Parent=state.emoteModuleTabs.row})
-state.emoteModuleTabs.favoritesButton=create("TextButton",{Size=UDim2.new(0.32,0,0,28),Position=UDim2.new(0.68,0,0,0),
-    BackgroundColor3=Color3.fromRGB(48,43,65),BorderSizePixel=0,Text="Favorites",TextColor3=Color3.fromRGB(225,215,235),
-    TextSize=11,Font=Enum.Font.GothamSemibold,Parent=state.emoteModuleTabs.row})
-create("UICorner",{CornerRadius=UDim.new(0,6),Parent=state.emoteModuleTabs.mainButton})
-create("UICorner",{CornerRadius=UDim.new(0,6),Parent=state.emoteModuleTabs.newButton})
-create("UICorner",{CornerRadius=UDim.new(0,6),Parent=state.emoteModuleTabs.favoritesButton})
+local emoteTabNames={"All","Favs","Custom","States","Presets"}
+for index,name in ipairs(emoteTabNames) do
+    local button=create("TextButton",{Size=UDim2.new(0.192,0,0,28),Position=UDim2.new((index-1)*0.202,0,0,0),
+        BackgroundColor3=index==1 and Color3.fromRGB(78,55,135) or Color3.fromRGB(48,43,65),BorderSizePixel=0,
+        Text=name,TextColor3=Color3.fromRGB(235,230,245),TextSize=10,Font=Enum.Font.GothamSemibold,Parent=state.emoteModuleTabs.row})
+    create("UICorner",{CornerRadius=UDim.new(0,6),Parent=button}); state.emoteModuleTabs[name.."Button"]=button
+end
+state.emoteModuleTabs.mainButton=state.emoteModuleTabs.AllButton
+state.emoteModuleTabs.favoritesButton=state.emoteModuleTabs.FavsButton
 state.emoteModuleTabs.main=create("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
     BackgroundTransparency=1,Visible=true,LayoutOrder=nextOrder(),Parent=state.emoteModuleTabs.root})
-state.emoteModuleTabs.new=create("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
-    BackgroundTransparency=1,Visible=false,LayoutOrder=nextOrder(),Parent=state.emoteModuleTabs.root})
 state.emoteModuleTabs.favorites=create("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
     BackgroundTransparency=1,Visible=false,LayoutOrder=nextOrder(),Parent=state.emoteModuleTabs.root})
+for _,name in ipairs({"custom","states","presets","legacy"}) do
+    state.emoteModuleTabs[name]=create("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
+        BackgroundTransparency=1,Visible=false,LayoutOrder=nextOrder(),Parent=state.emoteModuleTabs.root})
+end
+state.emoteModuleTabs.new=state.emoteModuleTabs.legacy
 create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6),Parent=state.emoteModuleTabs.main})
-create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6),Parent=state.emoteModuleTabs.new})
 create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6),Parent=state.emoteModuleTabs.favorites})
+for _,name in ipairs({"custom","states","presets","legacy"}) do create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6),Parent=state.emoteModuleTabs[name]}) end
 state.emoteModuleTabs.set=function(tab)
     state.emoteModuleTabs.active=tab
-    local showMain=tab=="Main"; local showAdvanced=tab=="Advanced"; local showFavorites=tab=="Favorites"
-    state.emoteModuleTabs.main.Visible=showMain; state.emoteModuleTabs.new.Visible=showAdvanced; state.emoteModuleTabs.favorites.Visible=showFavorites
-    state.emoteModuleTabs.mainButton.BackgroundColor3=showMain and Color3.fromRGB(78,55,135) or Color3.fromRGB(48,43,65)
-    state.emoteModuleTabs.newButton.BackgroundColor3=showAdvanced and Color3.fromRGB(78,55,135) or Color3.fromRGB(48,43,65)
-    state.emoteModuleTabs.favoritesButton.BackgroundColor3=showFavorites and Color3.fromRGB(78,55,135) or Color3.fromRGB(48,43,65)
+    state.emoteModuleTabs.main.Visible=tab=="All"; state.emoteModuleTabs.favorites.Visible=tab=="Favs"
+    state.emoteModuleTabs.custom.Visible=tab=="Custom"; state.emoteModuleTabs.states.Visible=tab=="States"
+    state.emoteModuleTabs.presets.Visible=tab=="Presets"; state.emoteModuleTabs.legacy.Visible=tab=="Legacy"
+    for _,name in ipairs(emoteTabNames) do state.emoteModuleTabs[name.."Button"].BackgroundColor3=tab==name and Color3.fromRGB(78,55,135) or Color3.fromRGB(48,43,65) end
     if state.updateEmoteResultsHeight then task.defer(state.updateEmoteResultsHeight) end
 end
 state.emoteModuleTabs.mainButton.MouseButton1Click:Connect(function()
-    if state.emoteModuleTabs.showMain then state.emoteModuleTabs.showMain(true) else state.emoteModuleTabs.set("Main") end
+    if state.emoteModuleTabs.showMain then state.emoteModuleTabs.showMain(true) else state.emoteModuleTabs.set("All") end
 end)
-state.emoteModuleTabs.newButton.MouseButton1Click:Connect(function() state.emoteModuleTabs.set("Advanced") end)
+state.emoteModuleTabs.CustomButton.MouseButton1Click:Connect(function() state.emoteModuleTabs.set("Custom") end)
+state.emoteModuleTabs.StatesButton.MouseButton1Click:Connect(function() state.emoteModuleTabs.set("States") end)
+state.emoteModuleTabs.PresetsButton.MouseButton1Click:Connect(function() state.emoteModuleTabs.set("Presets") end)
 currentSection=state.emoteModuleTabs.main
 sectionLabel("Marketplace Emote Browser", nextOrder())
 local EMOTE_FAVORITES_PATH="LucidPanel/emote_favorites.json"
@@ -4144,9 +4151,11 @@ local function saveGlobalEmoteFavorites()
     pcall(function()
         if makefolder and (not isfolder or not isfolder("LucidPanel")) then makefolder("LucidPanel") end
     end)
-    local payload={version=2,favorites=state.emoteFavorites or {},aliases=state.emoteAliases or {},
+    local payload={version=3,favorites=state.emoteFavorites or {},aliases=state.emoteAliases or {},
         history=state.emoteHistory or {},playlists=state.emotePlaylists or {},speeds=state.emoteSpeeds or {},
-        recentSyncPlayers=state.emoteRecentSyncPlayers or {},lastEmote=state.emoteLast,searchCache=state.emoteSearchCache or {}}
+        recentSyncPlayers=state.emoteRecentSyncPlayers or {},lastEmote=state.emoteLast,searchCache=state.emoteSearchCache or {},
+        customs=state.emoteCustoms or {},stateAnimations=state.emoteStateAnimations or {},
+        stateSpeeds=state.emoteStateSpeeds or {},statePresets=state.emoteStatePresets or {}}
     local encodedOk,encoded=pcall(function() return HttpService:JSONEncode(payload) end)
     return encodedOk and pcall(writefile,EMOTE_FAVORITES_PATH,encoded)
 end
@@ -4163,6 +4172,10 @@ local function loadGlobalEmoteFavorites()
             state.emoteRecentSyncPlayers=type(decoded.recentSyncPlayers)=="table" and decoded.recentSyncPlayers or {}
             state.emoteLast=type(decoded.lastEmote)=="table" and decoded.lastEmote or nil
             state.emoteSearchCache=type(decoded.searchCache)=="table" and decoded.searchCache or {}
+            state.emoteCustoms=type(decoded.customs)=="table" and decoded.customs or {}
+            state.emoteStateAnimations=type(decoded.stateAnimations)=="table" and decoded.stateAnimations or state.emoteStateAnimations
+            state.emoteStateSpeeds=type(decoded.stateSpeeds)=="table" and decoded.stateSpeeds or state.emoteStateSpeeds
+            state.emoteStatePresets=type(decoded.statePresets)=="table" and decoded.statePresets or {}
         else
             -- Version 1 stored the favorites table directly.
             state.emoteFavorites=decoded
@@ -4502,7 +4515,7 @@ local function createEmoteResult(id,name)
 end
 local function showFavoriteEmotes()
     emoteView="favorites"; clearEmoteResults()
-    state.emoteModuleTabs.set("Favorites"); emoteResults.Parent=state.emoteModuleTabs.favorites
+    state.emoteModuleTabs.set("Favs"); emoteResults.Parent=state.emoteModuleTabs.favorites
     mainFavoriteSearchRow.Visible=true; mainFavoriteSearchBox.Text=tostring(state.emoteFavoriteQuery or "")
     browseEmotesButton.BackgroundColor3=Color3.fromRGB(48,43,65)
     favoriteEmotesButton.BackgroundColor3=Color3.fromRGB(78,55,135)
@@ -4520,7 +4533,7 @@ local function showFavoriteEmotes()
     emoteStatus.Text=#favorites>0 and ("Favorite emotes: "..#favorites) or "No favorite emotes yet"
 end
 state.emoteModuleTabs.showMain=function(refreshContents)
-    state.emoteModuleTabs.set("Main"); emoteResults.Parent=state.emoteModuleTabs.main
+    state.emoteModuleTabs.set("All"); emoteResults.Parent=state.emoteModuleTabs.main
     mainFavoriteSearchRow.Visible=false
     if refreshContents and emoteView~="browse" then
         emoteView="browse"; emoteQuery=emoteSearchBox.Text:match("^%s*(.-)%s*$")
@@ -4642,10 +4655,170 @@ local loadMoreEmotesButton=actionButton("Load More Emotes",function(button)
 end)
 loadMoreEmotesButton.Parent.LayoutOrder=emoteResults.LayoutOrder
 emoteResults.LayoutOrder=nextOrder()
+emoteSpeedRow.LayoutOrder=100000
+
+state.initializeEmoteStudio=function(api)
+    local stateOriginals={}
+    local selectedPreset=nil
+    local function smallButton(parent,textValue,callback,color)
+        local button=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=color or Color3.fromRGB(52,47,70),
+            BorderSizePixel=0,Text=textValue,TextColor3=Color3.fromRGB(235,230,245),TextSize=10,Font=Enum.Font.GothamSemibold,
+            LayoutOrder=nextOrder(),Parent=parent})
+        create("UICorner",{CornerRadius=UDim.new(0,6),Parent=button}); button.MouseButton1Click:Connect(function() callback(button) end); return button
+    end
+    local function speedControl(parent)
+        local row=create("Frame",{Size=UDim2.new(1,0,0,30),BackgroundTransparency=1,LayoutOrder=nextOrder(),Parent=parent})
+        create("TextLabel",{Size=UDim2.new(1,-78,1,0),BackgroundTransparency=1,Text="Animation Speed",
+            TextColor3=Color3.fromRGB(210,205,220),TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=row})
+        local box=styledBox(row,{Size=UDim2.new(0,70,0,24),Position=UDim2.new(1,-70,0.5,-12),Text=string.format("%.1f",state.emoteSpeed),PlaceholderText="0.1-5"})
+        box.FocusLost:Connect(function()
+            state.emoteSpeed=math.clamp(tonumber(box.Text) or state.emoteSpeed,0.1,5); box.Text=string.format("%.1f",state.emoteSpeed)
+            emoteSpeed=state.emoteSpeed; emoteSpeedBox.Text=box.Text; local track=api.getTrack(); if track then pcall(function() track:AdjustSpeed(emoteSpeed) end) end
+        end)
+    end
+
+    -- CUSTOM
+    currentSection=state.emoteModuleTabs.custom
+    local customSearchRow=rowFrame(nextOrder(),28)
+    local customSearch=styledBox(customSearchRow,{Size=UDim2.new(1,0,0,26),Text="",PlaceholderText="Search custom animations..."})
+    local customNameRow=rowFrame(nextOrder(),28)
+    local customName=styledBox(customNameRow,{Size=UDim2.new(1,0,0,26),Text="",PlaceholderText="Animation name..."})
+    local customIdRow=rowFrame(nextOrder(),28)
+    local customId=styledBox(customIdRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="Animation ID..."})
+    local customAdd=create("TextButton",{Size=UDim2.new(0,64,0,26),Position=UDim2.new(1,-64,0,0),BackgroundColor3=Color3.fromRGB(48,115,62),
+        BorderSizePixel=0,Text="Add",TextColor3=Color3.new(1,1,1),TextSize=10,Font=Enum.Font.GothamSemibold,Parent=customIdRow})
+    create("UICorner",{CornerRadius=UDim.new(0,6),Parent=customAdd})
+    local customList=create("ScrollingFrame",{Size=UDim2.new(1,0,0,180),CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,
+        BackgroundTransparency=0.35,BackgroundColor3=Color3.fromRGB(25,24,34),BorderSizePixel=0,ScrollBarThickness=3,
+        LayoutOrder=nextOrder(),Parent=currentSection})
+    create("UICorner",{CornerRadius=UDim.new(0,6),Parent=customList}); create("UIListLayout",{Padding=UDim.new(0,4),Parent=customList})
+    local function refreshCustom()
+        for _,child in ipairs(customList:GetChildren()) do if child:IsA("GuiObject") then child:Destroy() end end
+        local query=customSearch.Text:lower(); local items={}
+        for _,item in pairs(state.emoteCustoms) do if query=="" or tostring(item.name):lower():find(query,1,true) then table.insert(items,item) end end
+        table.sort(items,function(a,b) return tostring(a.name):lower()<tostring(b.name):lower() end)
+        for _,item in ipairs(items) do
+            local row=create("Frame",{Size=UDim2.new(1,-4,0,30),BackgroundTransparency=1,Parent=customList})
+            local play=create("TextButton",{Size=UDim2.new(1,-38,0,28),BackgroundColor3=Color3.fromRGB(43,39,57),BorderSizePixel=0,
+                Text=tostring(item.name),TextColor3=Color3.fromRGB(230,225,240),TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=row})
+            local remove=create("TextButton",{Size=UDim2.new(0,32,0,28),Position=UDim2.new(1,-32,0,0),BackgroundColor3=Color3.fromRGB(85,45,55),
+                BorderSizePixel=0,Text="X",TextColor3=Color3.fromRGB(240,180,190),TextSize=11,Font=Enum.Font.GothamBold,Parent=row})
+            create("UICorner",{CornerRadius=UDim.new(0,5),Parent=play}); create("UICorner",{CornerRadius=UDim.new(0,5),Parent=remove})
+            play.MouseButton1Click:Connect(function() api.play(item.id,item.name) end)
+            remove.MouseButton1Click:Connect(function() state.emoteCustoms[tostring(item.id)]=nil; saveGlobalEmoteFavorites(); refreshCustom() end)
+        end
+    end
+    customAdd.MouseButton1Click:Connect(function()
+        local id=tonumber(customId.Text:match("(%d+)") or "")
+        local name=customName.Text:match("^%s*(.-)%s*$")
+        if not id or name=="" then customId.Text="Valid name + ID required"; return end
+        state.emoteCustoms[tostring(id)]={id=id,name=name}; customName.Text=""; customId.Text=""; saveGlobalEmoteFavorites(); refreshCustom()
+    end)
+    customSearch:GetPropertyChangedSignal("Text"):Connect(refreshCustom); refreshCustom(); speedControl(currentSection)
+
+    -- STATES
+    currentSection=state.emoteModuleTabs.states
+    local statesStatus=create("TextLabel",{Size=UDim2.new(1,0,0,22),BackgroundTransparency=1,Text="Custom states ready",
+        TextColor3=Color3.fromRGB(155,190,165),TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
+        LayoutOrder=nextOrder(),Parent=currentSection})
+    local stateLabels={}
+    local function restoreStates()
+        for animation,id in pairs(stateOriginals) do if animation and animation.Parent then animation.AnimationId=id end end; table.clear(stateOriginals)
+    end
+    local function applyStates()
+        restoreStates(); if not state.emotePresetEnabled then return end
+        local animate=LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Animate"); if not animate then statesStatus.Text="Animate script unavailable"; return end
+        for stateName,id in pairs(state.emoteStateAnimations) do
+            if tostring(id)~="" then
+                local folder=animate:FindFirstChild(stateName:lower())
+                local animation=folder and folder:FindFirstChildWhichIsA("Animation",true)
+                if animation then stateOriginals[animation]=animation.AnimationId; animation.AnimationId="rbxassetid://"..tostring(id) end
+            end
+        end
+        statesStatus.Text="State animations applied"
+    end
+    local function bindStateSpeeds(character)
+        local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+        local animator=humanoid and (humanoid:FindFirstChildOfClass("Animator") or humanoid:WaitForChild("Animator",3))
+        if animator then track(animator.AnimationPlayed:Connect(function(animationTrack)
+            local id=animationTrack.Animation and animationTrack.Animation.AnimationId:match("(%d+)")
+            for stateName,stateId in pairs(state.emoteStateAnimations) do
+                if id and tostring(stateId)==id then pcall(function() animationTrack:AdjustSpeed(tonumber(state.emoteStateSpeeds[stateName]) or 1) end); break end
+            end
+        end)) end
+    end
+    for _,stateName in ipairs({"Idle","Walk","Run","Jump","Fall","Climb","Swim"}) do
+        if state.emoteStateAnimations[stateName]==nil then state.emoteStateAnimations[stateName]="" end
+        if state.emoteStateSpeeds[stateName]==nil then state.emoteStateSpeeds[stateName]=1 end
+        local label=create("TextLabel",{Size=UDim2.new(1,0,0,22),BackgroundTransparency=1,Text=stateName..": "..(state.emoteStateAnimations[stateName]~="" and state.emoteStateAnimations[stateName] or "None"),
+            TextColor3=Color3.fromRGB(210,205,220),TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
+            LayoutOrder=nextOrder(),Parent=currentSection})
+        stateLabels[stateName]=label
+        local speedRow=rowFrame(nextOrder(),26)
+        create("TextLabel",{Size=UDim2.new(0,38,1,0),BackgroundTransparency=1,Text="Spd:",TextColor3=Color3.fromRGB(170,165,185),
+            TextSize=9,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=speedRow})
+        local stateSpeedBox=styledBox(speedRow,{Size=UDim2.new(0,62,0,22),Position=UDim2.new(1,-62,0.5,-11),
+            Text=string.format("%.1f",tonumber(state.emoteStateSpeeds[stateName]) or 1),PlaceholderText="0.1-5"})
+        stateSpeedBox.FocusLost:Connect(function()
+            state.emoteStateSpeeds[stateName]=math.clamp(tonumber(stateSpeedBox.Text) or 1,0.1,5)
+            stateSpeedBox.Text=string.format("%.1f",state.emoteStateSpeeds[stateName]); saveGlobalEmoteFavorites()
+        end)
+        local row=rowFrame(nextOrder(),28)
+        local idBox=styledBox(row,{Size=UDim2.new(1,-52,0,26),Text="",PlaceholderText="Paste "..stateName.." ID..."})
+        local setButton=create("TextButton",{Size=UDim2.new(0,46,0,26),Position=UDim2.new(1,-46,0,0),BackgroundColor3=Color3.fromRGB(48,105,62),BorderSizePixel=0,
+            Text="Set",TextColor3=Color3.new(1,1,1),TextSize=10,Font=Enum.Font.GothamSemibold,Parent=row})
+        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=setButton})
+        setButton.MouseButton1Click:Connect(function()
+            local id=tonumber(idBox.Text:match("(%d+)") or "")
+            if not id then idBox.Text="Invalid ID"; return end
+            state.emoteStateAnimations[stateName]=tostring(id); label.Text=stateName..": "..id; idBox.Text=""; saveGlobalEmoteFavorites(); applyStates()
+        end)
+    end
+    createToggle("Enable Preset Animations",nextOrder(),false,function(on) state.emotePresetEnabled=on; applyStates() end)
+    speedControl(currentSection)
+
+    -- PRESETS
+    currentSection=state.emoteModuleTabs.presets
+    local presetNameRow=rowFrame(nextOrder(),28)
+    local presetName=styledBox(presetNameRow,{Size=UDim2.new(1,-104,0,26),Text="",PlaceholderText="Preset name..."})
+    local savePreset=create("TextButton",{Size=UDim2.new(0,98,0,26),Position=UDim2.new(1,-98,0,0),BackgroundColor3=Color3.fromRGB(48,105,62),
+        BorderSizePixel=0,Text="Save Current",TextColor3=Color3.new(1,1,1),TextSize=10,Font=Enum.Font.GothamSemibold,Parent=presetNameRow})
+    create("UICorner",{CornerRadius=UDim.new(0,6),Parent=savePreset})
+    local presetSelect=smallButton(currentSection,"Preset: Select...",function(button)
+        local names={}; for name in pairs(state.emoteStatePresets) do table.insert(names,name) end; table.sort(names)
+        if #names==0 then button.Text="No presets saved"; return end
+        local index=table.find(names,selectedPreset) or 0; selectedPreset=names[index%#names+1]; button.Text="Preset: "..selectedPreset
+    end)
+    smallButton(currentSection,"Load Selected Preset",function(button)
+        local preset=selectedPreset and state.emoteStatePresets[selectedPreset]
+        if not preset then button.Text="Select a preset first"; return end
+        state.emoteStateAnimations=table.clone(preset.animations or {}); state.emoteStateSpeeds=table.clone(preset.speeds or {})
+        for stateName,label in pairs(stateLabels) do label.Text=stateName..": "..tostring(state.emoteStateAnimations[stateName] or "None") end
+        applyStates(); button.Text="Loaded: "..selectedPreset
+    end,Color3.fromRGB(55,75,105))
+    savePreset.MouseButton1Click:Connect(function()
+        local name=presetName.Text:match("^%s*(.-)%s*$"); if name=="" then presetName.Text="Name required"; return end
+        state.emoteStatePresets[name]={animations=table.clone(state.emoteStateAnimations),speeds=table.clone(state.emoteStateSpeeds)}
+        selectedPreset=name; presetSelect.Text="Preset: "..name; presetName.Text=""; saveGlobalEmoteFavorites()
+    end)
+    smallButton(currentSection,"Advanced / Sync Tools",function() state.emoteModuleTabs.set("Legacy") end,Color3.fromRGB(65,52,95))
+    speedControl(currentSection); speedControl(state.emoteModuleTabs.favorites)
+    if LocalPlayer.Character then bindStateSpeeds(LocalPlayer.Character) end
+    track(LocalPlayer.CharacterAdded:Connect(function(character)
+        task.defer(bindStateSpeeds,character); if state.emotePresetEnabled then task.delay(1,applyStates) end
+    end))
+    addCleanup(restoreStates)
+end
+state.initializeEmoteStudio({play=playEmote,getTrack=function() return emoteTrack end})
 
 -- Advanced emote tools live in their own closure so Potassium does not add
 -- their locals to initializeV4Toolkit's register frame.
 currentSection=state.emoteModuleTabs.new
+local legacyBack=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(65,52,95),BorderSizePixel=0,
+    Text="< Back to Presets",TextColor3=Color3.fromRGB(235,225,250),TextSize=11,Font=Enum.Font.GothamSemibold,
+    LayoutOrder=nextOrder(),Parent=currentSection})
+create("UICorner",{CornerRadius=UDim.new(0,6),Parent=legacyBack})
+legacyBack.MouseButton1Click:Connect(function() state.emoteModuleTabs.set("Presets") end)
 state.initializeAdvancedEmotes=function(api)
     local paused=false
     local loopConnection=nil
@@ -4912,9 +5085,9 @@ local emotesDock=categoryMeta["Emotes"] and categoryMeta["Emotes"].dock
 if emotesDock then
     state.updateEmoteResultsHeight=function()
         if emotesDock.Visible then
-            local active=state.emoteModuleTabs.active or "Main"
-            local reserved=active=="Favorites" and 125 or 255
-            local minimum=active=="Favorites" and 190 or 100
+            local active=state.emoteModuleTabs.active or "All"
+            local reserved=active=="Favs" and 125 or 255
+            local minimum=active=="Favs" and 190 or 100
             emoteResults.Size=UDim2.new(1,-4,0,math.max(minimum,emotesDock.AbsoluteSize.Y-reserved))
         else
             emoteResults.Size=UDim2.new(1,0,0,190)
@@ -5906,7 +6079,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v4.4.8 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v4.5.0 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -6430,7 +6603,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v4.4.8] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v4.5.0] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v4.4.8] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v4.5.0] Loaded, but this executor does not expose queue_on_teleport")
 end
