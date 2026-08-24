@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v4.4.6
+--// Lucid Panel v4.4.8
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -339,7 +339,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v4.4.6",
+    Text                   = ">>  Lucid Panel v4.4.8",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -3797,6 +3797,112 @@ state.initializePhotoIsolation=function()
 end
 state.initializePhotoIsolation()
 
+sectionLabel("Hide Named Players",nextOrder())
+state.initializeNamedPlayerHider=function()
+    local hiddenNames={}
+    local originals={}
+    local characterConnections={}
+    local enabled=false
+    local inputRow=rowFrame(nextOrder(),30)
+    local inputBox=styledBox(inputRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="Player to hide from screen"})
+    local addButton=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-64,0,0),
+        BackgroundColor3=Color3.fromRGB(70,78,115),BorderSizePixel=0,Text="+",TextColor3=Color3.new(1,1,1),
+        TextSize=18,Font=Enum.Font.GothamBold,Parent=inputRow})
+    local removeButton=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-30,0,0),
+        BackgroundColor3=Color3.fromRGB(95,55,60),BorderSizePixel=0,Text="-",TextColor3=Color3.new(1,1,1),
+        TextSize=18,Font=Enum.Font.GothamBold,Parent=inputRow})
+    create("UICorner",{CornerRadius=UDim.new(0,5),Parent=addButton}); create("UICorner",{CornerRadius=UDim.new(0,5),Parent=removeButton})
+    local status=create("TextLabel",{Size=UDim2.new(1,0,0,24),BackgroundTransparency=1,Text="Hidden list: nobody",
+        TextColor3=Color3.fromRGB(180,175,210),TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
+        TextTruncate=Enum.TextTruncate.AtEnd,LayoutOrder=nextOrder(),Parent=currentSection})
+    local function remember(instance,property,value)
+        local record=originals[instance]
+        if not record then record={}; originals[instance]=record end
+        if record[property]==nil then record[property]=value end
+    end
+    local function hideObject(object)
+        if object:IsA("BasePart") then
+            remember(object,"LocalTransparencyModifier",object.LocalTransparencyModifier); object.LocalTransparencyModifier=1
+        elseif object:IsA("ParticleEmitter") or object:IsA("Trail") or object:IsA("Beam")
+            or object:IsA("BillboardGui") or object:IsA("SurfaceGui") or object:IsA("Highlight") then
+            remember(object,"Enabled",object.Enabled); object.Enabled=false
+        elseif object:IsA("Humanoid") then
+            remember(object,"DisplayDistanceType",object.DisplayDistanceType); object.DisplayDistanceType=Enum.HumanoidDisplayDistanceType.None
+        end
+    end
+    local function shouldHide(player)
+        return enabled and player~=LocalPlayer and hiddenNames[player.Name]==true
+    end
+    local function applyPlayer(player)
+        local character=player.Character
+        if not character or not shouldHide(player) then return end
+        for _,object in ipairs(character:GetDescendants()) do hideObject(object) end
+    end
+    local function restoreAll()
+        for object,properties in pairs(originals) do
+            if object and object.Parent then for property,value in pairs(properties) do pcall(function() object[property]=value end) end end
+        end
+        table.clear(originals)
+    end
+    local function refresh()
+        restoreAll()
+        if enabled then for _,player in ipairs(Players:GetPlayers()) do applyPlayer(player) end end
+    end
+    local function updateStatus()
+        local names={}; for name in pairs(hiddenNames) do table.insert(names,name) end
+        table.sort(names,function(a,b) return a:lower()<b:lower() end)
+        status.Text=#names>0 and ("Hidden list: "..table.concat(names,", ")) or "Hidden list: nobody"
+    end
+    local function watchPlayer(player)
+        if player==LocalPlayer or characterConnections[player] then return end
+        characterConnections[player]=track(player.CharacterAdded:Connect(function(character)
+            if shouldHide(player) then task.defer(function() if character.Parent then applyPlayer(player) end end) end
+        end))
+    end
+    local function addPlayer()
+        local player=gotoApi.find(inputBox.Text)
+        if not player or player==LocalPlayer then inputBox.Text="Player not found"; return end
+        hiddenNames[player.Name]=true; inputBox.Text=""; watchPlayer(player); updateStatus(); refresh()
+    end
+    local function removePlayer()
+        local query=inputBox.Text:match("^%s*(.-)%s*$"):lower()
+        if query=="" then inputBox.Text="Enter a player name"; return end
+        local removed=nil
+        for name in pairs(hiddenNames) do if name:lower():sub(1,#query)==query then removed=name; break end end
+        if removed then hiddenNames[removed]=nil end
+        inputBox.Text=""; updateStatus(); refresh()
+    end
+    addButton.MouseButton1Click:Connect(addPlayer); removeButton.MouseButton1Click:Connect(removePlayer)
+    inputBox.FocusLost:Connect(function(enterPressed) if enterPressed then addPlayer() end end)
+    createToggle("Hide Named Players",nextOrder(),false,function(on) enabled=on; refresh() end)
+    local clearButton=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(85,48,62),BorderSizePixel=0,
+        Text="Clear Hidden Player List",TextColor3=Color3.fromRGB(235,225,240),TextSize=11,Font=Enum.Font.GothamSemibold,
+        LayoutOrder=nextOrder(),Parent=currentSection})
+    create("UICorner",{CornerRadius=UDim.new(0,6),Parent=clearButton})
+    clearButton.MouseButton1Click:Connect(function()
+        table.clear(hiddenNames); updateStatus(); refresh(); clearButton.Text="Hidden list cleared"
+        task.delay(1,function() if clearButton.Parent then clearButton.Text="Clear Hidden Player List" end end)
+    end)
+    track(Players.PlayerAdded:Connect(function(player) watchPlayer(player); if shouldHide(player) then task.defer(function() applyPlayer(player) end) end end))
+    track(workspace.DescendantAdded:Connect(function(object)
+        if not enabled then return end
+        local character=object:FindFirstAncestorOfClass("Model")
+        local player=character and Players:GetPlayerFromCharacter(character)
+        if player and shouldHide(player) then hideObject(object) end
+    end))
+    for _,player in ipairs(Players:GetPlayers()) do watchPlayer(player) end
+    state.namedPlayerHiderApi={
+        getNames=function() local names={}; for name in pairs(hiddenNames) do table.insert(names,name) end; return names end,
+        setNames=function(names)
+            table.clear(hiddenNames)
+            if type(names)=="table" then for _,name in ipairs(names) do if type(name)=="string" then hiddenNames[name]=true end end end
+            updateStatus(); refresh()
+        end,
+    }
+    addCleanup(function() enabled=false; restoreAll() end)
+end
+state.initializeNamedPlayerHider()
+
 -- In-memory waypoints are intentionally per-place and do not move between games.
 useCategory("Waypoints")
 sectionLabel("Named Waypoints", nextOrder())
@@ -4954,6 +5060,7 @@ actionButton("Save Named Profile", function(button)
     payload.yellowHighlights=state.yellowHighlightApi.getNames and state.yellowHighlightApi.getNames() or {}
     payload.pinkHighlights=state.pinkHighlightApi.getNames and state.pinkHighlightApi.getNames() or {}
     payload.blackHighlights=state.blackHighlightApi.getNames and state.blackHighlightApi.getNames() or {}
+    payload.hiddenNamedPlayers=state.namedPlayerHiderApi and state.namedPlayerHiderApi.getNames and state.namedPlayerHiderApi.getNames() or {}
     -- Emote favorites are global and saved independently of named profiles.
     payload.keybinds={}
     for name,key in pairs(shortcutKeys or {}) do payload.keybinds[name]=key and key.Name or "Unbound" end
@@ -5060,6 +5167,7 @@ loadNamedProfile = function(button)
     if state.yellowHighlightApi.setNames then state.yellowHighlightApi.setNames(payload.yellowHighlights or {}) end
     if state.pinkHighlightApi.setNames then state.pinkHighlightApi.setNames(payload.pinkHighlights or {}) end
     if state.blackHighlightApi.setNames then state.blackHighlightApi.setNames(payload.blackHighlights or {}) end
+    if state.namedPlayerHiderApi and state.namedPlayerHiderApi.setNames then state.namedPlayerHiderApi.setNames(payload.hiddenNamedPlayers or {}) end
     for name,setter in pairs(favoriteRegistry or {}) do setter((payload.favorites or {})[name]==true) end
     for name,value in pairs(payload.keybinds or {}) do
         local legacyDefault=tonumber(payload.version or 0)<4 and ((name=="Fly" and value=="F")
@@ -5798,7 +5906,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v4.4.6 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v4.4.8 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -6322,7 +6430,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v4.4.6] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v4.4.8] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v4.4.6] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v4.4.8] Loaded, but this executor does not expose queue_on_teleport")
 end
