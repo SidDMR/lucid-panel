@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v4.5.0
+--// Lucid Panel v4.5.1
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -344,7 +344,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v4.5.0",
+    Text                   = ">>  Lucid Panel v4.5.1",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -3403,7 +3403,7 @@ local recoveryBtn = create("TextButton", {
     Font = Enum.Font.GothamSemibold, Parent = recoveryRow,
 })
 create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = recoveryBtn })
-recoveryBtn.MouseButton1Click:Connect(function()
+state.recoverCharacter=function()
     if state.airWalkEnabled then fireAirWalk() end
     if state.noclipEnabled then fireNoclip() end
     restoreNoclipCollisions()
@@ -3424,7 +3424,8 @@ recoveryBtn.MouseButton1Click:Connect(function()
     end
     recoveryBtn.Text = "Recovered"
     task.delay(1.2, function() if recoveryBtn.Parent then recoveryBtn.Text = "Recover Character" end end)
-end)
+end
+recoveryBtn.MouseButton1Click:Connect(state.recoverCharacter)
 
 -- ============================================================
 -- V4 GENERAL TOOLKIT
@@ -5237,7 +5238,7 @@ actionButton("Save Named Profile", function(button)
     -- Emote favorites are global and saved independently of named profiles.
     payload.keybinds={}
     for name,key in pairs(shortcutKeys or {}) do payload.keybinds[name]=key and key.Name or "Unbound" end
-    for _,name in ipairs({"Fly","Noclip","Freecam","Migraine","Photo Mode"}) do
+    for _,name in ipairs({"Fly","Noclip","Freecam","Migraine","Photo Mode","Character Recovery"}) do
         if not shortcutKeys[name] then payload.keybinds[name]="Unbound" end
     end
     payload.interface={opacity=1-mainFrame.BackgroundTransparency,
@@ -5576,14 +5577,18 @@ actionButton("PANIC / Reset Features [End]", function(button)
 end, Color3.fromRGB(145,50,65))
 sectionLabel("Quick Keybinds", nextOrder())
 local function findShortcutKey(text)
-    local requested=tostring(text or ""):match("^%s*(.-)%s*$"):lower()
+    local requested=tostring(text or ""):match("^%s*(.-)%s*$"):lower():gsub("[%s_%-]","")
     if requested=="" then return nil end
+    local aliases={pgup="pageup",pgdn="pagedown",del="delete",ins="insert",
+        back="browserback",backwards="browserback",forward="browserforward",forwards="browserforward"}
+    requested=aliases[requested] or requested
     for _,keyCode in ipairs(Enum.KeyCode:GetEnumItems()) do
-        if keyCode.Name:lower()==requested then return keyCode end
+        if keyCode.Name:lower():gsub("[%s_%-]","")==requested then return keyCode end
     end
+    if requested=="browserback" then return Enum.KeyCode.Backspace end
     return nil
 end
-for _, name in ipairs({"Fly","Noclip","Freecam","Migraine","Photo Mode"}) do
+for _, name in ipairs({"Fly","Noclip","Freecam","Migraine","Photo Mode","Character Recovery"}) do
     local shortcutRow = rowFrame(nextOrder(), 30)
     create("TextLabel", {
         Size=UDim2.new(0,72,1,0), BackgroundTransparency=1, Text=name,
@@ -6079,7 +6084,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v4.5.0 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v4.5.1 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -6114,6 +6119,8 @@ track(UserInputService.InputBegan:Connect(function(input, processed)
         elseif input.KeyCode == shortcutKeys.Freecam then fireFreecam()
         elseif input.KeyCode == shortcutKeys["Photo Mode"] and setPhotoModeToggle then
             setPhotoModeToggle(not state.photoModeEnabled)
+        elseif input.KeyCode == shortcutKeys["Character Recovery"] then
+            state.recoverCharacter()
         elseif input.KeyCode == shortcutKeys.Migraine then
             triggerMigraineComfort()
             notifyLucid("Migraine Comfort","Emergency lighting preset applied",Color3.fromRGB(105,180,220))
@@ -6603,7 +6610,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v4.5.0] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v4.5.1] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v4.5.0] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v4.5.1] Loaded, but this executor does not expose queue_on_teleport")
 end
