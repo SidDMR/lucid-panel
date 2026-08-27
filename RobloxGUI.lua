@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v4.5.1
+--// Lucid Panel v4.5.2
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -119,6 +119,7 @@ local state = {
     jumpHeightValue    = 7.2,
     noclipEnabled      = false,
     airWalkEnabled     = false,
+    characterRecoveryLoopEnabled = false,
     freezeEnabled      = false,
     freezeRoot         = nil,
     freezeWasAnchored  = false,
@@ -344,7 +345,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v4.5.1",
+    Text                   = ">>  Lucid Panel v4.5.2",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -3426,6 +3427,37 @@ state.recoverCharacter=function()
     task.delay(1.2, function() if recoveryBtn.Parent then recoveryBtn.Text = "Recover Character" end end)
 end
 recoveryBtn.MouseButton1Click:Connect(state.recoverCharacter)
+do
+    local _,_,setRecoveryLoop=createToggle("Character Recovery Loop",nextOrder(),false,function(on)
+        state.characterRecoveryLoopEnabled=on
+        if on then state.recoverCharacter() end
+    end)
+    state.setCharacterRecoveryLoop=setRecoveryLoop
+end
+task.spawn(function()
+    while screenGui.Parent do
+        if state.characterRecoveryLoopEnabled then
+            local character=LocalPlayer.Character
+            local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+            local root=character and character:FindFirstChild("HumanoidRootPart")
+            if root then
+                if root.Anchored then root.Anchored=false end
+                if root.AssemblyAngularVelocity.Magnitude>8 then root.AssemblyAngularVelocity=Vector3.zero end
+                if root.AssemblyLinearVelocity.Magnitude>300 then root.AssemblyLinearVelocity=Vector3.zero end
+            end
+            if humanoid then
+                if humanoid.PlatformStand then humanoid.PlatformStand=false end
+                local current=humanoid:GetState()
+                if current==Enum.HumanoidStateType.FallingDown
+                    or current==Enum.HumanoidStateType.Ragdoll
+                    or current==Enum.HumanoidStateType.Physics then
+                    humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+                end
+            end
+        end
+        task.wait(state.characterRecoveryLoopEnabled and 0.35 or 1)
+    end
+end)
 
 -- ============================================================
 -- V4 GENERAL TOOLKIT
@@ -5609,7 +5641,16 @@ for _, name in ipairs({"Fly","Noclip","Freecam","Migraine","Photo Mode","Charact
         shortcutKeys[name]=nil
         box.Text=""
     end)
+    box.Focused:Connect(function()
+        state.shortcutListeningName=name
+        state.shortcutListeningBox=box
+        box.Text="Press a key..."
+    end)
     box.FocusLost:Connect(function()
+        if state.shortcutListeningName==name then
+            state.shortcutListeningName=nil
+            state.shortcutListeningBox=nil
+        end
         local key=findShortcutKey(box.Text)
         if key and key ~= Enum.KeyCode.Unknown and key ~= Enum.KeyCode.RightAlt and key ~= Enum.KeyCode.End then
             shortcutKeys[name]=key
@@ -5617,6 +5658,23 @@ for _, name in ipairs({"Fly","Noclip","Freecam","Migraine","Photo Mode","Charact
         box.Text=shortcutKeys[name] and shortcutKeys[name].Name or ""
     end)
 end
+track(UserInputService.InputBegan:Connect(function(input)
+    if not state.shortcutListeningName or not state.shortcutListeningBox then return end
+    if input.UserInputType~=Enum.UserInputType.Keyboard then return end
+    local key=input.KeyCode
+    if key==Enum.KeyCode.Unknown then return end
+    if key==Enum.KeyCode.Escape then
+        state.shortcutListeningBox.Text=shortcutKeys[state.shortcutListeningName] and shortcutKeys[state.shortcutListeningName].Name or ""
+    elseif key~=Enum.KeyCode.RightAlt and key~=Enum.KeyCode.End then
+        shortcutKeys[state.shortcutListeningName]=key
+        state.shortcutListeningBox.Text=key.Name
+        state.shortcutCaptureUntil=os.clock()+0.25
+    end
+    local capturedBox=state.shortcutListeningBox
+    state.shortcutListeningName=nil
+    state.shortcutListeningBox=nil
+    task.defer(function() if capturedBox and capturedBox.Parent then capturedBox:ReleaseFocus() end end)
+end))
 
 -- General dynamic backpack cleaner. Tools are discovered from the live
 -- Backpack/Character, so users never need to type internal tool names.
@@ -6084,7 +6142,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v4.5.1 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v4.5.2 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -6111,7 +6169,8 @@ end,Color3.fromRGB(95,60,65))
 local flyKeys = { W=false, A=false, S=false, D=false, Space=false, LeftControl=false }
 track(UserInputService.InputBegan:Connect(function(input, processed)
     if input.KeyCode == Enum.KeyCode.End and not processed then panicReset(); return end
-    if not processed and UserInputService:GetFocusedTextBox() == nil then
+    if not processed and UserInputService:GetFocusedTextBox() == nil
+        and os.clock()>=(state.shortcutCaptureUntil or 0) then
         if input.KeyCode == shortcutKeys.Fly then
             if state.freecamEnabled then setFreecam(false) end
             fireFly()
@@ -6119,8 +6178,8 @@ track(UserInputService.InputBegan:Connect(function(input, processed)
         elseif input.KeyCode == shortcutKeys.Freecam then fireFreecam()
         elseif input.KeyCode == shortcutKeys["Photo Mode"] and setPhotoModeToggle then
             setPhotoModeToggle(not state.photoModeEnabled)
-        elseif input.KeyCode == shortcutKeys["Character Recovery"] then
-            state.recoverCharacter()
+        elseif input.KeyCode == shortcutKeys["Character Recovery"] and state.setCharacterRecoveryLoop then
+            state.setCharacterRecoveryLoop(not state.characterRecoveryLoopEnabled)
         elseif input.KeyCode == shortcutKeys.Migraine then
             triggerMigraineComfort()
             notifyLucid("Migraine Comfort","Emergency lighting preset applied",Color3.fromRGB(105,180,220))
@@ -6610,7 +6669,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v4.5.1] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v4.5.2] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v4.5.1] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v4.5.2] Loaded, but this executor does not expose queue_on_teleport")
 end
