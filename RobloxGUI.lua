@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v4.5.2
+--// Lucid Panel v4.5.3
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -85,8 +85,10 @@ local function makeResizableWindow(window, minimumWidth, minimumHeight)
             resizeInput=input; startPointer=pointerPosition(); startSize=window.AbsoluteSize; resizing=true
         end
     end)
-    track(RunService.RenderStepped:Connect(function()
-        if resizing and startPointer and startSize then
+    track(UserInputService.InputChanged:Connect(function(input)
+        if resizing and startPointer and startSize
+            and (input==resizeInput or input.UserInputType==Enum.UserInputType.MouseMovement
+                or input.UserInputType==Enum.UserInputType.Touch) then
             local delta=pointerPosition()-startPointer
             window.Size=UDim2.new(0,math.max(minimumWidth or 220,startSize.X+delta.X),
                 0,math.max(minimumHeight or 150,startSize.Y+delta.Y))
@@ -345,7 +347,7 @@ create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v4.5.2",
+    Text                   = ">>  Lucid Panel v4.5.3",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -3381,8 +3383,8 @@ local function enforceNoclip()
     end
 end
 
--- IY-style pre-physics enforcement, plus the existing Heartbeat second pass.
-track(RunService.Stepped:Connect(enforceNoclip))
+-- Noclip is enforced by the consolidated Heartbeat below. Keeping a second
+-- Stepped scan doubled all character-descendant work without changing state.
 
 track(UserInputService.InputBegan:Connect(function(input, processed)
     if not state.airWalkEnabled or UserInputService:GetFocusedTextBox() then return end
@@ -4351,8 +4353,11 @@ local function playEmote(assetId,name)
     if state.emoteAdvancedOnPlayed then task.defer(state.emoteAdvancedOnPlayed,state.emoteCurrent,track) end
     return true
 end
-track(RunService.Heartbeat:Connect(function()
+track(RunService.Heartbeat:Connect(function(dt)
     if emoteSyncActive or not state.keepEmoteMoving or not currentEmoteName or not emoteTrack or emoteResumeBusy then return end
+    state.emoteResumeElapsed=(state.emoteResumeElapsed or 0)+dt
+    if state.emoteResumeElapsed<(state.lowPerformanceMode and 0.25 or 0.1) then return end
+    state.emoteResumeElapsed=0
     if not emoteTrack.IsPlaying then
         emoteResumeBusy=true
         task.defer(function()
@@ -6142,7 +6147,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v4.5.2 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v4.5.3 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -6527,8 +6532,11 @@ track(RunService.Heartbeat:Connect(function(dt)
         destroyPlatform()
     end
 
-    -- Coordinates live update
-    if hrp then
+    -- Coordinate labels do not need a physics-frame refresh. Limiting UI text
+    -- invalidation substantially reduces layout/render work while moving.
+    state.coordUpdateElapsed=(state.coordUpdateElapsed or 0)+dt
+    if hrp and state.coordUpdateElapsed>=(state.lowPerformanceMode and 0.25 or 0.1) then
+        state.coordUpdateElapsed=0
         local pos = hrp.Position
         coordLiveLabel.Text = string.format(
             "X: %.1f   Y: %.1f   Z: %.1f", pos.X, pos.Y, pos.Z
@@ -6615,7 +6623,9 @@ task.spawn(function()
                 end
             end
         end
-        task.wait(state.autoclickInterval)
+        -- Stay dormant while disabled instead of waking at the configured
+        -- 1 ms active interval for the entire lifetime of the panel.
+        task.wait(state.autoclickEnabled and state.autoclickInterval or 0.25)
     end
 end)
 
@@ -6669,7 +6679,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v4.5.2] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v4.5.3] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v4.5.2] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v4.5.3] Loaded, but this executor does not expose queue_on_teleport")
 end
