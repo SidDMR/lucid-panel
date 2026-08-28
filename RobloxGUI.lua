@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.2.4
+--// Lucid Panel v5.2.6
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -351,7 +351,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.2.4",
+    Text                   = "LUCID PANEL  •  v5.2.6",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -1120,8 +1120,10 @@ local registerFavorite = (function()
             if favoriteCheck then favoriteCheck.Visible=enabled==true end
         end
         favoriteStatusRegistry[label]=refreshFavoriteCheck
+        local starX=sourceRow:GetAttribute("LucidFavoriteStarX")
+        if type(starX)~="number" then starX=math.min(190,8+#label*6.3) end
         local star=create("TextButton", {
-            Size=UDim2.new(0,24,0,24), Position=UDim2.new(1,-76,0.5,-12),
+            Size=UDim2.new(0,24,0,24), Position=UDim2.new(0,starX,0.5,-12),
             BackgroundTransparency=1, BorderSizePixel=0, Text="☆",
             TextColor3=Color3.fromRGB(145,135,165), TextSize=18,
             Font=Enum.Font.GothamBold, ZIndex=8, Parent=sourceRow,
@@ -1178,6 +1180,7 @@ end
 
 local function createToggle(labelText, order, default, callback)
     local row = rowFrame(order)
+    row:SetAttribute("LucidFavoriteStarX",math.min(190,8+#labelText*6.3))
     for categoryName,body in pairs(categories) do
         if row:IsDescendantOf(body) then
             state.featureNavigationGroups[labelText]=state.mainNavigation.categoryGroup[categoryName]
@@ -2778,9 +2781,12 @@ gotoBox.FocusLost:Connect(function(enterPressed)
     if enterPressed then goToRequestedPlayer() end
 end)
 local returnRow=rowFrame(nextOrder(),30)
-local returnButton=create("TextButton",{Size=UDim2.new(1,0,0,26),BackgroundColor3=Color3.fromRGB(62,52,92),
+local returnButtonWidth=math.min(260,math.max(58,24+#"Return to Previous Position"*6.6))
+returnRow:SetAttribute("LucidFavoriteStarX",returnButtonWidth-27)
+local returnButton=create("TextButton",{Size=UDim2.new(0,returnButtonWidth,0,26),BackgroundColor3=Color3.fromRGB(62,52,92),
     BorderSizePixel=0,Text="Return to Previous Position",TextColor3=Color3.fromRGB(235,230,245),
-    TextSize=11,Font=Enum.Font.GothamSemibold,Parent=returnRow})
+    TextSize=11,Font=Enum.Font.GothamSemibold,TextXAlignment=Enum.TextXAlignment.Left,Parent=returnRow})
+create("UIPadding",{PaddingLeft=UDim.new(0,10),PaddingRight=UDim.new(0,30),Parent=returnButton})
 create("UICorner",{CornerRadius=UDim.new(0,6),Parent=returnButton})
 local function returnPreviousPosition()
     local root=LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -3790,11 +3796,14 @@ local shortcutBoxes = {}
 local setPhotoModeToggle
 local function actionButton(textValue, callback, color)
     local row = rowFrame(nextOrder(), 32)
+    local compactWidth=math.min(260,math.max(58,24+#textValue*6.6))
+    row:SetAttribute("LucidFavoriteStarX",compactWidth-27)
     local button = create("TextButton", {
-        Size = UDim2.new(1, 0, 0, 28), BackgroundColor3 = color or Color3.fromRGB(62, 52, 92),
+        Size = UDim2.new(0, compactWidth, 0, 28), BackgroundColor3 = color or Color3.fromRGB(62, 52, 92),
         BorderSizePixel = 0, Text = textValue, TextColor3 = Color3.fromRGB(235, 230, 245),
-        TextSize = 12, Font = Enum.Font.GothamSemibold, Parent = row,
+        TextSize = 12, Font = Enum.Font.GothamSemibold, TextXAlignment=Enum.TextXAlignment.Left, Parent = row,
     })
+    create("UIPadding",{PaddingLeft=UDim.new(0,10),PaddingRight=UDim.new(0,30),Parent=button})
     create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = button })
     local function runAction() callback(button) end
     button.MouseButton1Click:Connect(runAction)
@@ -4641,11 +4650,12 @@ local function stopEmote()
     emoteResumeBusy=false
     emoteStatus.Text="Emote stopped"
 end
-local stopEmoteButton=actionButton("Stop Current Emote",function() stopEmote() end,Color3.fromRGB(85,48,62))
+local stopEmoteButton=actionButton("Stop Emote",function() stopEmote() end,Color3.fromRGB(85,48,62))
+stopEmoteButton.Size=UDim2.new(0,76,0,24); stopEmoteButton.Position=UDim2.new(1,-76,0,0)
 state.emoteModuleTabs.favoriteStopRow=create("Frame",{Size=UDim2.new(1,0,0,32),BackgroundTransparency=1,
     LayoutOrder=nextOrder(),Parent=state.emoteModuleTabs.favorites})
-state.emoteModuleTabs.favoriteStopButton=create("TextButton",{Size=UDim2.new(1,0,0,28),
-    BackgroundColor3=Color3.fromRGB(85,48,62),BorderSizePixel=0,Text="Stop Current Emote",
+state.emoteModuleTabs.favoriteStopButton=create("TextButton",{Size=UDim2.new(0,76,0,24),Position=UDim2.new(1,-76,0,2),
+    BackgroundColor3=Color3.fromRGB(85,48,62),BorderSizePixel=0,Text="Stop Emote",
     TextColor3=Color3.fromRGB(235,230,245),TextSize=12,Font=Enum.Font.GothamSemibold,
     Parent=state.emoteModuleTabs.favoriteStopRow})
 create("UICorner",{CornerRadius=UDim.new(0,6),Parent=state.emoteModuleTabs.favoriteStopButton})
@@ -4815,10 +4825,11 @@ emoteSyncButton.MouseButton1Click:Connect(beginEmoteSync)
 emoteSyncBox.FocusLost:Connect(function(enterPressed)
     if enterPressed then beginEmoteSync() end
 end)
-actionButton("Stop Emote Sync",function(button)
+local stopSyncButton=actionButton("Stop Sync",function(button)
     stopEmoteSync(true); button.Text="Emote sync stopped"
-    task.delay(1,function() if button.Parent then button.Text="Stop Emote Sync" end end)
+    task.delay(1,function() if button.Parent then button.Text="Stop Sync" end end)
 end,Color3.fromRGB(85,48,62))
+stopSyncButton.Size=UDim2.new(0,68,0,24); stopSyncButton.Position=UDim2.new(1,-68,0,0)
 
 track(RunService.Heartbeat:Connect(function(dt)
     if not emoteSyncActive then return end
@@ -4912,6 +4923,16 @@ state.initializePlayerEmoteBrowser=function()
         BackgroundColor3=Color3.fromRGB(58,120,88),BorderSizePixel=0,Text="Load",
         TextColor3=Color3.new(1,1,1),TextSize=10,Font=Enum.Font.GothamSemibold,Parent=playerRow})
     create("UICorner",{CornerRadius=UDim.new(0,6),Parent=loadButton})
+    local playerStopRow=rowFrame(nextOrder(),24)
+    local playerStopButton=create("TextButton",{Size=UDim2.new(0,44,0,22),Position=UDim2.new(1,-44,0,0),
+        BackgroundColor3=Color3.fromRGB(85,48,62),BorderSizePixel=0,Text="Stop",
+        TextColor3=Color3.fromRGB(235,230,245),TextSize=11,Font=Enum.Font.GothamSemibold,
+        Parent=playerStopRow})
+    create("UICorner",{CornerRadius=UDim.new(0,5),Parent=playerStopButton})
+    playerStopButton.MouseButton1Click:Connect(function()
+        stopEmote(); playerStopButton.Text="Stopped"
+        task.delay(1,function() if playerStopButton.Parent then playerStopButton.Text="Stop" end end)
+    end)
     local filterRow=rowFrame(nextOrder(),30)
     local filterBox=styledBox(filterRow,{Size=UDim2.new(1,0,0,26),Text="",PlaceholderText="Filter this player's emotes..."})
     local status=create("TextLabel",{Size=UDim2.new(1,0,0,36),BackgroundTransparency=1,
@@ -4919,10 +4940,6 @@ state.initializePlayerEmoteBrowser=function()
         TextColor3=Color3.fromRGB(165,155,185),TextSize=10,Font=Enum.Font.Gotham,
         TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,
         LayoutOrder=nextOrder(),Parent=currentSection})
-    actionButton("Stop Current Emote",function(button)
-        stopEmote(); button.Text="Emote stopped"
-        task.delay(1,function() if button.Parent then button.Text="Stop Current Emote" end end)
-    end,Color3.fromRGB(85,48,62))
     local function findPlayer(query)
         query=tostring(query or ""):match("^%s*(.-)%s*$"):lower()
         if query=="" then return LocalPlayer end
@@ -5334,7 +5351,8 @@ state.initializeAdvancedEmotes=function(api)
     state.emoteHotkeyName=state.emoteHotkeyName or "H"
 
     sectionLabel("Playback Controls",nextOrder())
-    actionButton("Stop Current Emote",function() api.stop() end,Color3.fromRGB(85,48,62))
+    local advancedStopButton=actionButton("Stop Emote",function() api.stop() end,Color3.fromRGB(85,48,62))
+    advancedStopButton.Size=UDim2.new(0,76,0,24); advancedStopButton.Position=UDim2.new(1,-76,0,0)
     actionButton("Pause / Resume Emote",function(button)
         local track=api.getTrack()
         if not track then button.Text="No emote playing"; return end
@@ -6624,7 +6642,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.2.4 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.2.6 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -7365,7 +7383,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.2.4] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.2.6] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.2.4] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.2.6] Loaded, but this executor does not expose queue_on_teleport")
 end
