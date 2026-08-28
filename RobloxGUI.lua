@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v4.6.1
+--// Lucid Panel v4.6.2
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -348,7 +348,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v4.6.1",
+    Text                   = ">>  Lucid Panel v4.6.2",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -656,10 +656,15 @@ state.initializeLucidDock=function()
     local dock=create("Frame",{Name="LucidBottomDock",Size=UDim2.new(0,430,0,48),
         AnchorPoint=Vector2.new(0.5,1),Position=UDim2.new(0.5,0,1,-10),
         BackgroundColor3=Color3.fromRGB(17,17,22),BackgroundTransparency=0.12,
-        BorderSizePixel=0,Active=true,ZIndex=150,Parent=screenGui})
+        BorderSizePixel=0,Active=true,Draggable=true,ZIndex=150,Parent=screenGui})
     state.lucidDock=dock
     create("UICorner",{CornerRadius=UDim.new(0,11),Parent=dock})
     state.lucidDockStroke=create("UIStroke",{Color=Color3.fromRGB(145,90,235),Thickness=1.2,Transparency=0.35,Parent=dock})
+    local dragHandle=create("TextButton",{Name="DockDragHandle",Size=UDim2.new(0,76,0,10),
+        AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.new(0.5,0,0,0),
+        BackgroundColor3=Color3.fromRGB(82,58,145),BackgroundTransparency=0.15,BorderSizePixel=0,
+        Text="",AutoButtonColor=false,Active=true,ZIndex=153,Parent=dock})
+    create("UICorner",{CornerRadius=UDim.new(1,0),Parent=dragHandle})
     local stats=create("TextLabel",{Size=UDim2.new(0,112,1,-8),Position=UDim2.new(0,10,0,4),Active=true,
         BackgroundTransparency=1,Text="● FPS --    ● PING --ms",TextColor3=Color3.fromRGB(205,205,215),
         TextSize=9,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
@@ -669,7 +674,7 @@ state.initializeLucidDock=function()
         Text="Lucid Panel",TextColor3=Color3.fromRGB(235,235,240),TextSize=9,Font=Enum.Font.GothamSemibold,
         ZIndex=151,Parent=dock})
     create("UICorner",{CornerRadius=UDim.new(0,4),Parent=brand})
-    local buttonData={{"H","Home"},{"P","Player"},{"T","Tools"},{"W","World"},{"[]","Panel"},{"S","Settings"}}
+    local buttonData={{"@","Home"},{">","Player"},{"+","Tools"},{"~","World"},{"L","Panel"},{"⚙","Settings"}}
     state.lucidDockButtons={}
     for index,item in ipairs(buttonData) do
         local button=create("TextButton",{Size=UDim2.new(0,42,0,38),Position=UDim2.new(0,132+(index-1)*47,0,5),
@@ -691,9 +696,10 @@ state.initializeLucidDock=function()
     state.refreshLucidDock=function()
         local accent=state.accentColor or state.themeColors.Violet
         for name,button in pairs(state.lucidDockButtons) do
-            local selected=(name==state.mainNavigation.active and mainFrame.Visible) or (name=="Panel" and mainFrame.Visible)
+            local selected=name~="Panel" and name==state.mainNavigation.active and mainFrame.Visible
             button.BackgroundTransparency=selected and 0.15 or 1
-            button.TextColor3=selected and accent or Color3.fromRGB(205,205,215)
+            button.TextColor3=(selected or (name=="Panel" and mainFrame.Visible)) and accent
+                or (state.currentThemePalette and state.currentThemePalette.muted or Color3.fromRGB(205,205,215))
         end
     end
     local dockDragging=false
@@ -705,6 +711,7 @@ state.initializeLucidDock=function()
         end
     end
     stats.InputBegan:Connect(beginDockDrag); brand.InputBegan:Connect(beginDockDrag)
+    dragHandle.InputBegan:Connect(beginDockDrag)
     track(UserInputService.InputChanged:Connect(function(input)
         if dockDragging and (input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch) then
             local delta=input.Position-dockDragStart
@@ -6318,7 +6325,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v4.6.1 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v4.6.2 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -6850,7 +6857,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v4.6.1] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v4.6.2] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v4.6.1] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v4.6.2] Loaded, but this executor does not expose queue_on_teleport")
 end
