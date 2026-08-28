@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.0.3
+--// Lucid Panel v5.2.2
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -174,7 +174,7 @@ local state = {
     namedHighlightsSuppressed = false,
     emoteSpeed        = 1,
     keepEmoteMoving   = true,
-    emoteSyncTolerance = 0.45,
+    emoteSyncTolerance = 0.05,
     emoteSyncMode     = "Precise",
     emoteSyncDelay    = 0,
     emoteLoopMode     = "Infinite",
@@ -351,7 +351,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.0.3",
+    Text                   = "LUCID PANEL  •  v5.2.2",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -650,47 +650,52 @@ state.mainNavigation.apply()
 state.initializeLucidDock=function()
     state.themePalettes={
         Midnight={background=Color3.fromRGB(8,8,10),panel=Color3.fromRGB(15,15,19),surface=Color3.fromRGB(25,25,31),surface2=Color3.fromRGB(39,39,47),selection=Color3.fromRGB(52,52,62),stroke=Color3.fromRGB(58,58,68),scrollbar=Color3.fromRGB(70,70,82),icon=Color3.fromRGB(225,225,232),accent=Color3.fromRGB(88,88,102),text=Color3.fromRGB(240,240,245),muted=Color3.fromRGB(155,155,168)},
-        Ocean={background=Color3.fromRGB(7,17,28),panel=Color3.fromRGB(12,27,43),surface=Color3.fromRGB(18,43,67),surface2=Color3.fromRGB(28,62,92),accent=Color3.fromRGB(55,155,255),text=Color3.fromRGB(225,240,250),muted=Color3.fromRGB(135,175,205)},
-        Crimson={background=Color3.fromRGB(25,7,11),panel=Color3.fromRGB(42,12,18),surface=Color3.fromRGB(62,18,27),surface2=Color3.fromRGB(86,27,39),accent=Color3.fromRGB(235,65,70),text=Color3.fromRGB(250,230,232),muted=Color3.fromRGB(205,145,152)},
-        Forest={background=Color3.fromRGB(6,20,13),panel=Color3.fromRGB(10,35,22),surface=Color3.fromRGB(16,52,32),surface2=Color3.fromRGB(24,73,44),accent=Color3.fromRGB(50,195,100),text=Color3.fromRGB(228,247,235),muted=Color3.fromRGB(135,190,155)},
-        Violet={background=Color3.fromRGB(16,14,23),panel=Color3.fromRGB(24,22,34),surface=Color3.fromRGB(38,34,56),surface2=Color3.fromRGB(54,46,76),accent=Color3.fromRGB(145,90,235),text=Color3.fromRGB(235,228,248),muted=Color3.fromRGB(166,150,195)},
-        Amber={background=Color3.fromRGB(26,17,5),panel=Color3.fromRGB(43,29,9),surface=Color3.fromRGB(63,43,14),surface2=Color3.fromRGB(87,60,20),accent=Color3.fromRGB(245,165,25),text=Color3.fromRGB(250,239,215),muted=Color3.fromRGB(205,172,112)},
+        Ocean={background=Color3.fromRGB(7,17,28),panel=Color3.fromRGB(12,27,43),surface=Color3.fromRGB(18,43,67),surface2=Color3.fromRGB(28,62,92),accent=Color3.fromRGB(55,155,255),text=Color3.fromRGB(240,240,245),muted=Color3.fromRGB(165,165,175)},
+        Crimson={background=Color3.fromRGB(25,7,11),panel=Color3.fromRGB(42,12,18),surface=Color3.fromRGB(62,18,27),surface2=Color3.fromRGB(86,27,39),accent=Color3.fromRGB(235,65,70),text=Color3.fromRGB(240,240,245),muted=Color3.fromRGB(165,165,175)},
+        Forest={background=Color3.fromRGB(6,20,13),panel=Color3.fromRGB(10,35,22),surface=Color3.fromRGB(16,52,32),surface2=Color3.fromRGB(24,73,44),accent=Color3.fromRGB(50,195,100),text=Color3.fromRGB(240,240,245),muted=Color3.fromRGB(165,165,175)},
+        Violet={background=Color3.fromRGB(16,14,23),panel=Color3.fromRGB(24,22,34),surface=Color3.fromRGB(38,34,56),surface2=Color3.fromRGB(54,46,76),accent=Color3.fromRGB(145,90,235),text=Color3.fromRGB(240,240,245),muted=Color3.fromRGB(165,165,175)},
+        Amber={background=Color3.fromRGB(26,17,5),panel=Color3.fromRGB(43,29,9),surface=Color3.fromRGB(63,43,14),surface2=Color3.fromRGB(87,60,20),accent=Color3.fromRGB(245,165,25),text=Color3.fromRGB(240,240,245),muted=Color3.fromRGB(165,165,175)},
     }
     state.themeColors={}; for name,palette in pairs(state.themePalettes) do state.themeColors[name]=palette.accent end
-    local dock=create("Frame",{Name="LucidBottomDock",Size=UDim2.new(0,430,0,48),
+    local dock=create("Frame",{Name="LucidBottomDock",Size=UDim2.new(0,400,0,38),
         AnchorPoint=Vector2.new(0.5,1),Position=UDim2.new(0.5,0,1,-10),
         BackgroundColor3=Color3.fromRGB(17,17,22),BackgroundTransparency=0.12,
         BorderSizePixel=0,Active=true,Draggable=true,ZIndex=150,Parent=screenGui})
     state.lucidDock=dock
     create("UICorner",{CornerRadius=UDim.new(0,11),Parent=dock})
     state.lucidDockStroke=create("UIStroke",{Color=Color3.fromRGB(145,90,235),Thickness=1.2,Transparency=0.35,Parent=dock})
-    local dragHandle=create("TextButton",{Name="DockDragHandle",Size=UDim2.new(0,76,0,10),
+    local dragHandle=create("TextButton",{Name="DockDragHandle",Size=UDim2.new(0,42,0,4),
         AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.new(0.5,0,0,0),
         BackgroundColor3=Color3.fromRGB(82,58,145),BackgroundTransparency=0.15,BorderSizePixel=0,
         Text="",AutoButtonColor=false,Active=true,ZIndex=153,Parent=dock})
     create("UICorner",{CornerRadius=UDim.new(1,0),Parent=dragHandle})
-    local stats=create("TextLabel",{Size=UDim2.new(0,112,1,-8),Position=UDim2.new(0,10,0,4),Active=true,
+    local stats=create("TextLabel",{Size=UDim2.new(0,106,0,17),Position=UDim2.new(0,8,0,2),Active=true,
         BackgroundTransparency=1,Text="● FPS --    ● PING --ms",TextColor3=Color3.fromRGB(205,205,215),
         TextSize=9,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
-        TextYAlignment=Enum.TextYAlignment.Top,ZIndex=151,Parent=dock})
-    local brand=create("TextLabel",{Size=UDim2.new(0,86,0,22),Position=UDim2.new(0,10,1,-24),Active=true,
-        BackgroundColor3=Color3.fromRGB(75,75,84),BackgroundTransparency=0.38,BorderSizePixel=0,
-        Text="Lucid Panel",TextColor3=Color3.fromRGB(235,235,240),TextSize=9,Font=Enum.Font.GothamSemibold,
+        TextYAlignment=Enum.TextYAlignment.Top,RichText=true,ZIndex=151,Parent=dock})
+    local executorLabel=create("TextLabel",{Size=UDim2.new(0,66,0,14),Position=UDim2.new(0,8,0,20),Active=true,
+        BackgroundTransparency=1,BorderSizePixel=0,Text="● Potassium",TextColor3=Color3.fromRGB(95,225,165),
+        TextSize=8,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=151,Parent=dock})
+    local brand=create("TextLabel",{Size=UDim2.new(0,38,0,14),Position=UDim2.new(0,72,0,20),Active=true,
+        BackgroundTransparency=1,BorderSizePixel=0,
+        Text="LUCID",TextColor3=Color3.fromRGB(225,225,232),TextSize=8,Font=Enum.Font.GothamSemibold,
         ZIndex=151,Parent=dock})
-    create("UICorner",{CornerRadius=UDim.new(0,4),Parent=brand})
     local buttonData={
         {"rbxassetid://7733960981","Home"},{"rbxassetid://7743875962","Player"},
         {"rbxassetid://7743878358","Tools"},{"rbxassetid://7733954760","World"},
-        {"rbxassetid://7733970318","Panel"},{"rbxassetid://7734053495","Settings"},
+        {"rbxassetid://7733970318","Panel"},{"rbxassetid://7743872929","Command"},
+        {"rbxassetid://7734053495","Settings"},
     }
     state.lucidDockButtons={}
+    state.lucidDockIcons={}
     for index,item in ipairs(buttonData) do
-        local button=create("ImageButton",{Size=UDim2.new(0,42,0,38),Position=UDim2.new(0,132+(index-1)*47,0,5),
+        local button=create("ImageButton",{Size=UDim2.new(0,34,0,30),Position=UDim2.new(0,110+(index-1)*40,0,4),
             BackgroundColor3=Color3.fromRGB(28,27,34),BackgroundTransparency=1,BorderSizePixel=0,
-            Image=item[1],ImageColor3=Color3.fromRGB(210,210,220),ImageRectOffset=Vector2.zero,
-            ImageRectSize=Vector2.zero,ScaleType=Enum.ScaleType.Fit,
-            ImageTransparency=0,AutoButtonColor=false,ZIndex=151,Parent=dock})
+            Image="",AutoButtonColor=false,ZIndex=151,Parent=dock})
         create("UICorner",{CornerRadius=UDim.new(0,6),Parent=button})
+        local icon=create("ImageLabel",{Size=UDim2.new(0,15,0,15),AnchorPoint=Vector2.new(0.5,0.5),
+            Position=UDim2.new(0.5,0,0.5,0),BackgroundTransparency=1,Image=item[1],
+            ImageColor3=Color3.fromRGB(210,210,220),ScaleType=Enum.ScaleType.Fit,ZIndex=152,Parent=button})
         local tooltip=create("TextLabel",{Size=UDim2.new(0,70,0,20),AnchorPoint=Vector2.new(0.5,1),
             Position=UDim2.new(0.5,0,0,-4),BackgroundColor3=Color3.fromRGB(12,12,15),
             BackgroundTransparency=0.06,BorderSizePixel=0,Text=item[2],TextColor3=Color3.fromRGB(240,240,245),
@@ -699,8 +704,11 @@ state.initializeLucidDock=function()
         button.MouseEnter:Connect(function() tooltip.Visible=true end)
         button.MouseLeave:Connect(function() tooltip.Visible=false end)
         state.lucidDockButtons[item[2]]=button
+        state.lucidDockIcons[item[2]]=icon
         button.MouseButton1Click:Connect(function()
-            if item[2]=="Panel" then
+            if item[2]=="Command" then
+                if state.toggleCommandConsole then state.toggleCommandConsole() end
+            elseif item[2]=="Panel" then
                 mainFrame.Visible=not mainFrame.Visible
             else
                 mainFrame.Visible=true
@@ -712,10 +720,12 @@ state.initializeLucidDock=function()
     state.refreshLucidDock=function()
         local accent=state.themeIconColor or state.accentColor or state.themeColors.Violet
         for name,button in pairs(state.lucidDockButtons) do
-            local selected=name~="Panel" and name==state.mainNavigation.active and mainFrame.Visible
+            local selected=(name~="Panel" and name~="Command" and name==state.mainNavigation.active and mainFrame.Visible)
+                or (name=="Command" and state.commandConsole and state.commandConsole.Visible)
             button.BackgroundTransparency=selected and 0.15 or 1
-            button.ImageColor3=(selected or (name=="Panel" and mainFrame.Visible)) and accent
-                or (state.currentThemePalette and state.currentThemePalette.muted or Color3.fromRGB(205,205,215))
+            local icon=state.lucidDockIcons[name]
+            if icon then icon.ImageColor3=(selected or (name=="Panel" and mainFrame.Visible)) and accent
+                    or (state.currentThemePalette and state.currentThemePalette.muted or Color3.fromRGB(205,205,215)) end
         end
     end
     local dockDragging=false
@@ -726,7 +736,8 @@ state.initializeLucidDock=function()
             dockDragging=true; dockDragStart=input.Position; dockStart=dock.Position
         end
     end
-    stats.InputBegan:Connect(beginDockDrag); brand.InputBegan:Connect(beginDockDrag)
+    stats.InputBegan:Connect(beginDockDrag); executorLabel.InputBegan:Connect(beginDockDrag)
+    brand.InputBegan:Connect(beginDockDrag)
     dragHandle.InputBegan:Connect(beginDockDrag)
     track(UserInputService.InputChanged:Connect(function(input)
         if dockDragging and (input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch) then
@@ -803,14 +814,31 @@ state.initializeLucidDock=function()
     end
     local frames=0
     local elapsed=0
+    local function metricHex(value,low,mid,high,higherIsBetter)
+        local red=Color3.fromRGB(235,70,80)
+        local yellow=Color3.fromRGB(235,190,65)
+        local green=Color3.fromRGB(75,225,135)
+        local color
+        if higherIsBetter then
+            if value<=low then color=red elseif value>=high then color=green
+            elseif value<=mid then color=red:Lerp(yellow,(value-low)/(mid-low))
+            else color=yellow:Lerp(green,(value-mid)/(high-mid)) end
+        else
+            if value<=low then color=green elseif value>=high then color=red
+            elseif value<=mid then color=green:Lerp(yellow,(value-low)/(mid-low))
+            else color=yellow:Lerp(red,(value-mid)/(high-mid)) end
+        end
+        return string.format("#%02X%02X%02X",math.floor(color.R*255+0.5),math.floor(color.G*255+0.5),math.floor(color.B*255+0.5))
+    end
     track(RunService.RenderStepped:Connect(function(dt)
         frames=frames+1; elapsed=elapsed+dt
         if elapsed<0.5 then return end
         local fps=math.floor(frames/elapsed+0.5); frames=0; elapsed=0
         local ping=0
         pcall(function() ping=math.floor(game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue()+0.5) end)
-        stats.Text=string.format("● FPS %d    ● PING %dms",fps,ping)
-        stats.TextColor3=ping>220 and Color3.fromRGB(235,95,95) or Color3.fromRGB(100,225,165)
+        local fpsColor=metricHex(fps,60,180,300,true)
+        local pingColor=metricHex(ping,1,150,300,false)
+        stats.Text=string.format('<font color="%s">● FPS %d</font>    <font color="%s">● PING %dms</font>',fpsColor,fps,pingColor,ping)
     end))
     track(mainFrame:GetPropertyChangedSignal("Visible"):Connect(state.refreshLucidDock))
     state.applyAccentTheme(state.accentTheme)
@@ -1377,6 +1405,11 @@ state.initializeFPSUnlock=function()
         if state.fpsCapEnabled then applyCap(state.fpsCapValue) end
     end
     box.FocusLost:Connect(readValue)
+    state.setFPSCapValue=function(value)
+        state.fpsCapValue=math.clamp(math.floor((tonumber(value) or state.fpsCapValue)+0.5),30,1000)
+        box.Text=tostring(state.fpsCapValue)
+        if state.fpsCapEnabled then applyCap(state.fpsCapValue) end
+    end
     local _,_,setter=createToggle("FPS Unlock / Custom Cap",nextOrder(),true,function(on)
         state.fpsCapEnabled=on
         if on then readValue() else applyCap(240) end
@@ -2794,6 +2827,14 @@ local _, loopGotoToggle = createToggle("Loop Go To (uses player above)", nextOrd
     end
 end)
 fireLoopGoto = loopGotoToggle
+gotoApi.go=function(name) gotoApi.box.Text=tostring(name or ""); goToRequestedPlayer() end
+gotoApi.returnPrevious=returnPreviousPosition
+gotoApi.setLoop=function(name,on)
+    if name and tostring(name)~="" then gotoApi.box.Text=tostring(name) end
+    local setter=toggleRegistry["Loop Go To (uses player above)"]
+    if setter then setter(on==true) end
+end
+state.gotoApi=gotoApi
 addCleanup(function()
     state.loopGotoEnabled = false
     loopGotoGeneration = loopGotoGeneration + 1
@@ -3744,6 +3785,8 @@ local function actionButton(textValue, callback, color)
     local function runAction() callback(button) end
     button.MouseButton1Click:Connect(runAction)
     registerFavorite(textValue, runAction, row)
+    state.commandActions=state.commandActions or {}
+    state.commandActions[textValue]=runAction
     return button
 end
 
@@ -4341,6 +4384,30 @@ actionButton("Delete Waypoint", function(button)
     refreshWaypointDropdown()
     button.Text="Deleted"; task.delay(1, function() if button.Parent then button.Text="Delete Waypoint" end end)
 end)
+state.waypointApi={
+    save=function(name)
+        name=tostring(name or ""):match("^%s*(.-)%s*$")
+        local root=LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if not root or name=="" then return false,"Character or name unavailable" end
+        waypoints[name]=root.CFrame; waypointBox.Text=name; refreshWaypointDropdown(); return true,"Saved waypoint "..name
+    end,
+    go=function(name)
+        name=tostring(name or ""):match("^%s*(.-)%s*$")
+        local root=LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local point=waypoints[name]
+        if not root or not point then return false,"Waypoint not found: "..name end
+        root.CFrame=point; clearCharacterVelocity(LocalPlayer.Character); waypointBox.Text=name; return true,"Teleported to "..name
+    end,
+    delete=function(name)
+        name=tostring(name or ""):match("^%s*(.-)%s*$")
+        if not waypoints[name] then return false,"Waypoint not found: "..name end
+        waypoints[name]=nil; refreshWaypointDropdown(); return true,"Deleted waypoint "..name
+    end,
+    list=function()
+        local names={}; for name in pairs(waypoints) do table.insert(names,name) end
+        table.sort(names); return names
+    end,
+}
 
 -- Lighting presets remain fully editable through the existing lighting values.
 useCategory("Lighting")
@@ -4646,7 +4713,7 @@ create("TextLabel",{Size=UDim2.new(1,-78,1,0),BackgroundTransparency=1,Text="Syn
 local emoteSyncToleranceBox=styledBox(emoteSyncSettingsRow,{Size=UDim2.new(0,70,0,24),
     Position=UDim2.new(1,-70,0.5,-12),Text=tostring(state.emoteSyncTolerance)})
 emoteSyncToleranceBox.FocusLost:Connect(function()
-    state.emoteSyncTolerance=math.clamp(tonumber(emoteSyncToleranceBox.Text) or state.emoteSyncTolerance,0.1,2)
+    state.emoteSyncTolerance=math.clamp(tonumber(emoteSyncToleranceBox.Text) or state.emoteSyncTolerance,0.01,2)
     emoteSyncToleranceBox.Text=string.format("%.2f",state.emoteSyncTolerance)
 end)
 local emoteSyncRow=rowFrame(nextOrder(),30)
@@ -4945,7 +5012,6 @@ local function showFavoriteEmotes()
         if query=="" or shown:lower():find(query,1,true) or tostring(info.name):lower():find(query,1,true) then table.insert(favorites,info) end
     end
     table.sort(favorites,function(a,b)
-        if state.emoteSortMode=="Recent" then return (tonumber(a.lastUsed) or 0)>(tonumber(b.lastUsed) or 0) end
         return tostring(state.emoteAliases[tostring(a.id)] or a.name):lower()<tostring(state.emoteAliases[tostring(b.id)] or b.name):lower()
     end)
     for _,info in ipairs(favorites) do createEmoteResult(info.id,info.name) end
@@ -5245,7 +5311,7 @@ state.initializeAdvancedEmotes=function(api)
     local poseHeld=false
     local posePercent=0
     state.emoteCategoryFilter=state.emoteCategoryFilter or "All"
-    state.emoteSortMode=state.emoteSortMode or "Name"
+    state.emoteSortMode="Name"
     state.emoteFavoriteQuery=state.emoteFavoriteQuery or ""
     state.emoteHotkeyName=state.emoteHotkeyName or "H"
 
@@ -5315,8 +5381,8 @@ state.initializeAdvancedEmotes=function(api)
     favoriteSearchBox.FocusLost:Connect(function(enter)
         state.emoteFavoriteQuery=favoriteSearchBox.Text:match("^%s*(.-)%s*$"); if enter then api.showFavorites() end
     end)
-    local sortButton=actionButton("Favorite Sort: "..state.emoteSortMode,function(button)
-        state.emoteSortMode=state.emoteSortMode=="Name" and "Recent" or "Name"; button.Text="Favorite Sort: "..state.emoteSortMode; api.showFavorites()
+    local sortButton=actionButton("Favorite Sort: Alphabetical",function(button)
+        state.emoteSortMode="Name"; button.Text="Favorite Sort: Alphabetical"; api.showFavorites()
     end)
     actionButton("Show Emote History",function()
         api.showItems(state.emoteHistory,"History is empty")
@@ -5457,7 +5523,7 @@ state.initializeAdvancedEmotes=function(api)
     end
     state.emoteAdvancedRefresh=function()
         loopButton.Text="Loop Mode: "..tostring(state.emoteLoopMode)
-        sortButton.Text="Favorite Sort: "..tostring(state.emoteSortMode)
+        sortButton.Text="Favorite Sort: Alphabetical"
         categoryButton.Text="Catalog Filter: "..tostring(state.emoteCategoryFilter)
         syncModeButton.Text="Sync Mode: "..tostring(state.emoteSyncMode)
         intervalBox.Text=tostring(state.emoteAutoInterval); resultLimitBox.Text=tostring(state.emoteResultLimit)
@@ -5487,7 +5553,7 @@ state.initializeAdvancedEmotes=function(api)
         task.delay(1,function() if screenGui.Parent and state.emoteLast then api.play(state.emoteLast.id,state.emoteLast.name) end end)
     end
 end
-state.initializeAdvancedEmotes({
+state.emoteCommandApi={
     play=playEmote,stop=stopEmote,getTrack=function() return emoteTrack end,getSpeed=function() return emoteSpeed end,
     showFavorites=showFavoriteEmotes,showItems=function(items,emptyText)
         emoteView="advanced"; emoteResults.Parent=state.emoteModuleTabs.new; clearEmoteResults()
@@ -5498,7 +5564,8 @@ state.initializeAdvancedEmotes({
     cancelSearch=function()
         emoteRequestGeneration=emoteRequestGeneration+1; emoteLoading=false; emoteSearchButton.Text="Search"; emoteStatus.Text="Catalog search cancelled"
     end,
-})
+}
+state.initializeAdvancedEmotes(state.emoteCommandApi)
 currentSection=state.emoteModuleTabs.root
 local emotesDock=categoryMeta["Emotes"] and categoryMeta["Emotes"].dock
 if emotesDock then
@@ -6539,7 +6606,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.0.3 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.2.2 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -6678,6 +6745,215 @@ state.initializeHomeDashboard=function()
     end)
 end
 state.initializeHomeDashboard()
+
+state.initializeCommandConsole=function()
+    local console=create("Frame",{Name="LucidCommandConsole",Size=UDim2.new(0,350,0,60),
+        AnchorPoint=Vector2.new(0.5,1),Position=UDim2.new(0.5,0,0,-8),
+        BackgroundColor3=Color3.fromRGB(10,10,13),BackgroundTransparency=0.04,
+        BorderSizePixel=0,Visible=false,ZIndex=170,Parent=state.lucidDock})
+    state.commandConsole=console
+    create("UICorner",{CornerRadius=UDim.new(0,8),Parent=console})
+    create("UIStroke",{Color=state.currentThemePalette and state.currentThemePalette.stroke or Color3.fromRGB(58,58,68),
+        Thickness=1,Transparency=0.2,Parent=console})
+    local input=styledBox(console,{Size=UDim2.new(1,-58,0,28),Position=UDim2.new(0,7,0,7),
+        Text="",PlaceholderText="> type a command...",ClearTextOnFocus=false,ZIndex=171})
+    local keyLabel=create("TextLabel",{Size=UDim2.new(0,43,0,28),Position=UDim2.new(1,-50,0,7),
+        BackgroundColor3=Color3.fromRGB(30,30,36),BorderSizePixel=0,Text="F6",
+        TextColor3=Color3.fromRGB(190,190,200),TextSize=10,Font=Enum.Font.GothamSemibold,
+        ZIndex=171,Parent=console})
+    create("UICorner",{CornerRadius=UDim.new(0,5),Parent=keyLabel})
+    local commandListButton=create("TextButton",{Size=UDim2.new(0,72,0,18),Position=UDim2.new(0,7,0,39),
+        BackgroundColor3=Color3.fromRGB(30,30,36),BorderSizePixel=0,Text="Commands",
+        TextColor3=Color3.fromRGB(235,235,240),TextSize=10,Font=Enum.Font.GothamSemibold,
+        ZIndex=171,Parent=console})
+    create("UICorner",{CornerRadius=UDim.new(0,4),Parent=commandListButton})
+    local status=create("TextLabel",{Size=UDim2.new(1,-90,0,17),Position=UDim2.new(0,84,0,39),
+        BackgroundTransparency=1,Text="!help for commands",TextColor3=Color3.fromRGB(145,145,158),
+        TextSize=10,Font=Enum.Font.SourceSans,TextXAlignment=Enum.TextXAlignment.Left,
+        TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=171,Parent=console})
+    local browser=create("Frame",{Name="CommandBrowser",Size=UDim2.new(0,330,0,350),
+        AnchorPoint=Vector2.new(0.5,1),Position=UDim2.new(0.5,0,0,-68),
+        BackgroundColor3=Color3.fromRGB(9,9,12),BackgroundTransparency=0.03,
+        BorderSizePixel=0,Visible=false,ZIndex=180,Parent=state.lucidDock})
+    create("UICorner",{CornerRadius=UDim.new(0,8),Parent=browser})
+    create("UIStroke",{Color=state.currentThemePalette and state.currentThemePalette.stroke or Color3.fromRGB(58,58,68),
+        Thickness=1,Transparency=0.15,Parent=browser})
+    create("TextLabel",{Size=UDim2.new(1,-42,0,28),Position=UDim2.new(0,10,0,4),BackgroundTransparency=1,
+        Text="COMMANDS",TextColor3=Color3.fromRGB(240,240,245),TextSize=11,Font=Enum.Font.GothamBold,
+        TextXAlignment=Enum.TextXAlignment.Left,ZIndex=181,Parent=browser})
+    local closeBrowser=create("TextButton",{Size=UDim2.new(0,24,0,22),Position=UDim2.new(1,-28,0,6),
+        BackgroundColor3=Color3.fromRGB(38,38,45),BorderSizePixel=0,Text="X",TextColor3=Color3.fromRGB(210,210,218),
+        TextSize=10,Font=Enum.Font.GothamBold,ZIndex=181,Parent=browser})
+    create("UICorner",{CornerRadius=UDim.new(0,4),Parent=closeBrowser})
+    local browserSearch=styledBox(browser,{Size=UDim2.new(1,-16,0,28),Position=UDim2.new(0,8,0,34),
+        Text="",PlaceholderText="Search commands...",ClearTextOnFocus=false,ZIndex=181})
+    local commandList=create("ScrollingFrame",{Size=UDim2.new(1,-16,1,-72),Position=UDim2.new(0,8,0,66),
+        BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=3,AutomaticCanvasSize=Enum.AutomaticSize.Y,
+        CanvasSize=UDim2.new(),ZIndex=181,Parent=browser})
+    create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,4),Parent=commandList})
+    local function normalize(value) return tostring(value or ""):lower():gsub("%b()",""):gsub("[^%w]","") end
+    local function buildCommandCatalog()
+        local catalog={
+            {command="!emote <animationId> [name]",description="Play an animation by asset ID"},
+            {command="!fogend <value>",description="Set and lock the lighting FogEnd"},
+            {command="!fov <20-120>",description="Set and lock the camera field of view"},
+            {command="!fps <30-1000>",description="Set the client FPS cap"},
+            {command="!goto <player>",description="Teleport to an in-game player"},
+            {command="!help",description="Show a compact command summary"},
+            {command="!jumpheight <value>",description="Set and lock jump height"},
+            {command="!loopgoto <player>",description="Continuously follow a player"},
+            {command="!migraine",description="Apply Migraine Comfort lighting"},
+            {command="!open <section>",description="Open Home, Player, World, Tools or Settings"},
+            {command="!panel",description="Show or hide the main Lucid panel"},
+            {command="!return",description="Return to the previous teleport position"},
+            {command="!showwaypoints <on|off>",description="Show or hide waypoint markers"},
+            {command="!stopemote",description="Stop current emote playback or sync"},
+            {command="!stopsync",description="Stop player emote synchronization"},
+            {command="!sync <player>",description="Synchronize with a player's current emote"},
+            {command="!unloopgoto",description="Disable loop goto"},
+            {command="!walkspeed <value>",description="Set and lock WalkSpeed"},
+            {command="!waypoint delete <name>",description="Delete a named waypoint"},
+            {command="!waypoint goto <name>",description="Teleport to a named waypoint"},
+            {command="!waypoint list",description="List saved waypoints"},
+            {command="!waypoint save <name>",description="Save your current position"},
+            {command="!waypoint show <on|off>",description="Control waypoint markers"},
+        }
+        local known={}
+        for _,entry in ipairs(catalog) do known[normalize(entry.command:match("^!?([^%s<]+)"))]=true end
+        for label in pairs(toggleRegistry) do
+            local command=normalize(label)
+            if command~="" and not known[command] then
+                table.insert(catalog,{command="!"..command.." [on|off]",description="Toggle: "..label}); known[command]=true
+            end
+        end
+        for label in pairs(state.commandActions or {}) do
+            local command=normalize(label)
+            if command~="" and not known[command] then
+                table.insert(catalog,{command="!"..command,description="Action: "..label}); known[command]=true
+            end
+        end
+        table.sort(catalog,function(a,b) return a.command:lower()<b.command:lower() end)
+        return catalog
+    end
+    local function refreshCommandBrowser()
+        for _,child in ipairs(commandList:GetChildren()) do if child:IsA("GuiObject") then child:Destroy() end end
+        local query=browserSearch.Text:match("^%s*(.-)%s*$"):lower()
+        local shown=0
+        for _,entry in ipairs(buildCommandCatalog()) do
+            if query=="" or entry.command:lower():find(query,1,true) or entry.description:lower():find(query,1,true) then
+                shown=shown+1
+                local button=create("TextButton",{Size=UDim2.new(1,-4,0,42),BackgroundColor3=Color3.fromRGB(20,20,25),
+                    BackgroundTransparency=0.05,BorderSizePixel=0,Text="",LayoutOrder=shown,ZIndex=182,Parent=commandList})
+                create("UICorner",{CornerRadius=UDim.new(0,5),Parent=button})
+                create("TextLabel",{Size=UDim2.new(1,-12,0,18),Position=UDim2.new(0,7,0,3),BackgroundTransparency=1,
+                    Text=entry.command,TextColor3=Color3.fromRGB(240,240,245),TextSize=11,Font=Enum.Font.SourceSansSemibold,
+                    TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=183,Parent=button})
+                create("TextLabel",{Size=UDim2.new(1,-12,0,16),Position=UDim2.new(0,7,0,21),BackgroundTransparency=1,
+                    Text=entry.description,TextColor3=Color3.fromRGB(155,155,168),TextSize=10,Font=Enum.Font.SourceSans,
+                    TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=183,Parent=button})
+                button.MouseButton1Click:Connect(function()
+                    input.Text=entry.command:gsub("<[^>]+>",""):gsub("%[[^%]]+%]",""):match("^%s*(.-)%s*$").." "
+                    browser.Visible=false; task.defer(function() input:CaptureFocus(); input.CursorPosition=#input.Text+1 end)
+                end)
+            end
+        end
+    end
+    commandListButton.MouseButton1Click:Connect(function()
+        browser.Visible=not browser.Visible
+        if browser.Visible then refreshCommandBrowser(); task.defer(function() browserSearch:CaptureFocus() end) end
+    end)
+    closeBrowser.MouseButton1Click:Connect(function() browser.Visible=false end)
+    browserSearch:GetPropertyChangedSignal("Text"):Connect(refreshCommandBrowser)
+    local function boolArgument(value,current)
+        value=tostring(value or ""):lower()
+        if value=="on" or value=="true" or value=="1" or value=="enable" then return true end
+        if value=="off" or value=="false" or value=="0" or value=="disable" then return false end
+        return not current
+    end
+    local function finish(ok,message)
+        status.Text=tostring(message or (ok and "Command complete" or "Command failed"))
+        status.TextColor3=ok and Color3.fromRGB(105,220,145) or Color3.fromRGB(235,105,115)
+    end
+    local function runCommand(text)
+        local raw=tostring(text or ""):match("^%s*(.-)%s*$"):gsub("^!","")
+        local command,rest=raw:match("^(%S+)%s*(.-)%s*$")
+        command=normalize(command)
+        if command=="" then return end
+        if command=="help" or command=="commands" then
+            finish(true,"!goto !loopgoto !sync !waypoint !espall !noclip !fly !freecam !walkspeed !fogend …")
+            return
+        elseif command=="open" then
+            local target=rest:sub(1,1):upper()..rest:sub(2):lower()
+            if state.mainNavigation.groups[target] then mainFrame.Visible=true; state.mainNavigation.select(target); finish(true,"Opened "..target)
+            else finish(false,"Use: !open home/player/world/tools/settings") end
+            return
+        elseif command=="panel" then mainFrame.Visible=not mainFrame.Visible; finish(true,"Panel "..(mainFrame.Visible and "shown" or "hidden")); return
+        elseif command=="goto" then
+            if rest=="" then finish(false,"Use: !goto <player>") else state.gotoApi.go(rest); finish(true,"Going to "..rest) end
+            return
+        elseif command=="loopgoto" then
+            if rest=="" then finish(false,"Use: !loopgoto <player>") else state.gotoApi.setLoop(rest,true); finish(true,"Loop goto: "..rest) end
+            return
+        elseif command=="unloopgoto" or command=="stopgoto" then state.gotoApi.setLoop(nil,false); finish(true,"Loop goto disabled"); return
+        elseif command=="return" or command=="returnposition" then state.gotoApi.returnPrevious(); finish(true,"Returned to previous position"); return
+        elseif command=="sync" then
+            if rest=="" then finish(false,"Use: !sync <player>")
+            else state.emoteCommandApi.setSyncName(rest); state.emoteCommandApi.beginSync(); finish(true,"Syncing with "..rest) end
+            return
+        elseif command=="stopsync" or command=="stopemote" then state.emoteCommandApi.stop(); finish(true,"Emote playback/sync stopped"); return
+        elseif command=="emote" then
+            local id,name=rest:match("^(%d+)%s*(.*)$")
+            if id then state.emoteCommandApi.play(tonumber(id),name~="" and name or ("Emote "..id)); finish(true,"Playing emote "..id)
+            else finish(false,"Use: !emote <animationId> [name]") end
+            return
+        elseif command=="waypoint" or command=="wp" then
+            local operation,name=rest:match("^(%S+)%s*(.-)%s*$"); operation=normalize(operation)
+            if operation=="save" then local ok,msg=state.waypointApi.save(name); finish(ok,msg)
+            elseif operation=="goto" or operation=="go" then local ok,msg=state.waypointApi.go(name); finish(ok,msg)
+            elseif operation=="delete" or operation=="remove" then local ok,msg=state.waypointApi.delete(name); finish(ok,msg)
+            elseif operation=="list" then local names=state.waypointApi.list(); finish(true,#names>0 and table.concat(names,", ") or "No waypoints saved")
+            elseif operation=="show" then local setter=toggleRegistry["Show Waypoint Markers"]; if setter then setter(boolArgument(name,activeFeatures["Show Waypoint Markers"])); finish(true,"Waypoint markers updated") end
+            else finish(false,"!waypoint save/goto/delete/list/show <name|on|off>") end
+            return
+        elseif command=="showwaypoints" or command=="waypointmarkers" then
+            local setter=toggleRegistry["Show Waypoint Markers"]; setter(boolArgument(rest,activeFeatures["Show Waypoint Markers"])); finish(true,"Waypoint markers updated"); return
+        elseif command=="walkspeed" or command=="ws" then
+            local value=tonumber(rest); if value then state.walkspeedValue=math.clamp(value,0,500); wsBox.Text=tostring(state.walkspeedValue); wsSetLocked(true); finish(true,"WalkSpeed locked at "..state.walkspeedValue) else finish(false,"Use: !walkspeed <value>") end; return
+        elseif command=="jumpheight" or command=="jh" then
+            local value=tonumber(rest); if value then state.jumpHeightValue=math.clamp(value,0,100); jhBox.Text=tostring(state.jumpHeightValue); jhSetLocked(true); finish(true,"Jump height locked at "..state.jumpHeightValue) else finish(false,"Use: !jumpheight <value>") end; return
+        elseif command=="fov" then
+            local value=tonumber(rest); if value then state.fovValue=math.clamp(value,20,120); fovBox.Text=tostring(state.fovValue); toggleRegistry["Lock FOV"](true); finish(true,"FOV locked at "..state.fovValue) else finish(false,"Use: !fov <20-120>") end; return
+        elseif command=="fogend" then
+            local value=tonumber(rest); if value then state.fogEndValue=math.max(0,value); fogBox.Text=tostring(state.fogEndValue); toggleRegistry["Lock FogEnd"](true); finish(true,"FogEnd locked at "..state.fogEndValue) else finish(false,"Use: !fogend <value>") end; return
+        elseif command=="fps" or command=="fpscap" then
+            local value=tonumber(rest); if value then state.setFPSCapValue(value); state.setFPSCapEnabled(true); finish(true,"FPS cap set to "..state.fpsCapValue) else finish(false,"Use: !fps <30-1000>") end; return
+        elseif command=="migraine" then triggerMigraineComfort(); finish(true,"Migraine comfort applied"); return end
+
+        for label,setter in pairs(toggleRegistry) do
+            if normalize(label)==command then
+                local desired=boolArgument(rest,activeFeatures[label]); setter(desired)
+                finish(true,label..": "..(desired and "ON" or "OFF")); return
+            end
+        end
+        for label,action in pairs(state.commandActions or {}) do
+            if normalize(label)==command then action(); finish(true,label); return end
+        end
+        finish(false,"Unknown command: !"..command.." | use !help")
+    end
+    input.FocusLost:Connect(function(enterPressed)
+        if enterPressed then local text=input.Text; input.Text=""; runCommand(text); task.defer(function() if console.Visible then input:CaptureFocus() end end) end
+    end)
+    state.toggleCommandConsole=function(force)
+        console.Visible=force==nil and not console.Visible or force==true
+        if console.Visible then state.lucidDock.Visible=true; task.defer(function() input:CaptureFocus() end)
+        else browser.Visible=false; input:ReleaseFocus(); browserSearch:ReleaseFocus() end
+        if state.refreshLucidDock then state.refreshLucidDock() end
+    end
+    track(UserInputService.InputBegan:Connect(function(event,processed)
+        if event.KeyCode==Enum.KeyCode.F6 and (not processed or UserInputService:GetFocusedTextBox()==input) then state.toggleCommandConsole() end
+    end))
+end
+state.initializeCommandConsole()
 
 task.spawn(function()
     local diagnosticsFailed=false
@@ -7071,7 +7347,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.0.3] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.2.2] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.0.3] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.2.2] Loaded, but this executor does not expose queue_on_teleport")
 end
