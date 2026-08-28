@@ -1,4 +1,4 @@
---// Roblox GUI — Lucid Panel v3
+--// Roblox GUI — Lucid Panel v5
 --// Lucid Panel v5.0.3
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
