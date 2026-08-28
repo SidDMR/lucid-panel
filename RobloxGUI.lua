@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.2.16
+--// Lucid Panel v5.3.1
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -194,6 +194,7 @@ local state = {
     emoteRecentSyncPlayers = {},
     emoteSearchCache = {},
     emoteCustoms     = {},
+    customEmoteSpeed = 1,
     emoteStateAnimations = {Idle="",Walk="",Run="",Jump="",Fall="",Climb="",Swim=""},
     emoteStateSpeeds = {Idle=1,Walk=1,Run=1,Jump=1,Fall=1,Climb=1,Swim=1},
     emoteStatePresets = {},
@@ -351,7 +352,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.2.16",
+    Text                   = "LUCID PANEL  •  v5.3.1",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -4676,7 +4677,7 @@ local function saveGlobalEmoteFavorites()
     local payload={version=3,favorites=state.emoteFavorites or {},aliases=state.emoteAliases or {},
         history=state.emoteHistory or {},playlists=state.emotePlaylists or {},speeds=state.emoteSpeeds or {},
         recentSyncPlayers=state.emoteRecentSyncPlayers or {},lastEmote=state.emoteLast,searchCache=state.emoteSearchCache or {},
-        customs=state.emoteCustoms or {},stateAnimations=state.emoteStateAnimations or {},
+        customs=state.emoteCustoms or {},customSpeed=state.customEmoteSpeed,stateAnimations=state.emoteStateAnimations or {},
         stateSpeeds=state.emoteStateSpeeds or {},statePresets=state.emoteStatePresets or {}}
     local encodedOk,encoded=pcall(function() return HttpService:JSONEncode(payload) end)
     return encodedOk and pcall(writefile,EMOTE_FAVORITES_PATH,encoded)
@@ -4695,6 +4696,7 @@ local function loadGlobalEmoteFavorites()
             state.emoteLast=type(decoded.lastEmote)=="table" and decoded.lastEmote or nil
             state.emoteSearchCache=type(decoded.searchCache)=="table" and decoded.searchCache or {}
             state.emoteCustoms=type(decoded.customs)=="table" and decoded.customs or {}
+            state.customEmoteSpeed=math.clamp(tonumber(decoded.customSpeed) or state.customEmoteSpeed,0,15)
             state.emoteStateAnimations=type(decoded.stateAnimations)=="table" and decoded.stateAnimations or state.emoteStateAnimations
             state.emoteStateSpeeds=type(decoded.stateSpeeds)=="table" and decoded.stateSpeeds or state.emoteStateSpeeds
             state.emoteStatePresets=type(decoded.statePresets)=="table" and decoded.statePresets or {}
@@ -4715,6 +4717,81 @@ local function mergeLegacyEmoteFavorites(legacyFavorites)
     if changed then saveGlobalEmoteFavorites() end
 end
 loadGlobalEmoteFavorites()
+state.initializeCustomKeyframeEngine=function()
+    local bindingName="LucidCustomKeyframes"
+    local activeMotors={}
+    local active=false
+    local function stop()
+        active=false; RunService:UnbindFromRenderStep(bindingName)
+        for motor in pairs(activeMotors) do if motor and motor.Parent then motor.Transform=CFrame.new() end end
+        table.clear(activeMotors)
+    end
+    local function play(sequence,speedProvider,reverseProvider)
+        stop()
+        local frames=sequence and sequence.KeyframeSequence
+        if type(frames)~="table" or #frames<1 then return false,"No keyframes found" end
+        table.sort(frames,function(a,b) return a.Time<b.Time end)
+        local character=LocalPlayer.Character
+        if not character then return false,"Character unavailable" end
+        local motorsByPart={}
+        for _,item in ipairs(character:GetDescendants()) do
+            if item:IsA("Motor6D") and item.Part1 then motorsByPart[item.Part1.Name]=item end
+        end
+        local duration=math.max(tonumber(frames[#frames].Time) or 0,0.001)
+        local position=reverseProvider and reverseProvider() and duration or 0
+        active=true
+        RunService:BindToRenderStep(bindingName,Enum.RenderPriority.Character.Value+1,function(dt)
+            if not active or not character.Parent then stop(); return end
+            local speed=math.clamp(tonumber(speedProvider()) or 1,0,15)
+            local direction=reverseProvider and reverseProvider() and -1 or 1
+            position=(position+dt*speed*direction)%duration
+            local elapsed=position
+            local low,high=frames[1],frames[#frames]
+            local left,right=1,#frames
+            while left<=right do
+                local middle=math.floor((left+right)/2)
+                if frames[middle].Time<=elapsed then low=frames[middle]; left=middle+1
+                else high=frames[middle]; right=middle-1 end
+            end
+            local span=math.max((high.Time or elapsed)-(low.Time or elapsed),0.0001)
+            local alpha=math.clamp((elapsed-(low.Time or 0))/span,0,1)
+            local lowData,highData=low.Data or {},high.Data or low.Data or {}
+            for partName,from in pairs(lowData) do
+                local motor=motorsByPart[partName]
+                if motor and typeof(from)=="CFrame" then
+                    local target=typeof(highData[partName])=="CFrame" and highData[partName] or from
+                    motor.Transform=from:Lerp(target,alpha); activeMotors[motor]=true
+                end
+            end
+        end)
+        return true
+    end
+    state.customKeyframeApi={play=play,stop=stop}
+    addCleanup(stop)
+end
+state.decodeCustomKeyframeCode=function(source)
+    source=tostring(source or "")
+    if #source<10 or #source>1000000 then return nil,"Keyframe code must be between 10 bytes and 1 MB" end
+    local lowered=source:lower()
+    for _,word in ipairs({"function","while","repeat","require","loadstring","getgenv","getfenv","game","workspace","task","coroutine","debug","http"}) do
+        if lowered:find("%f[%a]"..word.."%f[^%a]") then return nil,"Blocked token in keyframe code: "..word end
+    end
+    if type(loadstring)~="function" or type(setfenv)~="function" then return nil,"Executor lacks sandboxed loadstring support" end
+    local chunk,compileError=loadstring(source,"LucidCustomKeyframe")
+    if not chunk then return nil,"Compile error: "..tostring(compileError) end
+    setfenv(chunk,{CFrame=CFrame})
+    local ok,result=pcall(chunk)
+    if not ok or type(result)~="table" or type(result.KeyframeSequence)~="table" then
+        return nil,ok and "Code must return { KeyframeSequence = {...} }" or tostring(result)
+    end
+    if #result.KeyframeSequence<1 or #result.KeyframeSequence>5000 then return nil,"Keyframe count must be between 1 and 5000" end
+    for _,frame in ipairs(result.KeyframeSequence) do
+        if type(frame)~="table" or type(frame.Time)~="number" or type(frame.Data)~="table" then return nil,"Invalid keyframe structure" end
+        for _,pose in pairs(frame.Data) do if typeof(pose)~="CFrame" then return nil,"Keyframe poses must be CFrames" end end
+    end
+    return result
+end
+state.initializeCustomKeyframeEngine()
 local stopEmote
 local emoteSearchRow=rowFrame(nextOrder(),30)
 local emoteSearchBox=styledBox(emoteSearchRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="Search on-sale emotes..."})
@@ -4800,6 +4877,7 @@ local emoteLoading=false
 local emoteRequestGeneration=0
 stopEmote=function()
     emoteSyncActive=false; emoteSyncPlayer=nil; emoteSyncAnimationId=nil; emoteSyncElapsed=0
+    if state.customKeyframeApi then state.customKeyframeApi.stop() end
     if emoteTrack then pcall(function() emoteTrack:Stop(0.15) end) end
     if emoteAnimation then emoteAnimation:Destroy() end
     emoteTrack=nil; emoteAnimation=nil; currentEmoteName=nil
@@ -5364,28 +5442,89 @@ state.initializeEmoteStudio=function(api)
     local customNameRow=rowFrame(nextOrder(),28)
     local customName=styledBox(customNameRow,{Size=UDim2.new(1,0,0,26),Text="",PlaceholderText="Animation name..."})
     local customIdRow=rowFrame(nextOrder(),28)
-    local customId=styledBox(customIdRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="Animation ID..."})
+    local customId=styledBox(customIdRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="Legacy animation ID (optional)..."})
     local customAdd=create("TextButton",{Size=UDim2.new(0,64,0,26),Position=UDim2.new(1,-64,0,0),BackgroundColor3=Color3.fromRGB(48,115,62),
         BorderSizePixel=0,Text="Add",TextColor3=Color3.new(1,1,1),TextSize=10,Font=Enum.Font.GothamSemibold,Parent=customIdRow})
     create("UICorner",{CornerRadius=UDim.new(0,6),Parent=customAdd})
+    local customCodeRow=rowFrame(nextOrder(),112)
+    local customCode=styledBox(customCodeRow,{Size=UDim2.new(1,0,0,108),Text="",PlaceholderText="Paste KeyframeSequence code here...",
+        MultiLine=true,TextWrapped=false,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,
+        ClearTextOnFocus=false})
+    local customCodeAddRow=rowFrame(nextOrder(),30)
+    local customCodeAdd=create("TextButton",{Size=UDim2.new(0,112,0,26),Position=UDim2.new(0.5,-56,0,0),
+        BackgroundColor3=Color3.fromRGB(48,115,62),BorderSizePixel=0,Text="Add Keyframes",
+        TextColor3=Color3.new(1,1,1),TextSize=10,Font=Enum.Font.GothamSemibold,Parent=customCodeAddRow})
+    create("UICorner",{CornerRadius=UDim.new(0,6),Parent=customCodeAdd})
     local customList=create("ScrollingFrame",{Size=UDim2.new(1,0,0,180),CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,
         BackgroundTransparency=0.35,BackgroundColor3=Color3.fromRGB(25,24,34),BorderSizePixel=0,ScrollBarThickness=3,
         LayoutOrder=nextOrder(),Parent=currentSection})
     create("UICorner",{CornerRadius=UDim.new(0,6),Parent=customList}); create("UIListLayout",{Padding=UDim.new(0,4),Parent=customList})
-    local function refreshCustom()
+    local customSpeedRow=rowFrame(nextOrder(),30)
+    create("TextLabel",{Size=UDim2.new(1,-138,1,0),BackgroundTransparency=1,Text="Custom Speed (0-15)",
+        TextColor3=Color3.fromRGB(210,205,220),TextSize=10,Font=Enum.Font.Gotham,
+        TextXAlignment=Enum.TextXAlignment.Left,Parent=customSpeedRow})
+    local customSpeedBox=styledBox(customSpeedRow,{Size=UDim2.new(0,58,0,24),Position=UDim2.new(1,-132,0.5,-12),
+        Text=string.format("%.2f",state.customEmoteSpeed),PlaceholderText="0-15"})
+    local customSpeedReset=create("TextButton",{Size=UDim2.new(0,68,0,24),Position=UDim2.new(1,-68,0.5,-12),
+        BackgroundColor3=Color3.fromRGB(48,43,65),BorderSizePixel=0,Text="Reset",
+        TextColor3=Color3.fromRGB(230,225,240),TextSize=10,Font=Enum.Font.GothamSemibold,Parent=customSpeedRow})
+    create("UICorner",{CornerRadius=UDim.new(0,5),Parent=customSpeedReset})
+    customSpeedBox.FocusLost:Connect(function()
+        state.customEmoteSpeed=math.clamp(tonumber(customSpeedBox.Text) or state.customEmoteSpeed,0,15)
+        customSpeedBox.Text=string.format("%.2f",state.customEmoteSpeed); saveGlobalEmoteFavorites()
+    end)
+    customSpeedReset.MouseButton1Click:Connect(function()
+        state.customEmoteSpeed=1; customSpeedBox.Text="1.00"; saveGlobalEmoteFavorites()
+    end)
+    local pendingCustomBind=nil
+    local refreshCustom
+    local function playCustom(item)
+        if item.type=="keyframes" and item.code then
+            local sequence,message=state.decodeCustomKeyframeCode(item.code)
+            if not sequence then emoteStatus.Text="Custom error: "..tostring(message); return end
+            stopEmote()
+            local ok,playError=state.customKeyframeApi.play(sequence,function() return state.customEmoteSpeed end,function() return item.reverse==true end)
+            emoteStatus.Text=ok and ("Playing custom keyframes: "..tostring(item.name)) or ("Custom error: "..tostring(playError))
+        else
+            api.play(item.id,item.name)
+            task.defer(function()
+                local track=api.getTrack()
+                if track then
+                    if item.reverse and track.Length>0 then track.TimePosition=track.Length end
+                    track:AdjustSpeed((item.reverse and -1 or 1)*state.customEmoteSpeed)
+                end
+            end)
+        end
+    end
+    refreshCustom=function()
         for _,child in ipairs(customList:GetChildren()) do if child:IsA("GuiObject") then child:Destroy() end end
         local query=customSearch.Text:lower(); local items={}
-        for _,item in pairs(state.emoteCustoms) do if query=="" or tostring(item.name):lower():find(query,1,true) then table.insert(items,item) end end
-        table.sort(items,function(a,b) return tostring(a.name):lower()<tostring(b.name):lower() end)
-        for _,item in ipairs(items) do
+        for key,item in pairs(state.emoteCustoms) do
+            if query=="" or tostring(item.name):lower():find(query,1,true) then table.insert(items,{key=key,item=item}) end
+        end
+        table.sort(items,function(a,b)
+            if (a.item.favorite==true)~=(b.item.favorite==true) then return a.item.favorite==true end
+            return tostring(a.item.name):lower()<tostring(b.item.name):lower()
+        end)
+        for _,entry in ipairs(items) do
+            local item=entry.item
             local row=create("Frame",{Size=UDim2.new(1,-4,0,30),BackgroundTransparency=1,Parent=customList})
-            local play=create("TextButton",{Size=UDim2.new(1,-38,0,28),BackgroundColor3=Color3.fromRGB(43,39,57),BorderSizePixel=0,
+            local play=create("TextButton",{Size=UDim2.new(1,-116,0,28),BackgroundColor3=Color3.fromRGB(43,39,57),BorderSizePixel=0,
                 Text=tostring(item.name),TextColor3=Color3.fromRGB(230,225,240),TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=row})
-            local remove=create("TextButton",{Size=UDim2.new(0,32,0,28),Position=UDim2.new(1,-32,0,0),BackgroundColor3=Color3.fromRGB(85,45,55),
-                BorderSizePixel=0,Text="X",TextColor3=Color3.fromRGB(240,180,190),TextSize=11,Font=Enum.Font.GothamBold,Parent=row})
+            local reverse=create("TextButton",{Size=UDim2.new(0,26,0,28),Position=UDim2.new(1,-112,0,0),BackgroundTransparency=1,
+                BorderSizePixel=0,Text=item.reverse and "↶" or "↻",TextColor3=item.reverse and Color3.fromRGB(105,220,145) or Color3.fromRGB(180,175,195),TextSize=17,Font=Enum.Font.GothamBold,Parent=row})
+            local favorite=create("TextButton",{Size=UDim2.new(0,26,0,28),Position=UDim2.new(1,-84,0,0),BackgroundTransparency=1,
+                BorderSizePixel=0,Text=item.favorite and "★" or "☆",TextColor3=item.favorite and Color3.fromRGB(255,215,55) or Color3.fromRGB(180,175,195),TextSize=17,Font=Enum.Font.GothamBold,Parent=row})
+            local bind=create("TextButton",{Size=UDim2.new(0,26,0,28),Position=UDim2.new(1,-56,0,0),BackgroundTransparency=1,
+                BorderSizePixel=0,Text=item.keybind or "⌨",TextColor3=Color3.fromRGB(180,175,195),TextSize=item.keybind and 8 or 14,Font=Enum.Font.GothamSemibold,Parent=row})
+            local remove=create("TextButton",{Size=UDim2.new(0,26,0,24),Position=UDim2.new(1,-27,0,2),BackgroundColor3=Color3.fromRGB(85,45,55),
+                BorderSizePixel=0,Text="X",TextColor3=Color3.fromRGB(240,180,190),TextSize=10,Font=Enum.Font.GothamBold,Parent=row})
             create("UICorner",{CornerRadius=UDim.new(0,5),Parent=play}); create("UICorner",{CornerRadius=UDim.new(0,5),Parent=remove})
-            play.MouseButton1Click:Connect(function() api.play(item.id,item.name) end)
-            remove.MouseButton1Click:Connect(function() state.emoteCustoms[tostring(item.id)]=nil; saveGlobalEmoteFavorites(); refreshCustom() end)
+            play.MouseButton1Click:Connect(function() playCustom(item) end)
+            reverse.MouseButton1Click:Connect(function() item.reverse=not item.reverse; saveGlobalEmoteFavorites(); refreshCustom() end)
+            favorite.MouseButton1Click:Connect(function() item.favorite=not item.favorite; saveGlobalEmoteFavorites(); refreshCustom() end)
+            bind.MouseButton1Click:Connect(function() pendingCustomBind=entry; bind.Text="..." end)
+            remove.MouseButton1Click:Connect(function() state.emoteCustoms[entry.key]=nil; saveGlobalEmoteFavorites(); refreshCustom() end)
         end
     end
     customAdd.MouseButton1Click:Connect(function()
@@ -5394,7 +5533,28 @@ state.initializeEmoteStudio=function(api)
         if not id or name=="" then customId.Text="Valid name + ID required"; return end
         state.emoteCustoms[tostring(id)]={id=id,name=name}; customName.Text=""; customId.Text=""; saveGlobalEmoteFavorites(); refreshCustom()
     end)
-    customSearch:GetPropertyChangedSignal("Text"):Connect(refreshCustom); refreshCustom(); speedControl(currentSection)
+    customCodeAdd.MouseButton1Click:Connect(function()
+        local name=customName.Text:match("^%s*(.-)%s*$")
+        if name=="" then customCodeAdd.Text="Name required"; task.delay(1,function() if customCodeAdd.Parent then customCodeAdd.Text="Add Keyframes" end end); return end
+        local sequence,message=state.decodeCustomKeyframeCode(customCode.Text)
+        if not sequence then customCodeAdd.Text="Invalid code"; emoteStatus.Text="Custom error: "..tostring(message); task.delay(1.2,function() if customCodeAdd.Parent then customCodeAdd.Text="Add Keyframes" end end); return end
+        local key="keyframes:"..name:lower()
+        state.emoteCustoms[key]={type="keyframes",name=name,code=customCode.Text}
+        customName.Text=""; customCode.Text=""; saveGlobalEmoteFavorites(); refreshCustom()
+        customCodeAdd.Text="Added"; task.delay(1,function() if customCodeAdd.Parent then customCodeAdd.Text="Add Keyframes" end end)
+    end)
+    track(UserInputService.InputBegan:Connect(function(input,processed)
+        if pendingCustomBind then
+            if input.UserInputType~=Enum.UserInputType.Keyboard or input.KeyCode==Enum.KeyCode.Unknown then return end
+            pendingCustomBind.item.keybind=input.KeyCode==Enum.KeyCode.Escape and nil or input.KeyCode.Name
+            pendingCustomBind=nil; saveGlobalEmoteFavorites(); refreshCustom(); return
+        end
+        if processed or UserInputService:GetFocusedTextBox() then return end
+        for _,item in pairs(state.emoteCustoms) do
+            if item.keybind and input.KeyCode==Enum.KeyCode[item.keybind] then playCustom(item); break end
+        end
+    end))
+    customSearch:GetPropertyChangedSignal("Text"):Connect(refreshCustom); refreshCustom()
 
     -- STATES
     currentSection=state.emoteModuleTabs.states
@@ -6805,7 +6965,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.2.16 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.3.1 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -7578,7 +7738,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.2.16] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.3.1] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.2.16] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.3.1] Loaded, but this executor does not expose queue_on_teleport")
 end
