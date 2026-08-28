@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.2.12
+--// Lucid Panel v5.2.13
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -351,7 +351,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.2.12",
+    Text                   = "LUCID PANEL  •  v5.2.13",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -3329,10 +3329,14 @@ local function initializePlayerESP()
     state.yellowHighlightApi.refresh=function()
         for _,player in ipairs(Players:GetPlayers()) do applyYellowHighlight(player) end
     end
+    state.yellowHighlightApi.setColor=function(value)
+        local clean=tostring(value or ""):gsub("#",""):upper()
+        if #clean~=6 or not tonumber(clean,16) then return false end
+        state.specialHighlightColor="#"..clean; specialColorBox.Text=state.specialHighlightColor
+        clearESP(); refreshESP(); state.yellowHighlightApi.refresh(); return true
+    end
     specialColorBox.FocusLost:Connect(function()
-        local clean=specialColorBox.Text:gsub("#",""):upper()
-        if #clean==6 and tonumber(clean,16) then state.specialHighlightColor="#"..clean end
-        specialColorBox.Text=state.specialHighlightColor; clearESP(); refreshESP(); state.yellowHighlightApi.refresh()
+        if not state.yellowHighlightApi.setColor(specialColorBox.Text) then specialColorBox.Text=state.specialHighlightColor end
     end)
     state.yellowHighlightApi.refreshColor=function() specialColorBox.Text=state.specialHighlightColor end
     local clearYellowButton=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(105,82,34),
@@ -3427,10 +3431,14 @@ local function initializePlayerESP()
         state.pinkHighlightApi.refresh=function()
             for _,player in ipairs(Players:GetPlayers()) do applyPinkHighlight(player) end
         end
+        state.pinkHighlightApi.setColor=function(value)
+            local clean=tostring(value or ""):gsub("#",""):upper()
+            if #clean~=6 or not tonumber(clean,16) then return false end
+            state.superSpecialHighlightColor="#"..clean; superColorBox.Text=state.superSpecialHighlightColor
+            clearESP(); refreshESP(); state.pinkHighlightApi.refresh(); return true
+        end
         superColorBox.FocusLost:Connect(function()
-            local clean=superColorBox.Text:gsub("#",""):upper()
-            if #clean==6 and tonumber(clean,16) then state.superSpecialHighlightColor="#"..clean end
-            superColorBox.Text=state.superSpecialHighlightColor; clearESP(); refreshESP(); state.pinkHighlightApi.refresh()
+            if not state.pinkHighlightApi.setColor(superColorBox.Text) then superColorBox.Text=state.superSpecialHighlightColor end
         end)
         state.pinkHighlightApi.refreshColor=function() superColorBox.Text=state.superSpecialHighlightColor end
         local clearPinkButton=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(120,65,92),
@@ -3512,10 +3520,14 @@ local function initializePlayerESP()
         state.blackHighlightApi.getNames=function() local names={}; for name in pairs(state.blackHighlightNames) do table.insert(names,name) end; return names end
         state.blackHighlightApi.setNames=setBlackNames
         state.blackHighlightApi.refresh=function() for _,player in ipairs(Players:GetPlayers()) do applyBlackHighlight(player) end end
+        state.blackHighlightApi.setColor=function(value)
+            local clean=tostring(value or ""):gsub("#",""):upper()
+            if #clean~=6 or not tonumber(clean,16) then return false end
+            state.exploiterHighlightColor="#"..clean; exploiterColorBox.Text=state.exploiterHighlightColor
+            clearESP(); refreshESP(); state.blackHighlightApi.refresh(); return true
+        end
         exploiterColorBox.FocusLost:Connect(function()
-            local clean=exploiterColorBox.Text:gsub("#",""):upper()
-            if #clean==6 and tonumber(clean,16) then state.exploiterHighlightColor="#"..clean end
-            exploiterColorBox.Text=state.exploiterHighlightColor; clearESP(); refreshESP(); state.blackHighlightApi.refresh()
+            if not state.blackHighlightApi.setColor(exploiterColorBox.Text) then exploiterColorBox.Text=state.exploiterHighlightColor end
         end)
         state.blackHighlightApi.refreshColor=function() exploiterColorBox.Text=state.exploiterHighlightColor end
         local clearBlackButton=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(105,35,52),BorderSizePixel=0,
@@ -6697,7 +6709,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.2.12 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.2.13 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -6886,6 +6898,7 @@ state.initializeCommandConsole=function()
     local function buildCommandCatalog()
         local catalog={
             {command="!eh <player>",description="Add a player to Exploiter highlights"},
+            {command="!ehc <#RRGGBB>",description="Set the Exploiter highlight color"},
             {command="!emote <animationId> [name]",description="Play an animation by asset ID"},
             {command="!fogend <value>",description="Set and lock the lighting FogEnd"},
             {command="!fov <20-120>",description="Set and lock the camera field of view"},
@@ -6899,10 +6912,12 @@ state.initializeCommandConsole=function()
             {command="!panel",description="Show or hide the main Lucid panel"},
             {command="!return",description="Return to the previous teleport position"},
             {command="!sh <player>",description="Add a player to Special highlights"},
+            {command="!shc <#RRGGBB>",description="Set the Special highlight color"},
             {command="!showwaypoints <on|off>",description="Show or hide waypoint markers"},
             {command="!stopemote",description="Stop current emote playback or sync"},
             {command="!stopsync",description="Stop player emote synchronization"},
             {command="!ssh <player>",description="Add a player to Super Special highlights"},
+            {command="!sshc <#RRGGBB>",description="Set the Super Special highlight color"},
             {command="!sync <player>",description="Synchronize with a player's current emote"},
             {command="!unloopgoto",description="Disable loop goto"},
             {command="!walkspeed <value>",description="Set and lock WalkSpeed"},
@@ -6981,6 +6996,13 @@ state.initializeCommandConsole=function()
         if api.setNames then api.setNames(names) end
         finish(true,player.Name.." added to "..label:upper().." highlights")
     end
+    local function setNamedHighlightColor(api,value,label)
+        if api.setColor and api.setColor(value) then
+            finish(true,label.." color set to "..tostring(value):upper())
+        else
+            finish(false,"Use: !"..label:lower().." <#RRGGBB>")
+        end
+    end
     local function runCommand(text)
         local raw=tostring(text or ""):match("^%s*(.-)%s*$"):gsub("^!","")
         local command,rest=raw:match("^(%S+)%s*(.-)%s*$")
@@ -7006,6 +7028,9 @@ state.initializeCommandConsole=function()
         elseif command=="sh" then addNamedHighlight(state.yellowHighlightApi,rest,"sh"); return
         elseif command=="ssh" then addNamedHighlight(state.pinkHighlightApi,rest,"ssh"); return
         elseif command=="eh" then addNamedHighlight(state.blackHighlightApi,rest,"eh"); return
+        elseif command=="shc" then setNamedHighlightColor(state.yellowHighlightApi,rest,"SHC"); return
+        elseif command=="sshc" then setNamedHighlightColor(state.pinkHighlightApi,rest,"SSHC"); return
+        elseif command=="ehc" then setNamedHighlightColor(state.blackHighlightApi,rest,"EHC"); return
         elseif command=="sync" then
             if rest=="" then finish(false,"Use: !sync <player>")
             else state.emoteCommandApi.setSyncName(rest); state.emoteCommandApi.beginSync(); finish(true,"Syncing with "..rest) end
@@ -7457,7 +7482,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.2.12] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.2.13] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.2.12] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.2.13] Loaded, but this executor does not expose queue_on_teleport")
 end
