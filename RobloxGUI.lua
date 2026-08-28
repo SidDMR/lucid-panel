@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.2.2
+--// Lucid Panel v5.2.4
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -351,7 +351,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.2.2",
+    Text                   = "LUCID PANEL  •  v5.2.4",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -763,6 +763,11 @@ state.initializeLucidDock=function()
                 end
             end
             if role and palette[role] then instance.BackgroundColor3=palette[role] end
+            if instance:IsA("TextBox") then
+                instance:SetAttribute("LucidThemeBackgroundRole","input")
+                instance.BackgroundColor3=Color3.fromRGB(18,18,22)
+                instance.BackgroundTransparency=0.05
+            end
             if instance:IsA("ScrollingFrame") then instance.ScrollBarImageColor3=palette.scrollbar or palette.accent end
             if instance:IsA("ImageButton") or instance:IsA("ImageLabel") then
                 instance:SetAttribute("LucidThemeIcon",true); instance.ImageColor3=palette.muted
@@ -783,8 +788,8 @@ state.initializeLucidDock=function()
                 if instance:IsA("TextBox") then
                     -- Inputs use neutral high-contrast colors regardless of
                     -- accent theme; tinted placeholders became hard to read.
-                    instance.TextColor3=Color3.fromRGB(255,255,255)
-                    instance.PlaceholderColor3=Color3.fromRGB(205,205,212)
+                    instance.TextColor3=Color3.fromRGB(240,240,244)
+                    instance.PlaceholderColor3=Color3.fromRGB(180,180,188)
                     instance.TextTransparency=0
                     instance.TextStrokeTransparency=1
                     instance.TextStrokeColor3=Color3.fromRGB(0,0,0)
@@ -794,6 +799,12 @@ state.initializeLucidDock=function()
                 end
             end
         elseif instance:IsA("UIStroke") then
+            if instance.Parent and instance.Parent:IsA("TextBox") then
+                instance:SetAttribute("LucidInputStroke",true)
+                instance.Color=Color3.fromRGB(52,52,60)
+                instance.Transparency=0.25
+                return
+            end
             local c=instance.Color
             local semantic=(c.R>c.G*1.5 and c.R>c.B*1.3) or (c.G>c.R*1.35 and c.G>c.B*1.1)
             if not semantic then instance:SetAttribute("LucidThemeStroke",true) end
@@ -954,10 +965,10 @@ end
 local function styledBox(parent, props)
     local palette=state.currentThemePalette
     local box = create("TextBox", {
-        BackgroundColor3       = palette and palette.surface or Color3.fromRGB(40, 38, 55),
-        BackgroundTransparency = 0.2,
-        TextColor3             = Color3.fromRGB(255,255,255),
-        PlaceholderColor3      = Color3.fromRGB(205,205,212),
+        BackgroundColor3       = Color3.fromRGB(18,18,22),
+        BackgroundTransparency = 0.05,
+        TextColor3             = Color3.fromRGB(240,240,244),
+        PlaceholderColor3      = Color3.fromRGB(180,180,188),
         TextSize               = 14,
         Font                   = Enum.Font.SourceSans,
         BorderSizePixel        = 0,
@@ -967,8 +978,10 @@ local function styledBox(parent, props)
     for k, v in pairs(props) do box[k] = v end
     -- Keep every writable field readable even if a caller supplies legacy
     -- violet styling or the active theme changes later.
-    box.TextColor3=Color3.fromRGB(255,255,255)
-    box.PlaceholderColor3=Color3.fromRGB(205,205,212)
+    box.BackgroundColor3=Color3.fromRGB(18,18,22)
+    box.BackgroundTransparency=0.05
+    box.TextColor3=Color3.fromRGB(240,240,244)
+    box.PlaceholderColor3=Color3.fromRGB(180,180,188)
     box.TextTransparency=0
     box.TextStrokeTransparency=1
     box.TextStrokeColor3=Color3.fromRGB(0,0,0)
@@ -976,9 +989,10 @@ local function styledBox(parent, props)
     box.TextSize=math.max(box.TextSize,14)
     box.Font=Enum.Font.SourceSans
     create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = box })
-    box:SetAttribute("LucidThemeBackgroundRole","surface")
+    box:SetAttribute("LucidThemeBackgroundRole","input")
     box:SetAttribute("LucidThemeTextRole","text")
-    create("UIStroke", { Color = palette and palette.accent or Color3.fromRGB(90, 60, 180), Thickness = 1, Parent = box })
+    local inputStroke=create("UIStroke", { Color=Color3.fromRGB(52,52,60),Transparency=0.25,Thickness=1,Parent=box })
+    inputStroke:SetAttribute("LucidInputStroke",true)
     return box
 end
 
@@ -4905,6 +4919,10 @@ state.initializePlayerEmoteBrowser=function()
         TextColor3=Color3.fromRGB(165,155,185),TextSize=10,Font=Enum.Font.Gotham,
         TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,
         LayoutOrder=nextOrder(),Parent=currentSection})
+    actionButton("Stop Current Emote",function(button)
+        stopEmote(); button.Text="Emote stopped"
+        task.delay(1,function() if button.Parent then button.Text="Stop Current Emote" end end)
+    end,Color3.fromRGB(85,48,62))
     local function findPlayer(query)
         query=tostring(query or ""):match("^%s*(.-)%s*$"):lower()
         if query=="" then return LocalPlayer end
@@ -6606,7 +6624,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.2.2 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.2.4 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -7347,7 +7365,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.2.2] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.2.4] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.2.2] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.2.4] Loaded, but this executor does not expose queue_on_teleport")
 end
