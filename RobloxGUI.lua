@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v4.6.2
+--// Lucid Panel v4.7.3
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -199,6 +199,8 @@ local state = {
     emoteStatePresets = {},
     emotePresetEnabled = false,
     lowPerformanceMode = false,
+    fpsCapEnabled      = true,
+    fpsCapValue        = 350,
     accentTheme       = "Violet",
     rendering3dDisabled = false,
     gotoOffsetX       = 3,
@@ -348,7 +350,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v4.6.2",
+    Text                   = ">>  Lucid Panel v4.7.3",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -741,7 +743,15 @@ state.initializeLucidDock=function()
                 if instance:IsA("ScrollingFrame") then instance.ScrollBarImageColor3=palette.accent end
                 if instance:IsA("TextLabel") or instance:IsA("TextButton") or instance:IsA("TextBox") then
                     local textRole=instance:GetAttribute("LucidThemeTextRole")
-                    if not textRole then
+                    local isInput=instance:IsA("TextBox")
+                    local isButton=instance:IsA("TextButton")
+                    if isInput or isButton then
+                        -- Interactive text must remain high contrast. Earlier
+                        -- theme inference could classify violet input text as
+                        -- muted, producing purple-on-purple labels.
+                        textRole="text"
+                        instance:SetAttribute("LucidThemeTextRole",textRole)
+                    elseif not textRole then
                         local c=instance.TextColor3
                         local semantic=(c.R>c.G*1.5 and c.R>c.B*1.3) or (c.G>c.R*1.35 and c.G>c.B*1.1)
                         if not semantic then
@@ -750,6 +760,10 @@ state.initializeLucidDock=function()
                         end
                     end
                     if textRole then instance.TextColor3=palette[textRole] end
+                    if isInput then
+                        instance.PlaceholderColor3=palette.muted
+                        instance.TextStrokeTransparency=1
+                    end
                 end
             elseif instance:IsA("UIStroke") then
                 local c=instance.Color
@@ -888,10 +902,12 @@ local function rowFrame(order, height)
 end
 
 local function styledBox(parent, props)
+    local palette=state.currentThemePalette
     local box = create("TextBox", {
-        BackgroundColor3       = Color3.fromRGB(40, 38, 55),
+        BackgroundColor3       = palette and palette.surface or Color3.fromRGB(40, 38, 55),
         BackgroundTransparency = 0.2,
-        TextColor3             = Color3.fromRGB(220, 220, 230),
+        TextColor3             = palette and palette.text or Color3.fromRGB(220, 220, 230),
+        PlaceholderColor3      = palette and palette.muted or Color3.fromRGB(160,150,180),
         TextSize               = 13,
         Font                   = Enum.Font.GothamSemibold,
         BorderSizePixel        = 0,
@@ -900,7 +916,9 @@ local function styledBox(parent, props)
     })
     for k, v in pairs(props) do box[k] = v end
     create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = box })
-    create("UIStroke", { Color = Color3.fromRGB(90, 60, 180), Thickness = 1, Parent = box })
+    box:SetAttribute("LucidThemeBackgroundRole","surface")
+    box:SetAttribute("LucidThemeTextRole","text")
+    create("UIStroke", { Color = palette and palette.accent or Color3.fromRGB(90, 60, 180), Thickness = 1, Parent = box })
     return box
 end
 
@@ -1293,6 +1311,51 @@ state.initializeAccentThemeControls=function()
     state.applyAccentTheme(state.accentTheme)
 end
 state.initializeAccentThemeControls()
+
+sectionLabel("Frame Rate",nextOrder())
+state.initializeFPSUnlock=function()
+    local row=rowFrame(nextOrder(),30)
+    create("TextLabel",{Size=UDim2.new(1,-80,1,0),BackgroundTransparency=1,Text="FPS limit",
+        TextColor3=state.currentThemePalette and state.currentThemePalette.text or Color3.fromRGB(210,205,225),
+        TextSize=11,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=row})
+    local box=styledBox(row,{Size=UDim2.new(0,72,0,25),Position=UDim2.new(1,-72,0.5,-12),Text=tostring(state.fpsCapValue)})
+    local status=create("TextLabel",{Size=UDim2.new(1,0,0,22),BackgroundTransparency=1,
+        Text="FPS cap ready",TextColor3=Color3.fromRGB(145,190,160),TextSize=10,
+        Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=nextOrder(),Parent=currentSection})
+    local function getSetter()
+        local environment=(getgenv and getgenv()) or _G
+        return environment.setfpscap or environment.set_fps_cap or environment.set_fpscap
+    end
+    local function applyCap(value)
+        local setter=getSetter()
+        if type(setter)~="function" then
+            status.Text="FPS unlock unavailable in this executor"
+            status.TextColor3=Color3.fromRGB(230,105,115)
+            return false
+        end
+        local ok,err=pcall(setter,value)
+        status.Text=ok and (value==240 and "Roblox 240 FPS cap restored" or ("FPS cap set to "..value))
+            or ("FPS cap failed: "..tostring(err))
+        status.TextColor3=ok and Color3.fromRGB(90,220,135) or Color3.fromRGB(230,105,115)
+        return ok
+    end
+    local function readValue()
+        state.fpsCapValue=math.clamp(math.floor((tonumber(box.Text) or state.fpsCapValue)+0.5),30,1000)
+        box.Text=tostring(state.fpsCapValue)
+        if state.fpsCapEnabled then applyCap(state.fpsCapValue) end
+    end
+    box.FocusLost:Connect(readValue)
+    local _,_,setter=createToggle("FPS Unlock / Custom Cap",nextOrder(),true,function(on)
+        state.fpsCapEnabled=on
+        if on then readValue() else applyCap(240) end
+    end)
+    state.setFPSCapEnabled=setter
+    -- Apply the default immediately; createToggle reflects its default visually
+    -- but intentionally does not invoke callbacks during construction.
+    setter(true)
+    addCleanup(function() if state.fpsCapEnabled then applyCap(240) end end)
+end
+state.initializeFPSUnlock()
 
 -- IY Anti-Lag, made reversible. We disable effects rather than deleting them
 -- and retain only the original properties required for restoration.
@@ -4312,9 +4375,9 @@ end)
 useCategory("Emotes")
 state.emoteModuleTabs={root=currentSection}
 state.emoteModuleTabs.row=rowFrame(nextOrder(),30)
-local emoteTabNames={"All","Favs","Custom","States","Presets"}
+local emoteTabNames={"All","Favs","Player","Custom","States","Presets"}
 for index,name in ipairs(emoteTabNames) do
-    local button=create("TextButton",{Size=UDim2.new(0.192,0,0,28),Position=UDim2.new((index-1)*0.202,0,0,0),
+    local button=create("TextButton",{Size=UDim2.new(0.158,0,0,28),Position=UDim2.new((index-1)*0.168,0,0,0),
         BackgroundColor3=index==1 and Color3.fromRGB(78,55,135) or Color3.fromRGB(48,43,65),BorderSizePixel=0,
         Text=name,TextColor3=Color3.fromRGB(235,230,245),TextSize=10,Font=Enum.Font.GothamSemibold,Parent=state.emoteModuleTabs.row})
     create("UICorner",{CornerRadius=UDim.new(0,6),Parent=button}); state.emoteModuleTabs[name.."Button"]=button
@@ -4325,17 +4388,18 @@ state.emoteModuleTabs.main=create("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize
     BackgroundTransparency=1,Visible=true,LayoutOrder=nextOrder(),Parent=state.emoteModuleTabs.root})
 state.emoteModuleTabs.favorites=create("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
     BackgroundTransparency=1,Visible=false,LayoutOrder=nextOrder(),Parent=state.emoteModuleTabs.root})
-for _,name in ipairs({"custom","states","presets","legacy"}) do
+for _,name in ipairs({"player","custom","states","presets","legacy"}) do
     state.emoteModuleTabs[name]=create("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
         BackgroundTransparency=1,Visible=false,LayoutOrder=nextOrder(),Parent=state.emoteModuleTabs.root})
 end
 state.emoteModuleTabs.new=state.emoteModuleTabs.legacy
 create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6),Parent=state.emoteModuleTabs.main})
 create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6),Parent=state.emoteModuleTabs.favorites})
-for _,name in ipairs({"custom","states","presets","legacy"}) do create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6),Parent=state.emoteModuleTabs[name]}) end
+for _,name in ipairs({"player","custom","states","presets","legacy"}) do create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6),Parent=state.emoteModuleTabs[name]}) end
 state.emoteModuleTabs.set=function(tab)
     state.emoteModuleTabs.active=tab
     state.emoteModuleTabs.main.Visible=tab=="All"; state.emoteModuleTabs.favorites.Visible=tab=="Favs"
+    state.emoteModuleTabs.player.Visible=tab=="Player"
     state.emoteModuleTabs.custom.Visible=tab=="Custom"; state.emoteModuleTabs.states.Visible=tab=="States"
     state.emoteModuleTabs.presets.Visible=tab=="Presets"; state.emoteModuleTabs.legacy.Visible=tab=="Legacy"
     for _,name in ipairs(emoteTabNames) do state.emoteModuleTabs[name.."Button"].BackgroundColor3=tab==name and Color3.fromRGB(78,55,135) or Color3.fromRGB(48,43,65) end
@@ -4688,11 +4752,12 @@ local function clearEmoteResults()
     for _,child in ipairs(emoteResults:GetChildren()) do if child:IsA("GuiObject") then child:Destroy() end end
 end
 local loadEmoteResults
-local function createEmoteResult(id,name)
+local function createEmoteResult(id,name,badge)
     local row=create("Frame",{Size=UDim2.new(1,-4,0,30),BackgroundTransparency=1,Parent=emoteResults})
     local unavailable=state.unavailableEmoteIds[tostring(id)]==true
     local button=create("TextButton",{Size=UDim2.new(1,-36,0,28),BackgroundColor3=Color3.fromRGB(45,40,62),
-        BorderSizePixel=0,Text=unavailable and ("Unavailable — "..name) or (state.emoteAliases[tostring(id)] or name),
+        BorderSizePixel=0,Text=unavailable and ("Unavailable — "..name)
+            or ((badge and (badge.."  ") or "")..(state.emoteAliases[tostring(id)] or name)),
         TextColor3=unavailable and Color3.fromRGB(220,120,135) or Color3.fromRGB(230,225,240),TextSize=11,
         Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=row})
     create("UIPadding",{PaddingLeft=UDim.new(0,8),Parent=button})
@@ -4720,6 +4785,121 @@ local function createEmoteResult(id,name)
         if emoteView=="favorites" then row:Destroy() end
     end)
 end
+
+-- Browse emotes belonging to any player currently in this server. Equipped
+-- emotes come from HumanoidDescription; unequipped ownership is supplemented
+-- from the public Roblox inventory API when the player's inventory is open.
+state.initializePlayerEmoteBrowser=function()
+    local previousSection=currentSection
+    currentSection=state.emoteModuleTabs.player
+    sectionLabel("Player Emote Library",nextOrder())
+    local playerRow=rowFrame(nextOrder(),30)
+    local playerBox=styledBox(playerRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="In-game username/display name"})
+    local loadButton=create("TextButton",{Size=UDim2.new(0,64,0,26),Position=UDim2.new(1,-64,0,0),
+        BackgroundColor3=Color3.fromRGB(58,120,88),BorderSizePixel=0,Text="Load",
+        TextColor3=Color3.new(1,1,1),TextSize=10,Font=Enum.Font.GothamSemibold,Parent=playerRow})
+    create("UICorner",{CornerRadius=UDim.new(0,6),Parent=loadButton})
+    local filterRow=rowFrame(nextOrder(),30)
+    local filterBox=styledBox(filterRow,{Size=UDim2.new(1,0,0,26),Text="",PlaceholderText="Filter this player's emotes..."})
+    local status=create("TextLabel",{Size=UDim2.new(1,0,0,36),BackgroundTransparency=1,
+        Text="Enter yourself or another player currently in this server.",TextWrapped=true,
+        TextColor3=Color3.fromRGB(165,155,185),TextSize=10,Font=Enum.Font.Gotham,
+        TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,
+        LayoutOrder=nextOrder(),Parent=currentSection})
+    local function findPlayer(query)
+        query=tostring(query or ""):match("^%s*(.-)%s*$"):lower()
+        if query=="" then return LocalPlayer end
+        for _,player in ipairs(Players:GetPlayers()) do
+            if player.Name:lower()==query or player.DisplayName:lower()==query then return player end
+        end
+        for _,player in ipairs(Players:GetPlayers()) do
+            if player.Name:lower():sub(1,#query)==query or player.DisplayName:lower():sub(1,#query)==query then return player end
+        end
+    end
+    local function renderPlayerEmotes()
+        emoteView="player"; clearEmoteResults(); emoteResults.Parent=state.emoteModuleTabs.player
+        local query=filterBox.Text:match("^%s*(.-)%s*$"):lower()
+        local shown=0
+        for _,item in ipairs(state.playerEmoteBrowserResults or {}) do
+            if query=="" or item.name:lower():find(query,1,true) then
+                createEmoteResult(item.id,item.name,item.equipped and "[Equipped]" or "[Owned]")
+                shown=shown+1
+            end
+        end
+        if shown==0 and state.playerEmoteBrowserResults then status.Text="No emotes match this filter." end
+    end
+    local function loadPlayerEmotes()
+        local player=findPlayer(playerBox.Text)
+        if not player then status.Text="Player not found in this server."; return end
+        playerBox.Text=player.Name; loadButton.Text="Loading..."; status.Text="Loading "..player.Name.."'s emotes..."
+        task.spawn(function()
+            local results={}
+            local byId={}
+            local equippedNames={}
+            local descriptionOk,description=pcall(function()
+                return Players:GetHumanoidDescriptionFromUserIdAsync(player.UserId)
+            end)
+            if descriptionOk and description then
+                pcall(function()
+                    for _,entry in ipairs(description:GetEquippedEmotes()) do equippedNames[tostring(entry.Name):lower()]=true end
+                    for emoteName,ids in pairs(description:GetEmotes()) do
+                        for _,id in ipairs(ids) do
+                            local key=tostring(id)
+                            if not byId[key] then
+                                local item={id=id,name=tostring(emoteName),equipped=equippedNames[tostring(emoteName):lower()]==true}
+                                byId[key]=item; table.insert(results,item)
+                            end
+                        end
+                    end
+                end)
+            end
+            local inventoryOpen=true
+            local cursor=nil
+            local pages=0
+            repeat
+                pages=pages+1
+                local url="https://inventory.roblox.com/v2/users/"..player.UserId.."/inventory/61?limit=100&sortOrder=Asc"
+                if cursor then url=url.."&cursor="..HttpService:UrlEncode(cursor) end
+                local ok,body=pcall(function() return game:HttpGet(url,true) end)
+                if not ok or type(body)~="string" or body:sub(1,1)~="{" then inventoryOpen=false; break end
+                local decodedOk,decoded=pcall(function() return HttpService:JSONDecode(body) end)
+                if not decodedOk or type(decoded)~="table" then inventoryOpen=false; break end
+                for _,entry in ipairs(decoded.data or {}) do
+                    local id=entry.assetId or entry.AssetId or (type(entry.asset)=="table" and (entry.asset.id or entry.asset.assetId))
+                    if id and not byId[tostring(id)] then
+                        local item={id=id,name=tostring(entry.name or entry.Name or (type(entry.asset)=="table" and entry.asset.name) or ("Emote "..id)),equipped=false}
+                        byId[tostring(id)]=item; table.insert(results,item)
+                    end
+                end
+                cursor=decoded.nextPageCursor
+            until not cursor or cursor=="" or pages>=20
+            table.sort(results,function(a,b)
+                if a.equipped~=b.equipped then return a.equipped end
+                return a.name:lower()<b.name:lower()
+            end)
+            state.playerEmoteBrowserResults=results
+            local equippedCount=0
+            for _,item in ipairs(results) do if item.equipped then equippedCount=equippedCount+1 end end
+            local ownedCount=#results-equippedCount
+            loadButton.Text="Load"
+            status.Text=string.format("%s — %d equipped, %d unequipped%s",player.Name,equippedCount,ownedCount,
+                inventoryOpen and "" or " | inventory private/unavailable")
+            renderPlayerEmotes()
+        end)
+    end
+    state.emoteModuleTabs.PlayerButton.MouseButton1Click:Connect(function()
+        state.emoteModuleTabs.set("Player"); emoteResults.Parent=state.emoteModuleTabs.player
+        if state.playerEmoteBrowserResults then renderPlayerEmotes() end
+    end)
+    loadButton.MouseButton1Click:Connect(loadPlayerEmotes)
+    playerBox.FocusLost:Connect(function(enterPressed) if enterPressed then loadPlayerEmotes() end end)
+    filterBox:GetPropertyChangedSignal("Text"):Connect(function()
+        if state.emoteModuleTabs.active=="Player" and state.playerEmoteBrowserResults then renderPlayerEmotes() end
+    end)
+    currentSection=previousSection
+end
+state.initializePlayerEmoteBrowser()
+
 local function showFavoriteEmotes()
     emoteView="favorites"; clearEmoteResults()
     state.emoteModuleTabs.set("Favs"); emoteResults.Parent=state.emoteModuleTabs.favorites
@@ -6325,7 +6505,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v4.6.2 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v4.7.3 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -6857,7 +7037,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v4.6.2] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v4.7.3] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v4.6.2] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v4.7.3] Loaded, but this executor does not expose queue_on_teleport")
 end
