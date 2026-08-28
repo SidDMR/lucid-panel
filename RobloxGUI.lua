@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.2.9
+--// Lucid Panel v5.2.11
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -351,7 +351,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.2.9",
+    Text                   = "LUCID PANEL  •  v5.2.11",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -1120,26 +1120,29 @@ local registerFavorite = (function()
             if favoriteCheck then favoriteCheck.Visible=enabled==true end
         end
         favoriteStatusRegistry[label]=refreshFavoriteCheck
-        local measuredText=displayedLabel or label
-        local measuredWidth=#measuredText*6.3
-        pcall(function()
-            measuredWidth=game:GetService("TextService"):GetTextSize(measuredText,12,Enum.Font.GothamSemibold,Vector2.new(1000,24)).X
-        end)
         local starParent=sourceControl or sourceRow
-        local starPosition
-        if sourceControl then
-            starPosition=UDim2.new(0.5,measuredWidth/2+2,0.5,-12)
-        else
-            local starX=sourceRow:GetAttribute("LucidFavoriteStarX")
-            if type(starX)~="number" then starX=math.min(190,8+measuredWidth) end
-            starPosition=UDim2.new(0,starX,0.5,-12)
-        end
         local star=create("TextButton", {
-            Size=UDim2.new(0,24,0,24), Position=starPosition,
+            Size=UDim2.new(0,24,0,24), Position=UDim2.new(0,0,0.5,-12),
             BackgroundTransparency=1, BorderSizePixel=0, Text="☆",
             TextColor3=Color3.fromRGB(145,135,165), TextSize=18,
             Font=Enum.Font.GothamBold, ZIndex=8, Parent=starParent,
         })
+        local function refreshStarPosition()
+            local measuredText=displayedLabel or (sourceControl and sourceControl.Text) or label
+            local measuredWidth=#measuredText*6.3
+            pcall(function()
+                measuredWidth=game:GetService("TextService"):GetTextSize(measuredText,12,Enum.Font.GothamSemibold,Vector2.new(1000,24)).X
+            end)
+            if sourceControl then
+                star.Position=UDim2.new(0.5,measuredWidth/2+2,0.5,-12)
+            else
+                local starX=sourceRow:GetAttribute("LucidFavoriteStarX")
+                if type(starX)~="number" then starX=math.min(190,8+measuredWidth) end
+                star.Position=UDim2.new(0,starX,0.5,-12)
+            end
+        end
+        refreshStarPosition()
+        if sourceControl then track(sourceControl:GetPropertyChangedSignal("Text"):Connect(refreshStarPosition)) end
         local function setStar(value)
             if starred==value then return end
             starred=not starred
@@ -2788,7 +2791,7 @@ local function goToRequestedPlayer()
 end
 
 gotoBtn.MouseButton1Click:Connect(goToRequestedPlayer)
-registerFavorite("Go To Player", goToRequestedPlayer, gotoRow)
+registerFavorite("Go To Player",goToRequestedPlayer,gotoRow,gotoBtn,"Go To")
 gotoBox.FocusLost:Connect(function(enterPressed)
     if enterPressed then goToRequestedPlayer() end
 end)
@@ -3815,6 +3818,16 @@ local function actionButton(textValue, callback, color)
         BorderSizePixel = 0, Text = textValue, TextColor3 = Color3.fromRGB(235, 230, 245),
         TextSize = 12, Font = Enum.Font.GothamSemibold, Parent = row,
     })
+    local function resizeForCurrentText()
+        local width=math.min(260,math.max(64,52+#button.Text*6.6))
+        pcall(function()
+            width=math.min(260,math.max(64,52+game:GetService("TextService"):GetTextSize(
+                button.Text,button.TextSize,button.Font,Vector2.new(1000,28)).X))
+        end)
+        button.Size=UDim2.new(0,width,0,28); button.Position=UDim2.new(0.5,-width/2,0,0)
+    end
+    resizeForCurrentText()
+    track(button:GetPropertyChangedSignal("Text"):Connect(resizeForCurrentText))
     create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = button })
     local function runAction() callback(button) end
     button.MouseButton1Click:Connect(runAction)
@@ -5849,6 +5862,7 @@ actionButton("Save Named Profile", function(button)
     task.delay(1.5,function() if button.Parent then button.Text="Save Named Profile" end end)
 end)
 loadNamedProfile = function(button)
+    local originalButtonText=button.Text
     local profilePath=getProfilePath()
     if not readfile then button.Text="File API unavailable"; return end
     local function decodeProfile(path)
@@ -5996,6 +6010,9 @@ loadNamedProfile = function(button)
     button.Text="Profile loaded — settings restored"
     notifyLucid(recovered and "Profile recovered from backup" or "Profile loaded",profileNameBox.Text,
         recovered and Color3.fromRGB(235,175,70) or Color3.fromRGB(75,210,120))
+    task.delay(1.5,function()
+        if button.Parent and button.Text=="Profile loaded — settings restored" then button.Text=originalButtonText end
+    end)
 end
 local loadProfileButton=actionButton("Load Named Profile", function(button) loadNamedProfile(button) end)
 loadProfileButton.Name="LoadNamedProfileButton"
@@ -6680,7 +6697,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.2.9 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.2.11 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -7421,7 +7438,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.2.9] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.2.11] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.2.9] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.2.11] Loaded, but this executor does not expose queue_on_teleport")
 end
