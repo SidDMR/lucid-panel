@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.2.11
+--// Lucid Panel v5.2.12
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -351,7 +351,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.2.11",
+    Text                   = "LUCID PANEL  •  v5.2.12",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -6697,7 +6697,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.2.11 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.2.12 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -6885,6 +6885,7 @@ state.initializeCommandConsole=function()
     local function normalize(value) return tostring(value or ""):lower():gsub("%b()",""):gsub("[^%w]","") end
     local function buildCommandCatalog()
         local catalog={
+            {command="!eh <player>",description="Add a player to Exploiter highlights"},
             {command="!emote <animationId> [name]",description="Play an animation by asset ID"},
             {command="!fogend <value>",description="Set and lock the lighting FogEnd"},
             {command="!fov <20-120>",description="Set and lock the camera field of view"},
@@ -6897,9 +6898,11 @@ state.initializeCommandConsole=function()
             {command="!open <section>",description="Open Home, Player, World, Tools or Settings"},
             {command="!panel",description="Show or hide the main Lucid panel"},
             {command="!return",description="Return to the previous teleport position"},
+            {command="!sh <player>",description="Add a player to Special highlights"},
             {command="!showwaypoints <on|off>",description="Show or hide waypoint markers"},
             {command="!stopemote",description="Stop current emote playback or sync"},
             {command="!stopsync",description="Stop player emote synchronization"},
+            {command="!ssh <player>",description="Add a player to Super Special highlights"},
             {command="!sync <player>",description="Synchronize with a player's current emote"},
             {command="!unloopgoto",description="Disable loop goto"},
             {command="!walkspeed <value>",description="Set and lock WalkSpeed"},
@@ -6965,6 +6968,19 @@ state.initializeCommandConsole=function()
         status.Text=tostring(message or (ok and "Command complete" or "Command failed"))
         status.TextColor3=ok and Color3.fromRGB(105,220,145) or Color3.fromRGB(235,105,115)
     end
+    local function addNamedHighlight(api,query,label)
+        query=tostring(query or ""):match("^%s*(.-)%s*$")
+        if query=="" then finish(false,"Use: !"..label.." <player>"); return end
+        local player=state.gotoApi.find(query)
+        if not player then finish(false,"Player not found: "..query); return end
+        local names=api.getNames and api.getNames() or {}
+        for _,name in ipairs(names) do
+            if name==player.Name then finish(true,player.Name.." is already highlighted"); return end
+        end
+        table.insert(names,player.Name)
+        if api.setNames then api.setNames(names) end
+        finish(true,player.Name.." added to "..label:upper().." highlights")
+    end
     local function runCommand(text)
         local raw=tostring(text or ""):match("^%s*(.-)%s*$"):gsub("^!","")
         local command,rest=raw:match("^(%S+)%s*(.-)%s*$")
@@ -6987,6 +7003,9 @@ state.initializeCommandConsole=function()
             return
         elseif command=="unloopgoto" or command=="stopgoto" then state.gotoApi.setLoop(nil,false); finish(true,"Loop goto disabled"); return
         elseif command=="return" or command=="returnposition" then state.gotoApi.returnPrevious(); finish(true,"Returned to previous position"); return
+        elseif command=="sh" then addNamedHighlight(state.yellowHighlightApi,rest,"sh"); return
+        elseif command=="ssh" then addNamedHighlight(state.pinkHighlightApi,rest,"ssh"); return
+        elseif command=="eh" then addNamedHighlight(state.blackHighlightApi,rest,"eh"); return
         elseif command=="sync" then
             if rest=="" then finish(false,"Use: !sync <player>")
             else state.emoteCommandApi.setSyncName(rest); state.emoteCommandApi.beginSync(); finish(true,"Syncing with "..rest) end
@@ -7438,7 +7457,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.2.11] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.2.12] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.2.11] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.2.12] Loaded, but this executor does not expose queue_on_teleport")
 end
