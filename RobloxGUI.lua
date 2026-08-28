@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.2.8
+--// Lucid Panel v5.2.9
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -351,7 +351,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.2.8",
+    Text                   = "LUCID PANEL  •  v5.2.9",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -5073,13 +5073,20 @@ local function showFavoriteEmotes()
     browseEmotesButton.BackgroundColor3=Color3.fromRGB(48,43,65)
     favoriteEmotesButton.BackgroundColor3=Color3.fromRGB(78,55,135)
     local favorites={}
-    local query=tostring(state.emoteFavoriteQuery or ""):lower()
+    local query=tostring(state.emoteFavoriteQuery or ""):match("^%s*(.-)%s*$"):lower()
     for id,info in pairs(state.emoteFavorites or {}) do
-        local shown=tostring(state.emoteAliases[tostring(id)] or info.name)
-        if query=="" or shown:lower():find(query,1,true) or tostring(info.name):lower():find(query,1,true) then table.insert(favorites,info) end
+        if type(info)=="table" then
+            local normalizedId=tostring(info.id or id)
+            local originalName=tostring(info.name or ("Emote "..normalizedId))
+            local shown=tostring(state.emoteAliases[normalizedId] or originalName)
+            if query=="" or shown:lower():find(query,1,true) or originalName:lower():find(query,1,true) then
+                table.insert(favorites,{id=normalizedId,name=originalName,sortName=shown:lower()})
+            end
+        end
     end
     table.sort(favorites,function(a,b)
-        return tostring(state.emoteAliases[tostring(a.id)] or a.name):lower()<tostring(state.emoteAliases[tostring(b.id)] or b.name):lower()
+        if a.sortName==b.sortName then return tostring(a.id)<tostring(b.id) end
+        return a.sortName<b.sortName
     end)
     for _,info in ipairs(favorites) do createEmoteResult(info.id,info.name) end
     emoteStatus.Text=#favorites>0 and ("Favorite emotes: "..#favorites) or "No favorite emotes yet"
@@ -6673,7 +6680,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.2.8 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.2.9 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -7414,7 +7421,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.2.8] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.2.9] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.2.8] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.2.9] Loaded, but this executor does not expose queue_on_teleport")
 end
