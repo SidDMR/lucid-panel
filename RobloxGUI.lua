@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.3.3
+--// Lucid Panel v5.3.4
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -353,7 +353,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.3.3",
+    Text                   = "LUCID PANEL  •  v5.3.4",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -4719,32 +4719,120 @@ local function mergeLegacyEmoteFavorites(legacyFavorites)
 end
 loadGlobalEmoteFavorites()
 state.initializeCustomKeyframeEngine=function()
-    local bindingName="LucidCustomKeyframes"
+    local animationBinding="LucidCustomKeyframes"
+    local rigBinding="LucidLocalReanimationRig"
     local activeMotors={}
-    local animateOriginals={}
+    local hiddenOriginals={}
+    local reanimationRig,reanimationCharacter
     local active=false
-    local function stop()
-        active=false; RunService:UnbindFromRenderStep(bindingName)
-        for motor in pairs(activeMotors) do if motor and motor.Parent then motor.Transform=CFrame.new() end end
+    local buildGeneration=0
+    local function stopAnimation()
+        active=false; RunService:UnbindFromRenderStep(animationBinding)
+        for motor in pairs(activeMotors) do
+            if motor and motor.Parent then pcall(function() motor.Transform=CFrame.new() end) end
+        end
         table.clear(activeMotors)
     end
+    local function restoreOriginalVisibility()
+        for part,transparency in pairs(hiddenOriginals) do
+            if part and part.Parent then pcall(function() part.LocalTransparencyModifier=transparency end) end
+        end
+        table.clear(hiddenOriginals)
+    end
+    local function destroyRig()
+        buildGeneration+=1
+        stopAnimation(); RunService:UnbindFromRenderStep(rigBinding)
+        if reanimationRig then pcall(function() reanimationRig:Destroy() end) end
+        reanimationRig=nil; reanimationCharacter=nil
+        restoreOriginalVisibility()
+    end
+    local function createRig(character)
+        destroyRig()
+        if not state.customReanimationEnabled then return false,"Local reanimation was cancelled" end
+        character=character or LocalPlayer.Character
+        if not character or not character.Parent then return false,"Character is not loaded" end
+        local originalRoot=character:FindFirstChild("HumanoidRootPart") or character:WaitForChild("HumanoidRootPart",3)
+        local originalHumanoid=character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid",3)
+        if not originalRoot or not originalRoot:IsA("BasePart") then return false,"HumanoidRootPart is missing" end
+        if not originalHumanoid or originalHumanoid.Health<=0 then return false,"Humanoid is unavailable or dead" end
+        local oldArchivable=character.Archivable
+        character.Archivable=true
+        local cloned,cloneResult=pcall(function() return character:Clone() end)
+        character.Archivable=oldArchivable
+        if not cloned or not cloneResult then return false,"Character clone failed: "..tostring(cloneResult) end
+        local rig=cloneResult
+        local cloneRoot=rig:FindFirstChild("HumanoidRootPart")
+        local cloneHumanoid=rig:FindFirstChildOfClass("Humanoid")
+        if not cloneRoot or not cloneHumanoid then rig:Destroy(); return false,"Clone validation failed: root or humanoid missing" end
+        local motorCount,accessoryCount=0,0
+        for _,item in ipairs(rig:GetDescendants()) do
+            if item:IsA("Motor6D") and item.Part1 then motorCount+=1
+            elseif item:IsA("Accessory") then accessoryCount+=1
+            elseif item:IsA("Script") or item:IsA("LocalScript") or item:IsA("Animator")
+                or item:IsA("Tool") or item:IsA("ForceField") then item:Destroy()
+            elseif item:IsA("BasePart") then
+                item.CanCollide=false; item.CanTouch=false; item.CanQuery=false; item.Massless=true
+                item.Anchored=false
+            end
+        end
+        if motorCount<1 then rig:Destroy(); return false,"Clone validation failed: no Motor6D joints" end
+        rig.Name="LucidReanimationRig"
+        cloneRoot.Anchored=true; cloneRoot.Transparency=1
+        pcall(function()
+            cloneHumanoid.AutoRotate=false
+            cloneHumanoid.PlatformStand=true
+            cloneHumanoid.DisplayDistanceType=Enum.HumanoidDisplayDistanceType.None
+            cloneHumanoid.BreakJointsOnDeath=false
+        end)
+        local positioned,positionError=pcall(function() rig:PivotTo(character:GetPivot()) end)
+        if not positioned then rig:Destroy(); return false,"Clone positioning failed: "..tostring(positionError) end
+        rig.Parent=workspace
+        reanimationRig=rig; reanimationCharacter=character
+        for _,item in ipairs(character:GetDescendants()) do
+            if item:IsA("BasePart") and not item:FindFirstAncestorOfClass("Tool") then
+                hiddenOriginals[item]=item.LocalTransparencyModifier
+                item.LocalTransparencyModifier=1
+            end
+        end
+        local generation=buildGeneration
+        RunService:BindToRenderStep(rigBinding,Enum.RenderPriority.Character.Value,function()
+            if generation~=buildGeneration then return end
+            if not state.customReanimationEnabled or reanimationRig~=rig or not rig.Parent
+                or reanimationCharacter~=character or not character.Parent or not originalRoot.Parent then
+                task.defer(function() if generation==buildGeneration then destroyRig() end end); return
+            end
+            cloneRoot.CFrame=originalRoot.CFrame
+            cloneRoot.AssemblyLinearVelocity=Vector3.zero; cloneRoot.AssemblyAngularVelocity=Vector3.zero
+            for part in pairs(hiddenOriginals) do
+                if part and part.Parent then part.LocalTransparencyModifier=1 end
+            end
+        end)
+        local status="Ready — clone rig: "..motorCount.." joints, "..accessoryCount.." accessories"
+        state.customReanimationStatus=status
+        return true,status
+    end
     local function play(sequence,speedProvider,reverseProvider)
-        stop()
+        stopAnimation()
         if not state.customReanimationEnabled then return false,"Enable Local Reanimation first" end
         local frames=sequence and sequence.KeyframeSequence
         if type(frames)~="table" or #frames<1 then return false,"No keyframes found" end
         table.sort(frames,function(a,b) return a.Time<b.Time end)
-        local character=LocalPlayer.Character
-        if not character then return false,"Character unavailable" end
+        local rig=reanimationRig
+        if not rig or not rig.Parent then return false,"Reanimation rig is not ready — toggle it off and on" end
         local motorsByPart={}
-        for _,item in ipairs(character:GetDescendants()) do
+        for _,item in ipairs(rig:GetDescendants()) do
             if item:IsA("Motor6D") and item.Part1 then motorsByPart[item.Part1.Name]=item end
         end
+        local matchedMotors=0
+        for partName in pairs(frames[1].Data or {}) do
+            if motorsByPart[partName] then matchedMotors+=1 end
+        end
+        if matchedMotors<1 then return false,"No animation joints match this avatar — an R15 character is required" end
         local duration=math.max(tonumber(frames[#frames].Time) or 0,0.001)
         local position=reverseProvider and reverseProvider() and duration or 0
         active=true
-        RunService:BindToRenderStep(bindingName,Enum.RenderPriority.Character.Value+1,function(dt)
-            if not active or not character.Parent then stop(); return end
+        RunService:BindToRenderStep(animationBinding,Enum.RenderPriority.Character.Value+1,function(dt)
+            if not active or reanimationRig~=rig or not rig.Parent then stopAnimation(); return end
             local speed=math.clamp(tonumber(speedProvider()) or 1,0,15)
             local direction=reverseProvider and reverseProvider() and -1 or 1
             position=(position+dt*speed*direction)%duration
@@ -4767,35 +4855,36 @@ state.initializeCustomKeyframeEngine=function()
                 end
             end
         end)
-        return true
-    end
-    local function applyReanimation(character)
-        if not state.customReanimationEnabled or not character then return end
-        local animate=character:FindFirstChild("Animate") or character:WaitForChild("Animate",3)
-        if animate and animate:IsA("LocalScript") then
-            if animateOriginals[animate]==nil then animateOriginals[animate]=animate.Disabled end
-            animate.Disabled=true
-        end
-        local humanoid=character:FindFirstChildOfClass("Humanoid")
-        local animator=humanoid and humanoid:FindFirstChildOfClass("Animator")
-        if animator then for _,trackItem in ipairs(animator:GetPlayingAnimationTracks()) do pcall(function() trackItem:Stop(0.1) end) end end
+        return true,"Custom animation playing — "..matchedMotors.." joints"
     end
     local function setReanimation(value)
         state.customReanimationEnabled=value==true
-        if state.customReanimationEnabled then task.spawn(applyReanimation,LocalPlayer.Character)
-        else
-            stop()
-            for animate,disabled in pairs(animateOriginals) do
-                if animate and animate.Parent then animate.Disabled=disabled end
-                animateOriginals[animate]=nil
-            end
+        if not state.customReanimationEnabled then
+            destroyRig(); state.customReanimationStatus="Local reanimation disabled"
+            return true,state.customReanimationStatus
         end
+        local ok,message=createRig(LocalPlayer.Character)
+        if not ok then
+            state.customReanimationEnabled=false; destroyRig()
+            state.customReanimationStatus="FAILED — "..tostring(message)
+            return false,state.customReanimationStatus
+        end
+        return true,message
     end
     track(LocalPlayer.CharacterAdded:Connect(function(character)
-        if state.customReanimationEnabled then task.spawn(applyReanimation,character) end
+        if state.customReanimationEnabled then
+            task.delay(0.5,function()
+                if state.customReanimationEnabled and LocalPlayer.Character==character then createRig(character) end
+            end)
+        end
     end))
-    state.customKeyframeApi={play=play,stop=stop,setReanimation=setReanimation,
-        isReanimation=function() return state.customReanimationEnabled end}
+    track(LocalPlayer.CharacterAppearanceLoaded:Connect(function(character)
+        if state.customReanimationEnabled and LocalPlayer.Character==character then task.defer(createRig,character) end
+    end))
+    state.customKeyframeApi={play=play,stop=stopAnimation,setReanimation=setReanimation,
+        isReanimation=function() return state.customReanimationEnabled end,
+        getRig=function() return reanimationRig end,
+        getStatus=function() return state.customReanimationStatus end}
     addCleanup(function() setReanimation(false) end)
 end
 state.decodeCustomKeyframeCode=function(source)
@@ -5479,8 +5568,16 @@ state.initializeEmoteStudio=function(api)
     -- CUSTOM
     currentSection=state.emoteModuleTabs.custom
     createToggle("Local Reanimation",nextOrder(),false,function(on)
-        state.customKeyframeApi.setReanimation(on)
-        emoteStatus.Text=on and "Local reanimation ready" or "Local reanimation disabled"
+        local ok,message=state.customKeyframeApi.setReanimation(on)
+        emoteStatus.Text=message or (on and "Local reanimation ready" or "Local reanimation disabled")
+        if on and not ok then
+            notifyLucid("Local Reanimation failed",message,Color3.fromRGB(225,75,90))
+            task.defer(function()
+                local setter=toggleRegistry["Local Reanimation"]
+                if setter and activeFeatures["Local Reanimation"] then setter(false) end
+                state.customReanimationStatus=message; emoteStatus.Text=message
+            end)
+        elseif on then notifyLucid("Local Reanimation",message,Color3.fromRGB(75,210,120)) end
     end)
     local customSearchRow=rowFrame(nextOrder(),28)
     local customSearch=styledBox(customSearchRow,{Size=UDim2.new(1,0,0,26),Text="",PlaceholderText="Search custom animations..."})
@@ -7011,7 +7108,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.3.3 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.3.4 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -7331,7 +7428,10 @@ state.initializeCommandConsole=function()
         elseif command=="reanim" or command=="reanimation" then
             local setter=toggleRegistry["Local Reanimation"]
             local desired=boolArgument(rest,state.customReanimationEnabled)
-            if setter then setter(desired); finish(true,"Local Reanimation: "..(desired and "ON" or "OFF"))
+            if setter then
+                setter(desired)
+                local succeeded=not desired or state.customReanimationEnabled
+                finish(succeeded,state.customReanimationStatus or ("Local Reanimation: "..(desired and "ON" or "OFF")))
             else finish(false,"Local Reanimation unavailable") end
             return
         elseif command=="sh" then addNamedHighlight(state.yellowHighlightApi,rest,"sh"); return
@@ -7791,7 +7891,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.3.3] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.3.4] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.3.3] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.3.4] Loaded, but this executor does not expose queue_on_teleport")
 end
