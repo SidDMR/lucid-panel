@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.3.2
+--// Lucid Panel v5.3.3
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -195,6 +195,7 @@ local state = {
     emoteSearchCache = {},
     emoteCustoms     = {},
     customEmoteSpeed = 1,
+    customReanimationEnabled = false,
     emoteStateAnimations = {Idle="",Walk="",Run="",Jump="",Fall="",Climb="",Swim=""},
     emoteStateSpeeds = {Idle=1,Walk=1,Run=1,Jump=1,Fall=1,Climb=1,Swim=1},
     emoteStatePresets = {},
@@ -352,7 +353,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.3.2",
+    Text                   = "LUCID PANEL  •  v5.3.3",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -4720,6 +4721,7 @@ loadGlobalEmoteFavorites()
 state.initializeCustomKeyframeEngine=function()
     local bindingName="LucidCustomKeyframes"
     local activeMotors={}
+    local animateOriginals={}
     local active=false
     local function stop()
         active=false; RunService:UnbindFromRenderStep(bindingName)
@@ -4728,6 +4730,7 @@ state.initializeCustomKeyframeEngine=function()
     end
     local function play(sequence,speedProvider,reverseProvider)
         stop()
+        if not state.customReanimationEnabled then return false,"Enable Local Reanimation first" end
         local frames=sequence and sequence.KeyframeSequence
         if type(frames)~="table" or #frames<1 then return false,"No keyframes found" end
         table.sort(frames,function(a,b) return a.Time<b.Time end)
@@ -4766,8 +4769,34 @@ state.initializeCustomKeyframeEngine=function()
         end)
         return true
     end
-    state.customKeyframeApi={play=play,stop=stop}
-    addCleanup(stop)
+    local function applyReanimation(character)
+        if not state.customReanimationEnabled or not character then return end
+        local animate=character:FindFirstChild("Animate") or character:WaitForChild("Animate",3)
+        if animate and animate:IsA("LocalScript") then
+            if animateOriginals[animate]==nil then animateOriginals[animate]=animate.Disabled end
+            animate.Disabled=true
+        end
+        local humanoid=character:FindFirstChildOfClass("Humanoid")
+        local animator=humanoid and humanoid:FindFirstChildOfClass("Animator")
+        if animator then for _,trackItem in ipairs(animator:GetPlayingAnimationTracks()) do pcall(function() trackItem:Stop(0.1) end) end end
+    end
+    local function setReanimation(value)
+        state.customReanimationEnabled=value==true
+        if state.customReanimationEnabled then task.spawn(applyReanimation,LocalPlayer.Character)
+        else
+            stop()
+            for animate,disabled in pairs(animateOriginals) do
+                if animate and animate.Parent then animate.Disabled=disabled end
+                animateOriginals[animate]=nil
+            end
+        end
+    end
+    track(LocalPlayer.CharacterAdded:Connect(function(character)
+        if state.customReanimationEnabled then task.spawn(applyReanimation,character) end
+    end))
+    state.customKeyframeApi={play=play,stop=stop,setReanimation=setReanimation,
+        isReanimation=function() return state.customReanimationEnabled end}
+    addCleanup(function() setReanimation(false) end)
 end
 state.decodeCustomKeyframeCode=function(source)
     source=tostring(source or "")
@@ -5449,6 +5478,10 @@ state.initializeEmoteStudio=function(api)
 
     -- CUSTOM
     currentSection=state.emoteModuleTabs.custom
+    createToggle("Local Reanimation",nextOrder(),false,function(on)
+        state.customKeyframeApi.setReanimation(on)
+        emoteStatus.Text=on and "Local reanimation ready" or "Local reanimation disabled"
+    end)
     local customSearchRow=rowFrame(nextOrder(),28)
     local customSearch=styledBox(customSearchRow,{Size=UDim2.new(1,0,0,26),Text="",PlaceholderText="Search custom animations..."})
     local customNameRow=rowFrame(nextOrder(),28)
@@ -6978,7 +7011,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.3.2 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.3.3 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -7180,6 +7213,7 @@ state.initializeCommandConsole=function()
             {command="!open <section>",description="Open Home, Player, World, Tools or Settings"},
             {command="!panel",description="Show or hide the main Lucid panel"},
             {command="!return",description="Return to the previous teleport position"},
+            {command="!reanim <on|off>",description="Control Local Reanimation for Custom keyframes"},
             {command="!sh <player>",description="Add a player to Special highlights"},
             {command="!shc <#RRGGBB>",description="Set the Special highlight color"},
             {command="!showwaypoints <on|off>",description="Show or hide waypoint markers"},
@@ -7294,6 +7328,12 @@ state.initializeCommandConsole=function()
             return
         elseif command=="unloopgoto" or command=="stopgoto" then state.gotoApi.setLoop(nil,false); finish(true,"Loop goto disabled"); return
         elseif command=="return" or command=="returnposition" then state.gotoApi.returnPrevious(); finish(true,"Returned to previous position"); return
+        elseif command=="reanim" or command=="reanimation" then
+            local setter=toggleRegistry["Local Reanimation"]
+            local desired=boolArgument(rest,state.customReanimationEnabled)
+            if setter then setter(desired); finish(true,"Local Reanimation: "..(desired and "ON" or "OFF"))
+            else finish(false,"Local Reanimation unavailable") end
+            return
         elseif command=="sh" then addNamedHighlight(state.yellowHighlightApi,rest,"sh"); return
         elseif command=="ssh" then addNamedHighlight(state.pinkHighlightApi,rest,"ssh"); return
         elseif command=="eh" then addNamedHighlight(state.blackHighlightApi,rest,"eh"); return
@@ -7751,7 +7791,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.3.2] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.3.3] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.3.2] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.3.3] Loaded, but this executor does not expose queue_on_teleport")
 end
