@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v4.5.3
+--// Lucid Panel v4.6.0
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -199,6 +199,7 @@ local state = {
     emoteStatePresets = {},
     emotePresetEnabled = false,
     lowPerformanceMode = false,
+    accentTheme       = "Violet",
     rendering3dDisabled = false,
     gotoOffsetX       = 3,
     gotoOffsetY       = 1,
@@ -343,11 +344,11 @@ track(UserInputService.InputEnded:Connect(function(input)
     end
 end))
 
-create("TextLabel", {
+state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = ">>  Lucid Panel v4.5.3",
+    Text                   = ">>  Lucid Panel v4.6.0",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -627,7 +628,7 @@ state.mainNavigation.apply=function()
     local visible=state.mainNavigation.groups[state.mainNavigation.active] or {}
     for name,meta in pairs(categoryMeta) do meta.wrapper.Visible=visible[name]==true end
     for name,button in pairs(state.mainNavigation.buttons) do
-        button.BackgroundColor3=name==state.mainNavigation.active and Color3.fromRGB(82,58,145) or Color3.fromRGB(48,43,65)
+        button.BackgroundColor3=name==state.mainNavigation.active and (state.accentColor or Color3.fromRGB(82,58,145)) or Color3.fromRGB(48,43,65)
         button.TextColor3=name==state.mainNavigation.active and Color3.new(1,1,1) or Color3.fromRGB(180,170,205)
     end
     content.CanvasPosition=Vector2.zero
@@ -637,6 +638,80 @@ state.mainNavigation.select=function(name)
 end
 for name,button in pairs(state.mainNavigation.buttons) do button.MouseButton1Click:Connect(function() state.mainNavigation.select(name) end) end
 state.mainNavigation.apply()
+
+-- Bottom launcher inspired by compact executor docks. It stays available
+-- while the large window is hidden and every icon opens a real Lucid module.
+state.initializeLucidDock=function()
+    state.themeColors={Midnight=Color3.fromRGB(235,235,245),Ocean=Color3.fromRGB(55,155,255),
+        Crimson=Color3.fromRGB(235,65,70),Forest=Color3.fromRGB(50,195,100),
+        Violet=Color3.fromRGB(145,90,235),Amber=Color3.fromRGB(245,165,25)}
+    local dock=create("Frame",{Name="LucidBottomDock",Size=UDim2.new(0,430,0,48),
+        AnchorPoint=Vector2.new(0.5,1),Position=UDim2.new(0.5,0,1,-10),
+        BackgroundColor3=Color3.fromRGB(17,17,22),BackgroundTransparency=0.12,
+        BorderSizePixel=0,ZIndex=150,Parent=screenGui})
+    state.lucidDock=dock
+    create("UICorner",{CornerRadius=UDim.new(0,11),Parent=dock})
+    state.lucidDockStroke=create("UIStroke",{Color=Color3.fromRGB(145,90,235),Thickness=1.2,Transparency=0.35,Parent=dock})
+    local stats=create("TextLabel",{Size=UDim2.new(0,112,1,-8),Position=UDim2.new(0,10,0,4),
+        BackgroundTransparency=1,Text="● FPS --    ● PING --ms",TextColor3=Color3.fromRGB(205,205,215),
+        TextSize=9,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
+        TextYAlignment=Enum.TextYAlignment.Top,ZIndex=151,Parent=dock})
+    local brand=create("TextLabel",{Size=UDim2.new(0,86,0,22),Position=UDim2.new(0,10,1,-24),
+        BackgroundColor3=Color3.fromRGB(75,75,84),BackgroundTransparency=0.38,BorderSizePixel=0,
+        Text="Lucid Panel",TextColor3=Color3.fromRGB(235,235,240),TextSize=9,Font=Enum.Font.GothamSemibold,
+        ZIndex=151,Parent=dock})
+    create("UICorner",{CornerRadius=UDim.new(0,4),Parent=brand})
+    local buttonData={{"⌘","Home"},{">_","Player"},{"◆","Tools"},{"≋","World"},{"▣","Panel"},{"⚙","Settings"}}
+    state.lucidDockButtons={}
+    for index,item in ipairs(buttonData) do
+        local button=create("TextButton",{Size=UDim2.new(0,42,0,38),Position=UDim2.new(0,132+(index-1)*47,0,5),
+            BackgroundColor3=Color3.fromRGB(28,27,34),BackgroundTransparency=1,BorderSizePixel=0,
+            Text=item[1],TextColor3=Color3.fromRGB(210,210,220),TextSize=18,Font=Enum.Font.GothamSemibold,
+            AutoButtonColor=false,ZIndex=151,Parent=dock})
+        create("UICorner",{CornerRadius=UDim.new(0,6),Parent=button})
+        state.lucidDockButtons[item[2]]=button
+        button.MouseButton1Click:Connect(function()
+            if item[2]=="Panel" then
+                mainFrame.Visible=not mainFrame.Visible
+            else
+                mainFrame.Visible=true
+                state.mainNavigation.select(item[2])
+            end
+            if state.refreshLucidDock then state.refreshLucidDock() end
+        end)
+    end
+    state.refreshLucidDock=function()
+        local accent=state.accentColor or state.themeColors.Violet
+        for name,button in pairs(state.lucidDockButtons) do
+            local selected=(name==state.mainNavigation.active and mainFrame.Visible) or (name=="Panel" and mainFrame.Visible)
+            button.BackgroundTransparency=selected and 0.15 or 1
+            button.TextColor3=selected and accent or Color3.fromRGB(205,205,215)
+        end
+    end
+    state.applyAccentTheme=function(name)
+        if not state.themeColors[name] then name="Violet" end
+        state.accentTheme=name; state.accentColor=state.themeColors[name]
+        mainStroke.Color=state.accentColor; state.lucidDockStroke.Color=state.accentColor
+        if state.mainTitle then state.mainTitle.TextColor3=state.accentColor:Lerp(Color3.new(1,1,1),0.35) end
+        if state.opacityFill then state.opacityFill.BackgroundColor3=state.accentColor end
+        state.mainNavigation.apply(); state.refreshLucidDock()
+        if state.accentThemeLabel then state.accentThemeLabel.Text="Accent Theme: "..name end
+    end
+    local frames=0
+    local elapsed=0
+    track(RunService.RenderStepped:Connect(function(dt)
+        frames=frames+1; elapsed=elapsed+dt
+        if elapsed<0.5 then return end
+        local fps=math.floor(frames/elapsed+0.5); frames=0; elapsed=0
+        local ping=0
+        pcall(function() ping=math.floor(game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue()+0.5) end)
+        stats.Text=string.format("● FPS %d    ● PING %dms",fps,ping)
+        stats.TextColor3=ping>220 and Color3.fromRGB(235,95,95) or Color3.fromRGB(100,225,165)
+    end))
+    track(mainFrame:GetPropertyChangedSignal("Visible"):Connect(state.refreshLucidDock))
+    state.applyAccentTheme(state.accentTheme)
+end
+state.initializeLucidDock()
 
 local searchRow = create("Frame", {
     Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1,
@@ -1081,6 +1156,7 @@ local opacFill = create("Frame", {
     BorderSizePixel   = 0,
     Parent            = opacSlider,
 })
+state.opacityFill=opacFill
 create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = opacFill })
 
 local opacBox = styledBox(opacRow, {
@@ -1127,6 +1203,28 @@ opacBox.FocusLost:Connect(function()
 end)
 
 setOpacity(60) -- start at 60% opaque (40% transparent)
+
+sectionLabel("Accent Theme",nextOrder())
+state.accentThemeLabel=create("TextLabel",{Size=UDim2.new(1,0,0,20),BackgroundTransparency=1,
+    Text="Accent Theme: "..tostring(state.accentTheme),TextColor3=Color3.fromRGB(210,205,225),
+    TextSize=10,Font=Enum.Font.GothamSemibold,TextXAlignment=Enum.TextXAlignment.Left,
+    LayoutOrder=nextOrder(),Parent=currentSection})
+state.initializeAccentThemeControls=function()
+    for rowIndex,names in ipairs({{"Midnight","Ocean","Crimson"},{"Forest","Violet","Amber"}}) do
+        local row=rowFrame(nextOrder(),28)
+        for index,name in ipairs(names) do
+            local color=state.themeColors[name]
+            local button=create("TextButton",{Size=UDim2.new(0.32,0,0,25),Position=UDim2.new((index-1)*0.34,0,0,1),
+                BackgroundColor3=color,BackgroundTransparency=0.12,BorderSizePixel=0,Text=name,
+                TextColor3=name=="Midnight" and Color3.fromRGB(30,30,36) or Color3.new(1,1,1),
+                TextSize=9,Font=Enum.Font.GothamSemibold,Parent=row})
+            create("UICorner",{CornerRadius=UDim.new(0,5),Parent=button})
+            button.MouseButton1Click:Connect(function() state.applyAccentTheme(name) end)
+        end
+    end
+    state.applyAccentTheme(state.accentTheme)
+end
+state.initializeAccentThemeControls()
 
 -- IY Anti-Lag, made reversible. We disable effects rather than deleting them
 -- and retain only the original properties required for restoration.
@@ -3710,6 +3808,9 @@ do
             if notificationHost and notificationHost.Parent then
                 hiddenWindows[notificationHost]=notificationHost.Visible; notificationHost.Visible=false
             end
+            if state.lucidDock and state.lucidDock.Parent then
+                hiddenWindows[state.lucidDock]=state.lucidDock.Visible; state.lucidDock.Visible=false
+            end
             for _,item in ipairs(detachableWindows) do
                 if item.window and item.window.Parent then hiddenWindows[item.window]=item.window.Visible; item.window.Visible=false end
             end
@@ -5336,6 +5437,7 @@ loadNamedProfile = function(button)
     end
     if not ok or type(payload)~="table" then button.Text="Profile invalid/missing"; notifyLucid("Profile load failed",profileNameBox.Text,Color3.fromRGB(230,90,105)); return end
     for key,value in pairs(payload.values or {}) do if state[key] ~= nil then state[key]=value end end
+    if state.applyAccentTheme then state.applyAccentTheme(state.accentTheme) end
     if state.yellowHighlightApi.refreshColor then state.yellowHighlightApi.refreshColor() end
     if state.pinkHighlightApi.refreshColor then state.pinkHighlightApi.refreshColor() end
     if state.blackHighlightApi.refreshColor then state.blackHighlightApi.refreshColor() end
@@ -6147,7 +6249,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v4.5.3 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v4.6.0 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -6679,7 +6781,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v4.5.3] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v4.6.0] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v4.5.3] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v4.6.0] Loaded, but this executor does not expose queue_on_teleport")
 end
