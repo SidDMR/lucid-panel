@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.2.13
+--// Lucid Panel v5.2.16
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -351,7 +351,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.2.13",
+    Text                   = "LUCID PANEL  •  v5.2.16",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -3239,6 +3239,37 @@ local function initializePlayerESP()
     end)
 
     sectionLabel("Special Player Highlights",nextOrder())
+    local function renderHighlightRoster(container,online,offline,color,onRemove)
+        for _,child in ipairs(container:GetChildren()) do if child:IsA("GuiObject") then child:Destroy() end end
+        local order=0
+        local function addGroup(title,names)
+            if #names==0 then return end
+            order=order+1
+            create("TextLabel",{Size=UDim2.new(1,0,0,20),BackgroundTransparency=1,Text=title,
+                TextColor3=color,TextSize=10,Font=Enum.Font.GothamSemibold,
+                TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=order,Parent=container})
+            for _,name in ipairs(names) do
+                order=order+1
+                local row=create("Frame",{Size=UDim2.new(1,0,0,24),BackgroundColor3=Color3.fromRGB(30,28,38),
+                    BackgroundTransparency=0.2,BorderSizePixel=0,LayoutOrder=order,Parent=container})
+                create("UICorner",{CornerRadius=UDim.new(0,5),Parent=row})
+                create("TextLabel",{Size=UDim2.new(1,-36,1,0),Position=UDim2.new(0,8,0,0),BackgroundTransparency=1,
+                    Text="• "..name,TextColor3=color,TextSize=10,Font=Enum.Font.Gotham,
+                    TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,Parent=row})
+                local remove=create("TextButton",{Size=UDim2.new(0,26,0,20),Position=UDim2.new(1,-28,0.5,-10),
+                    BackgroundColor3=Color3.fromRGB(92,42,52),BorderSizePixel=0,Text="-",
+                    TextColor3=Color3.fromRGB(245,225,230),TextSize=15,Font=Enum.Font.GothamBold,Parent=row})
+                create("UICorner",{CornerRadius=UDim.new(0,5),Parent=remove})
+                remove.MouseButton1Click:Connect(function() onRemove(name) end)
+            end
+        end
+        addGroup("Online",online); addGroup("Saved offline",offline)
+        if order==0 then
+            create("TextLabel",{Size=UDim2.new(1,0,0,22),BackgroundTransparency=1,Text="No highlighted players",
+                TextColor3=color,TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
+                LayoutOrder=1,Parent=container})
+        end
+    end
     local yellowHighlights={}
     local yellowCharacterConnections={}
     local specialColorRow=rowFrame(nextOrder(),28)
@@ -3252,16 +3283,36 @@ local function initializePlayerESP()
         BackgroundColor3=Color3.fromRGB(95,55,60),BorderSizePixel=0,Text="-",TextColor3=Color3.new(1,1,1),
         TextSize=18,Font=Enum.Font.GothamBold,Parent=yellowRow})
     create("UICorner",{CornerRadius=UDim.new(0,5),Parent=yellowAdd}); create("UICorner",{CornerRadius=UDim.new(0,5),Parent=yellowRemove})
-    local yellowStatus=create("TextLabel",{Size=UDim2.new(1,0,0,24),BackgroundTransparency=1,Text="Highlighted: none",
+    local yellowStatus=create("TextButton",{Size=UDim2.new(1,0,0,24),BackgroundColor3=Color3.fromRGB(38,34,50),
+        BorderSizePixel=0,Text=">  Highlighted Players (0)",
         TextColor3=Color3.fromRGB(220,205,120),TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
-        TextTruncate=Enum.TextTruncate.AtEnd,LayoutOrder=nextOrder(),Parent=currentSection})
+        LayoutOrder=nextOrder(),Parent=currentSection})
+    create("UICorner",{CornerRadius=UDim.new(0,5),Parent=yellowStatus})
+    create("UIPadding",{PaddingLeft=UDim.new(0,8),Parent=yellowStatus})
+    local yellowList=create("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
+        BackgroundTransparency=1,Visible=false,LayoutOrder=nextOrder(),Parent=currentSection})
+    create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,3),Parent=yellowList})
+    local yellowListOpen=false
+    local removeYellowHighlight
 
     local function refreshYellowStatus()
-        local names={}; for name in pairs(yellowNames) do table.insert(names,name) end
-        table.sort(names,function(a,b) return a:lower()<b:lower() end)
-        yellowStatus.Text=#names>0 and ("Highlighted: "..table.concat(names,", ")) or "Highlighted: none"
+        local online,offline={},{}
+        for name in pairs(yellowNames) do table.insert(Players:FindFirstChild(name) and online or offline,name) end
+        table.sort(online,function(a,b) return a:lower()<b:lower() end)
+        table.sort(offline,function(a,b) return a:lower()<b:lower() end)
+        renderHighlightRoster(yellowList,online,offline,Color3.fromRGB(220,205,120),function(name)
+            yellowNames[name]=nil
+            for playerKey in pairs(yellowHighlights) do if playerKey.Name==name then removeYellowHighlight(playerKey) end end
+            refreshYellowStatus(); refreshESP()
+            if state.pinkHighlightApi.refresh then state.pinkHighlightApi.refresh() end
+            if state.blackHighlightApi.refresh then state.blackHighlightApi.refresh() end
+        end)
+        yellowStatus.Text=(yellowListOpen and "v  " or ">  ").."Highlighted Players ("..(#online+#offline)..")"
     end
-    local function removeYellowHighlight(player)
+    yellowStatus.MouseButton1Click:Connect(function()
+        yellowListOpen=not yellowListOpen; yellowList.Visible=yellowListOpen; refreshYellowStatus()
+    end)
+    removeYellowHighlight=function(player)
         local highlight=yellowHighlights[player]
         if highlight and highlight.Parent then highlight:Destroy() end
         yellowHighlights[player]=nil
@@ -3311,8 +3362,10 @@ local function initializePlayerESP()
     end
     yellowAdd.MouseButton1Click:Connect(addYellowPlayer); yellowRemove.MouseButton1Click:Connect(removeYellowPlayer)
     yellowBox.FocusLost:Connect(function(enterPressed) if enterPressed then addYellowPlayer() end end)
-    track(Players.PlayerAdded:Connect(watchYellowPlayer))
-    track(Players.PlayerRemoving:Connect(removeYellowHighlight))
+    track(Players.PlayerAdded:Connect(function(player) watchYellowPlayer(player); refreshYellowStatus() end))
+    track(Players.PlayerRemoving:Connect(function(player)
+        removeYellowHighlight(player); task.defer(refreshYellowStatus)
+    end))
     for _,player in ipairs(Players:GetPlayers()) do watchYellowPlayer(player) end
     state.yellowHighlightApi.getNames=function()
         local names={}; for name in pairs(yellowNames) do table.insert(names,name) end; return names
@@ -3363,15 +3416,34 @@ local function initializePlayerESP()
             BackgroundColor3=Color3.fromRGB(95,55,70),BorderSizePixel=0,Text="-",TextColor3=Color3.new(1,1,1),
             TextSize=18,Font=Enum.Font.GothamBold,Parent=pinkRow})
         create("UICorner",{CornerRadius=UDim.new(0,5),Parent=pinkAdd}); create("UICorner",{CornerRadius=UDim.new(0,5),Parent=pinkRemove})
-        local pinkStatus=create("TextLabel",{Size=UDim2.new(1,0,0,24),BackgroundTransparency=1,Text="Highlighted: none",
+        local pinkStatus=create("TextButton",{Size=UDim2.new(1,0,0,24),BackgroundColor3=Color3.fromRGB(38,34,50),
+            BorderSizePixel=0,Text=">  Highlighted Players (0)",
             TextColor3=Color3.fromRGB(255,190,220),TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
-            TextTruncate=Enum.TextTruncate.AtEnd,LayoutOrder=nextOrder(),Parent=currentSection})
+            LayoutOrder=nextOrder(),Parent=currentSection})
+        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=pinkStatus})
+        create("UIPadding",{PaddingLeft=UDim.new(0,8),Parent=pinkStatus})
+        local pinkList=create("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
+            BackgroundTransparency=1,Visible=false,LayoutOrder=nextOrder(),Parent=currentSection})
+        create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,3),Parent=pinkList})
+        local pinkListOpen=false
+        local removePinkHighlight
         local function refreshPinkStatus()
-            local names={}; for name in pairs(state.pinkHighlightNames) do table.insert(names,name) end
-            table.sort(names,function(a,b) return a:lower()<b:lower() end)
-            pinkStatus.Text=#names>0 and ("Highlighted: "..table.concat(names,", ")) or "Highlighted: none"
+            local online,offline={},{}
+            for name in pairs(state.pinkHighlightNames) do table.insert(Players:FindFirstChild(name) and online or offline,name) end
+            table.sort(online,function(a,b) return a:lower()<b:lower() end)
+            table.sort(offline,function(a,b) return a:lower()<b:lower() end)
+            renderHighlightRoster(pinkList,online,offline,Color3.fromRGB(255,190,220),function(name)
+                state.pinkHighlightNames[name]=nil
+                for playerKey in pairs(pinkHighlights) do if playerKey.Name==name then removePinkHighlight(playerKey) end end
+                refreshPinkStatus(); refreshESP()
+                if state.blackHighlightApi.refresh then state.blackHighlightApi.refresh() end
+            end)
+            pinkStatus.Text=(pinkListOpen and "v  " or ">  ").."Highlighted Players ("..(#online+#offline)..")"
         end
-        local function removePinkHighlight(player)
+        pinkStatus.MouseButton1Click:Connect(function()
+            pinkListOpen=not pinkListOpen; pinkList.Visible=pinkListOpen; refreshPinkStatus()
+        end)
+        removePinkHighlight=function(player)
             local highlight=pinkHighlights[player]
             if highlight and highlight.Parent then highlight:Destroy() end
             pinkHighlights[player]=nil
@@ -3422,7 +3494,10 @@ local function initializePlayerESP()
             if state.blackHighlightApi.refresh then state.blackHighlightApi.refresh() end
         end)
         pinkBox.FocusLost:Connect(function(enterPressed) if enterPressed then addPinkPlayer() end end)
-        track(Players.PlayerAdded:Connect(watchPinkPlayer)); track(Players.PlayerRemoving:Connect(removePinkHighlight))
+        track(Players.PlayerAdded:Connect(function(player) watchPinkPlayer(player); refreshPinkStatus() end))
+        track(Players.PlayerRemoving:Connect(function(player)
+            removePinkHighlight(player); task.defer(refreshPinkStatus)
+        end))
         for _,player in ipairs(Players:GetPlayers()) do watchPinkPlayer(player) end
         state.pinkHighlightApi.getNames=function()
             local names={}; for name in pairs(state.pinkHighlightNames) do table.insert(names,name) end; return names
@@ -3465,15 +3540,33 @@ local function initializePlayerESP()
         local blackRemove=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-30,0,0),
             BackgroundColor3=Color3.fromRGB(95,55,60),BorderSizePixel=0,Text="-",TextColor3=Color3.new(1,1,1),TextSize=18,Font=Enum.Font.GothamBold,Parent=blackRow})
         create("UICorner",{CornerRadius=UDim.new(0,5),Parent=blackAdd}); create("UICorner",{CornerRadius=UDim.new(0,5),Parent=blackRemove})
-        local blackStatus=create("TextLabel",{Size=UDim2.new(1,0,0,24),BackgroundTransparency=1,Text="Marked: none",
+        local blackStatus=create("TextButton",{Size=UDim2.new(1,0,0,24),BackgroundColor3=Color3.fromRGB(38,34,50),
+            BorderSizePixel=0,Text=">  Highlighted Players (0)",
             TextColor3=Color3.fromRGB(235,120,145),TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
-            TextTruncate=Enum.TextTruncate.AtEnd,LayoutOrder=nextOrder(),Parent=currentSection})
+            LayoutOrder=nextOrder(),Parent=currentSection})
+        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=blackStatus})
+        create("UIPadding",{PaddingLeft=UDim.new(0,8),Parent=blackStatus})
+        local blackList=create("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
+            BackgroundTransparency=1,Visible=false,LayoutOrder=nextOrder(),Parent=currentSection})
+        create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,3),Parent=blackList})
+        local blackListOpen=false
+        local removeBlackHighlight
         local function refreshBlackStatus()
-            local names={}; for name in pairs(state.blackHighlightNames) do table.insert(names,name) end
-            table.sort(names,function(a,b) return a:lower()<b:lower() end)
-            blackStatus.Text=#names>0 and ("Marked: "..table.concat(names,", ")) or "Marked: none"
+            local online,offline={},{}
+            for name in pairs(state.blackHighlightNames) do table.insert(Players:FindFirstChild(name) and online or offline,name) end
+            table.sort(online,function(a,b) return a:lower()<b:lower() end)
+            table.sort(offline,function(a,b) return a:lower()<b:lower() end)
+            renderHighlightRoster(blackList,online,offline,Color3.fromRGB(235,120,145),function(name)
+                state.blackHighlightNames[name]=nil
+                for playerKey in pairs(blackHighlights) do if playerKey.Name==name then removeBlackHighlight(playerKey) end end
+                refreshBlackStatus(); refreshESP()
+            end)
+            blackStatus.Text=(blackListOpen and "v  " or ">  ").."Highlighted Players ("..(#online+#offline)..")"
         end
-        local function removeBlackHighlight(player)
+        blackStatus.MouseButton1Click:Connect(function()
+            blackListOpen=not blackListOpen; blackList.Visible=blackListOpen; refreshBlackStatus()
+        end)
+        removeBlackHighlight=function(player)
             local highlight=blackHighlights[player]; if highlight and highlight.Parent then highlight:Destroy() end; blackHighlights[player]=nil
         end
         local function applyBlackHighlight(player)
@@ -3515,7 +3608,10 @@ local function initializePlayerESP()
             blackBox.Text=""; refreshBlackStatus(); refreshESP()
         end)
         blackBox.FocusLost:Connect(function(enterPressed) if enterPressed then addBlackPlayer() end end)
-        track(Players.PlayerAdded:Connect(watchBlackPlayer)); track(Players.PlayerRemoving:Connect(removeBlackHighlight))
+        track(Players.PlayerAdded:Connect(function(player) watchBlackPlayer(player); refreshBlackStatus() end))
+        track(Players.PlayerRemoving:Connect(function(player)
+            removeBlackHighlight(player); task.defer(refreshBlackStatus)
+        end))
         for _,player in ipairs(Players:GetPlayers()) do watchBlackPlayer(player) end
         state.blackHighlightApi.getNames=function() local names={}; for name in pairs(state.blackHighlightNames) do table.insert(names,name) end; return names end
         state.blackHighlightApi.setNames=setBlackNames
@@ -6709,7 +6805,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.2.13 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.2.16 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -7482,7 +7578,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.2.13] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.2.16] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.2.13] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.2.16] Loaded, but this executor does not expose queue_on_teleport")
 end
