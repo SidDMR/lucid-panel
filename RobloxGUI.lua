@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v3
---// Lucid Panel v5.0.1
+--// Lucid Panel v5.0.3
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -351,7 +351,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.0.1",
+    Text                   = "LUCID PANEL  •  v5.0.3",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -631,7 +631,8 @@ state.mainNavigation.apply=function()
     local visible=state.mainNavigation.groups[state.mainNavigation.active] or {}
     for name,meta in pairs(categoryMeta) do meta.wrapper.Visible=visible[name]==true end
     for name,button in pairs(state.mainNavigation.buttons) do
-        button.BackgroundColor3=name==state.mainNavigation.active and (state.accentColor or Color3.fromRGB(82,58,145))
+        button.BackgroundColor3=name==state.mainNavigation.active
+            and (state.currentThemePalette and state.currentThemePalette.selection or Color3.fromRGB(62,60,70))
             or (state.currentThemePalette and state.currentThemePalette.surface2 or Color3.fromRGB(48,43,65))
         button.TextColor3=name==state.mainNavigation.active and (state.currentThemePalette and state.currentThemePalette.text or Color3.new(1,1,1))
             or (state.currentThemePalette and state.currentThemePalette.muted or Color3.fromRGB(180,170,205))
@@ -648,7 +649,7 @@ state.mainNavigation.apply()
 -- while the large window is hidden and every icon opens a real Lucid module.
 state.initializeLucidDock=function()
     state.themePalettes={
-        Midnight={background=Color3.fromRGB(8,8,10),panel=Color3.fromRGB(15,15,19),surface=Color3.fromRGB(25,25,31),surface2=Color3.fromRGB(39,39,47),accent=Color3.fromRGB(225,225,235),text=Color3.fromRGB(240,240,245),muted=Color3.fromRGB(155,155,168)},
+        Midnight={background=Color3.fromRGB(8,8,10),panel=Color3.fromRGB(15,15,19),surface=Color3.fromRGB(25,25,31),surface2=Color3.fromRGB(39,39,47),selection=Color3.fromRGB(52,52,62),stroke=Color3.fromRGB(58,58,68),scrollbar=Color3.fromRGB(70,70,82),icon=Color3.fromRGB(225,225,232),accent=Color3.fromRGB(88,88,102),text=Color3.fromRGB(240,240,245),muted=Color3.fromRGB(155,155,168)},
         Ocean={background=Color3.fromRGB(7,17,28),panel=Color3.fromRGB(12,27,43),surface=Color3.fromRGB(18,43,67),surface2=Color3.fromRGB(28,62,92),accent=Color3.fromRGB(55,155,255),text=Color3.fromRGB(225,240,250),muted=Color3.fromRGB(135,175,205)},
         Crimson={background=Color3.fromRGB(25,7,11),panel=Color3.fromRGB(42,12,18),surface=Color3.fromRGB(62,18,27),surface2=Color3.fromRGB(86,27,39),accent=Color3.fromRGB(235,65,70),text=Color3.fromRGB(250,230,232),muted=Color3.fromRGB(205,145,152)},
         Forest={background=Color3.fromRGB(6,20,13),panel=Color3.fromRGB(10,35,22),surface=Color3.fromRGB(16,52,32),surface2=Color3.fromRGB(24,73,44),accent=Color3.fromRGB(50,195,100),text=Color3.fromRGB(228,247,235),muted=Color3.fromRGB(135,190,155)},
@@ -709,7 +710,7 @@ state.initializeLucidDock=function()
         end)
     end
     state.refreshLucidDock=function()
-        local accent=state.accentColor or state.themeColors.Violet
+        local accent=state.themeIconColor or state.accentColor or state.themeColors.Violet
         for name,button in pairs(state.lucidDockButtons) do
             local selected=name~="Panel" and name==state.mainNavigation.active and mainFrame.Visible
             button.BackgroundTransparency=selected and 0.15 or 1
@@ -751,7 +752,7 @@ state.initializeLucidDock=function()
                 end
             end
             if role and palette[role] then instance.BackgroundColor3=palette[role] end
-            if instance:IsA("ScrollingFrame") then instance.ScrollBarImageColor3=palette.accent end
+            if instance:IsA("ScrollingFrame") then instance.ScrollBarImageColor3=palette.scrollbar or palette.accent end
             if instance:IsA("ImageButton") or instance:IsA("ImageLabel") then
                 instance:SetAttribute("LucidThemeIcon",true); instance.ImageColor3=palette.muted
             end
@@ -771,26 +772,30 @@ state.initializeLucidDock=function()
                 if instance:IsA("TextBox") then
                     -- Inputs use neutral high-contrast colors regardless of
                     -- accent theme; tinted placeholders became hard to read.
-                    instance.TextColor3=Color3.fromRGB(245,245,248)
-                    instance.PlaceholderColor3=Color3.fromRGB(170,170,180)
+                    instance.TextColor3=Color3.fromRGB(255,255,255)
+                    instance.PlaceholderColor3=Color3.fromRGB(205,205,212)
+                    instance.TextTransparency=0
                     instance.TextStrokeTransparency=1
-                    instance.Font=Enum.Font.Gotham
+                    instance.TextStrokeColor3=Color3.fromRGB(0,0,0)
+                    instance.TextScaled=false
+                    instance.TextSize=math.max(instance.TextSize,14)
+                    instance.Font=Enum.Font.SourceSans
                 end
             end
         elseif instance:IsA("UIStroke") then
             local c=instance.Color
             local semantic=(c.R>c.G*1.5 and c.R>c.B*1.3) or (c.G>c.R*1.35 and c.G>c.B*1.1)
             if not semantic then instance:SetAttribute("LucidThemeStroke",true) end
-            if instance:GetAttribute("LucidThemeStroke") then instance.Color=palette.accent end
+            if instance:GetAttribute("LucidThemeStroke") then instance.Color=palette.stroke or palette.accent end
         end
     end
     state.applyAccentTheme=function(name)
         if not state.themePalettes[name] then name="Midnight" end
         local palette=state.themePalettes[name]
-        state.accentTheme=name; state.accentColor=palette.accent; state.currentThemePalette=palette
+        state.accentTheme=name; state.accentColor=palette.accent; state.themeIconColor=palette.icon or palette.accent; state.currentThemePalette=palette
         for _,instance in ipairs(screenGui:GetDescendants()) do state.themeNewInstance(instance) end
         mainFrame.BackgroundColor3=palette.background; dock.BackgroundColor3=palette.background
-        mainStroke.Color=palette.accent; state.lucidDockStroke.Color=palette.accent
+        mainStroke.Color=palette.stroke or palette.accent; state.lucidDockStroke.Color=palette.stroke or palette.accent
         if state.mainTitle then state.mainTitle.TextColor3=state.accentColor:Lerp(Color3.new(1,1,1),0.35) end
         if state.opacityFill then state.opacityFill.BackgroundColor3=state.accentColor end
         state.mainNavigation.apply(); state.refreshLucidDock()
@@ -923,10 +928,10 @@ local function styledBox(parent, props)
     local box = create("TextBox", {
         BackgroundColor3       = palette and palette.surface or Color3.fromRGB(40, 38, 55),
         BackgroundTransparency = 0.2,
-        TextColor3             = Color3.fromRGB(245,245,248),
-        PlaceholderColor3      = Color3.fromRGB(170,170,180),
-        TextSize               = 12,
-        Font                   = Enum.Font.Gotham,
+        TextColor3             = Color3.fromRGB(255,255,255),
+        PlaceholderColor3      = Color3.fromRGB(205,205,212),
+        TextSize               = 14,
+        Font                   = Enum.Font.SourceSans,
         BorderSizePixel        = 0,
         ClearTextOnFocus       = true,
         Parent                 = parent,
@@ -934,10 +939,14 @@ local function styledBox(parent, props)
     for k, v in pairs(props) do box[k] = v end
     -- Keep every writable field readable even if a caller supplies legacy
     -- violet styling or the active theme changes later.
-    box.TextColor3=Color3.fromRGB(245,245,248)
-    box.PlaceholderColor3=Color3.fromRGB(170,170,180)
+    box.TextColor3=Color3.fromRGB(255,255,255)
+    box.PlaceholderColor3=Color3.fromRGB(205,205,212)
+    box.TextTransparency=0
     box.TextStrokeTransparency=1
-    box.Font=Enum.Font.Gotham
+    box.TextStrokeColor3=Color3.fromRGB(0,0,0)
+    box.TextScaled=false
+    box.TextSize=math.max(box.TextSize,14)
+    box.Font=Enum.Font.SourceSans
     create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = box })
     box:SetAttribute("LucidThemeBackgroundRole","surface")
     box:SetAttribute("LucidThemeTextRole","text")
@@ -6530,7 +6539,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.0.1 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.0.3 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -7062,7 +7071,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.0.1] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.0.3] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.0.1] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.0.3] Loaded, but this executor does not expose queue_on_teleport")
 end
