@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.3.8
+--// Lucid Panel v5.3.10
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -141,6 +141,7 @@ local state = {
     playerLightPower   = 5,
     comfortPreset      = "None",
     comfortLocked      = false,
+    fullbrightEnabled  = false,
     nightLockEnabled   = false,
     nightClockTime     = 0,
     fogEndLocked       = false,
@@ -353,7 +354,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.3.8",
+    Text                   = "LUCID PANEL  •  v5.3.10",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -4616,6 +4617,69 @@ track(RunService.Heartbeat:Connect(function(dt)
     comfortLockElapsed=comfortLockElapsed+dt
     if comfortLockElapsed>=0.25 then comfortLockElapsed=0; applySavedComfortPreset() end
 end))
+state.initializeFullbright=function()
+    sectionLabel("Visibility",nextOrder())
+    local savedLighting=nil
+    local savedAtmospheres={}
+    local elapsed=0
+    local function suspendConflictingLocks()
+        for _,name in ipairs({"Lock Comfort Preset","Lock Selected Night Time","Lock FogEnd"}) do
+            local setter=toggleRegistry[name]
+            if setter and activeFeatures[name] then setter(false) end
+        end
+    end
+    local function applyFullbright()
+        if not state.fullbrightEnabled then return end
+        suspendConflictingLocks()
+        Lighting.Brightness=3
+        Lighting.ExposureCompensation=0.15
+        Lighting.ClockTime=14
+        Lighting.Ambient=Color3.new(1,1,1)
+        Lighting.OutdoorAmbient=Color3.new(1,1,1)
+        Lighting.GlobalShadows=false
+        Lighting.FogStart=0
+        Lighting.FogEnd=1e9
+        pcall(function() Lighting.EnvironmentDiffuseScale=1; Lighting.EnvironmentSpecularScale=0 end)
+        for _,item in ipairs(Lighting:GetDescendants()) do
+            if item:IsA("Atmosphere") then
+                if not savedAtmospheres[item] then savedAtmospheres[item]={item.Density,item.Haze,item.Glare} end
+                item.Density=0; item.Haze=0; item.Glare=0
+            end
+        end
+    end
+    local function restoreFullbright()
+        if savedLighting then
+            for property,value in pairs(savedLighting) do pcall(function() Lighting[property]=value end) end
+            savedLighting=nil
+        end
+        for atmosphere,values in pairs(savedAtmospheres) do
+            if atmosphere and atmosphere.Parent then pcall(function()
+                atmosphere.Density=values[1]; atmosphere.Haze=values[2]; atmosphere.Glare=values[3]
+            end) end
+        end
+        table.clear(savedAtmospheres)
+        if state.antiLagEnabled then Lighting.GlobalShadows=false; Lighting.FogStart=9e9; Lighting.FogEnd=9e9 end
+    end
+    createToggle("Fullbright",nextOrder(),false,function(on)
+        state.fullbrightEnabled=on
+        if on then
+            if not savedLighting then
+                savedLighting={Brightness=Lighting.Brightness,ExposureCompensation=Lighting.ExposureCompensation,
+                    ClockTime=Lighting.ClockTime,Ambient=Lighting.Ambient,OutdoorAmbient=Lighting.OutdoorAmbient,
+                    GlobalShadows=Lighting.GlobalShadows,FogStart=Lighting.FogStart,FogEnd=Lighting.FogEnd,
+                    EnvironmentDiffuseScale=Lighting.EnvironmentDiffuseScale,EnvironmentSpecularScale=Lighting.EnvironmentSpecularScale}
+            end
+            applyFullbright()
+        else restoreFullbright() end
+    end)
+    track(RunService.Heartbeat:Connect(function(dt)
+        if not state.fullbrightEnabled then return end
+        elapsed+=dt
+        if elapsed>=0.2 then elapsed=0; applyFullbright() end
+    end))
+    addCleanup(function() state.fullbrightEnabled=false; restoreFullbright() end)
+end
+state.initializeFullbright()
 local brightEffectState = {}
 createToggle("Disable Bright Effects", nextOrder(), false, function(on)
     for _, effect in ipairs(Lighting:GetChildren()) do
@@ -7199,7 +7263,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.3.8 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.3.10 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -7340,7 +7404,7 @@ end
 state.initializeHomeDashboard()
 
 state.initializeCommandConsole=function()
-    local console=create("Frame",{Name="LucidCommandConsole",Size=UDim2.new(0,350,0,60),
+    local console=create("Frame",{Name="LucidCommandConsole",Size=UDim2.new(0,350,0,80),
         AnchorPoint=Vector2.new(0.5,1),Position=UDim2.new(0.5,0,0,-8),
         BackgroundColor3=Color3.fromRGB(10,10,13),BackgroundTransparency=0.04,
         BorderSizePixel=0,Visible=false,ZIndex=170,Parent=state.lucidDock})
@@ -7355,17 +7419,21 @@ state.initializeCommandConsole=function()
         TextColor3=Color3.fromRGB(190,190,200),TextSize=10,Font=Enum.Font.GothamSemibold,
         ZIndex=171,Parent=console})
     create("UICorner",{CornerRadius=UDim.new(0,5),Parent=keyLabel})
-    local commandListButton=create("TextButton",{Size=UDim2.new(0,72,0,18),Position=UDim2.new(0,7,0,39),
+    local commandListButton=create("TextButton",{Size=UDim2.new(0,72,0,35),Position=UDim2.new(0,7,0,39),
         BackgroundColor3=Color3.fromRGB(30,30,36),BorderSizePixel=0,Text="Commands",
         TextColor3=Color3.fromRGB(235,235,240),TextSize=10,Font=Enum.Font.GothamSemibold,
         ZIndex=171,Parent=console})
     create("UICorner",{CornerRadius=UDim.new(0,4),Parent=commandListButton})
-    local status=create("TextLabel",{Size=UDim2.new(1,-90,0,17),Position=UDim2.new(0,84,0,39),
+    local commandHint=create("TextLabel",{Size=UDim2.new(1,-90,0,17),Position=UDim2.new(0,84,0,38),
+        BackgroundTransparency=1,Text="Command preview",TextColor3=Color3.fromRGB(235,235,240),
+        TextSize=10,Font=Enum.Font.SourceSansSemibold,TextXAlignment=Enum.TextXAlignment.Left,
+        TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=171,Parent=console})
+    local status=create("TextLabel",{Size=UDim2.new(1,-90,0,17),Position=UDim2.new(0,84,0,56),
         BackgroundTransparency=1,Text="!help for commands",TextColor3=Color3.fromRGB(145,145,158),
         TextSize=10,Font=Enum.Font.SourceSans,TextXAlignment=Enum.TextXAlignment.Left,
         TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=171,Parent=console})
     local browser=create("Frame",{Name="CommandBrowser",Size=UDim2.new(0,330,0,350),
-        AnchorPoint=Vector2.new(0.5,1),Position=UDim2.new(0.5,0,0,-68),
+        AnchorPoint=Vector2.new(0.5,1),Position=UDim2.new(0.5,0,0,-88),
         BackgroundColor3=Color3.fromRGB(9,9,12),BackgroundTransparency=0.03,
         BorderSizePixel=0,Visible=false,ZIndex=180,Parent=state.lucidDock})
     create("UICorner",{CornerRadius=UDim.new(0,8),Parent=browser})
@@ -7390,9 +7458,11 @@ state.initializeCommandConsole=function()
             {command="!eh <player>",description="Add a player to Exploiter highlights"},
             {command="!ehc <#RRGGBB>",description="Set the Exploiter highlight color"},
             {command="!emote <animationId> [name]",description="Play an animation by asset ID"},
+            {command="!fb <on|off>",description="Enable or disable Fullbright"},
             {command="!fogend <value>",description="Set and lock the lighting FogEnd"},
             {command="!fov <20-120>",description="Set and lock the camera field of view"},
             {command="!fps <30-1000>",description="Set the client FPS cap"},
+            {command="!fullbright <on|off>",description="Force clear, shadowless client lighting"},
             {command="!goto <player>",description="Teleport to an in-game player"},
             {command="!help",description="Show a compact command summary"},
             {command="!jumpheight <value>",description="Set and lock jump height"},
@@ -7435,6 +7505,31 @@ state.initializeCommandConsole=function()
         table.sort(catalog,function(a,b) return a.command:lower()<b.command:lower() end)
         return catalog
     end
+    local function updateCommandHint()
+        local raw=input.Text:match("^%s*(.-)%s*$")
+        if raw=="" then
+            commandHint.Text="Command preview"; status.Text="!help for commands"
+            commandHint.TextColor3=Color3.fromRGB(235,235,240); status.TextColor3=Color3.fromRGB(145,145,158)
+            return
+        end
+        local token=normalize((raw:gsub("^!",""):match("^(%S+)")))
+        local exact,prefix=nil,nil
+        if token~="" then
+            for _,entry in ipairs(buildCommandCatalog()) do
+                local entryToken=normalize(entry.command:match("^!?([^%s<]+)"))
+                if entryToken==token then exact=entry; break
+                elseif not prefix and entryToken:sub(1,#token)==token then prefix=entry end
+            end
+        end
+        local match=exact or prefix
+        if match then
+            commandHint.Text=match.command; status.Text=match.description
+            commandHint.TextColor3=Color3.fromRGB(235,235,240); status.TextColor3=Color3.fromRGB(155,155,168)
+        else
+            commandHint.Text=raw; status.Text=token=="" and "Start typing a command" or "No matching command"
+            commandHint.TextColor3=Color3.fromRGB(205,205,215); status.TextColor3=Color3.fromRGB(215,105,115)
+        end
+    end
     local function refreshCommandBrowser()
         for _,child in ipairs(commandList:GetChildren()) do if child:IsA("GuiObject") then child:Destroy() end end
         local query=browserSearch.Text:match("^%s*(.-)%s*$"):lower()
@@ -7464,6 +7559,7 @@ state.initializeCommandConsole=function()
     end)
     closeBrowser.MouseButton1Click:Connect(function() browser.Visible=false end)
     browserSearch:GetPropertyChangedSignal("Text"):Connect(refreshCommandBrowser)
+    input:GetPropertyChangedSignal("Text"):Connect(updateCommandHint)
     local function boolArgument(value,current)
         value=tostring(value or ""):lower()
         if value=="on" or value=="true" or value=="1" or value=="enable" then return true end
@@ -7471,6 +7567,8 @@ state.initializeCommandConsole=function()
         return not current
     end
     local function finish(ok,message)
+        commandHint.Text=ok and "Command complete" or "Command failed"
+        commandHint.TextColor3=ok and Color3.fromRGB(105,220,145) or Color3.fromRGB(235,105,115)
         status.Text=tostring(message or (ok and "Command complete" or "Command failed"))
         status.TextColor3=ok and Color3.fromRGB(105,220,145) or Color3.fromRGB(235,105,115)
     end
@@ -7562,6 +7660,12 @@ state.initializeCommandConsole=function()
             local value=tonumber(rest); if value then state.fogEndValue=math.max(0,value); fogBox.Text=tostring(state.fogEndValue); toggleRegistry["Lock FogEnd"](true); finish(true,"FogEnd locked at "..state.fogEndValue) else finish(false,"Use: !fogend <value>") end; return
         elseif command=="fps" or command=="fpscap" then
             local value=tonumber(rest); if value then state.setFPSCapValue(value); state.setFPSCapEnabled(true); finish(true,"FPS cap set to "..state.fpsCapValue) else finish(false,"Use: !fps <30-1000>") end; return
+        elseif command=="fb" or command=="fullbright" then
+            local setter=toggleRegistry["Fullbright"]
+            local desired=boolArgument(rest,state.fullbrightEnabled)
+            if setter then setter(desired); finish(true,"Fullbright: "..(desired and "ON" or "OFF"))
+            else finish(false,"Fullbright unavailable") end
+            return
         elseif command=="migraine" then triggerMigraineComfort(); finish(true,"Migraine comfort applied"); return end
 
         for label,setter in pairs(toggleRegistry) do
@@ -7995,7 +8099,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.3.8] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.3.10] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.3.8] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.3.10] Loaded, but this executor does not expose queue_on_teleport")
 end
