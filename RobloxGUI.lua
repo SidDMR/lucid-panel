@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.3.10
+--// Lucid Panel v5.3.12
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -155,6 +155,7 @@ local state = {
     flySpeed           = 50,
     freecamEnabled     = false,
     freecamSpeed       = 50,
+    mouseUnlockEnabled = false,
     photoModeEnabled   = false,
     noCameraShake      = false,
     cameraShakeStrength = "Strong",
@@ -354,7 +355,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.3.10",
+    Text                   = "LUCID PANEL  •  v5.3.12",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -4068,6 +4069,9 @@ local _, fireFreecam, setFreecam = createToggle("Freecam", nextOrder(), false, f
     local camera = workspace.CurrentCamera
     if not camera then if not on then releaseFreecamMouse() end; return end
     if on then
+        if state.mouseUnlockEnabled and toggleRegistry["Unlock Mouse"] then
+            toggleRegistry["Unlock Mouse"](false)
+        end
         if state.flyEnabled then
             setFly(false)
             notifyLucid("Compatibility manager","Fly suspended while Freecam is active",Color3.fromRGB(235,175,70))
@@ -4117,6 +4121,44 @@ addCleanup(function()
     end
     state.freecamEnabled=false; releaseFreecamMouse()
 end)
+state.initializeMouseUnlock=function()
+    local binding="LucidUnlockMouse"
+    local savedMouse=nil
+    local function applyUnlockedMouse()
+        if not state.mouseUnlockEnabled then return end
+        UserInputService.MouseBehavior=Enum.MouseBehavior.Default
+        UserInputService.MouseIconEnabled=true
+    end
+    local _,fireUnlockMouse=createToggle("Unlock Mouse",nextOrder(),false,function(on)
+        state.mouseUnlockEnabled=on
+        RunService:UnbindFromRenderStep(binding)
+        if on then
+            if state.freecamEnabled then setFreecam(false) end
+            if not savedMouse then
+                savedMouse={Behavior=UserInputService.MouseBehavior,IconEnabled=UserInputService.MouseIconEnabled}
+            end
+            applyUnlockedMouse()
+            RunService:BindToRenderStep(binding,Enum.RenderPriority.Last.Value+10,applyUnlockedMouse)
+        else
+            local restore=savedMouse; savedMouse=nil
+            if restore then
+                UserInputService.MouseBehavior=restore.Behavior
+                UserInputService.MouseIconEnabled=restore.IconEnabled
+            end
+        end
+    end)
+    state.fireUnlockMouse=fireUnlockMouse
+    addCleanup(function()
+        state.mouseUnlockEnabled=false; RunService:UnbindFromRenderStep(binding)
+        if savedMouse then
+            UserInputService.MouseBehavior=savedMouse.Behavior
+            UserInputService.MouseIconEnabled=savedMouse.IconEnabled
+            savedMouse=nil
+        end
+        state.fireUnlockMouse=nil
+    end)
+end
+state.initializeMouseUnlock()
 actionButton("First Person", function() LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson end)
 actionButton("Third Person / Restore", function()
     LocalPlayer.CameraMode = Enum.CameraMode.Classic
@@ -4621,9 +4663,10 @@ state.initializeFullbright=function()
     sectionLabel("Visibility",nextOrder())
     local savedLighting=nil
     local savedAtmospheres={}
+    local savedBloom={}
     local elapsed=0
     local function suspendConflictingLocks()
-        for _,name in ipairs({"Lock Comfort Preset","Lock Selected Night Time","Lock FogEnd"}) do
+        for _,name in ipairs({"Lock Comfort Preset","Lock Selected Night Time","Lock FogEnd","Disable Bright Effects"}) do
             local setter=toggleRegistry[name]
             if setter and activeFeatures[name] then setter(false) end
         end
@@ -4631,19 +4674,23 @@ state.initializeFullbright=function()
     local function applyFullbright()
         if not state.fullbrightEnabled then return end
         suspendConflictingLocks()
-        Lighting.Brightness=3
-        Lighting.ExposureCompensation=0.15
+        Lighting.Brightness=1.75
+        Lighting.ExposureCompensation=-0.2
         Lighting.ClockTime=14
-        Lighting.Ambient=Color3.new(1,1,1)
-        Lighting.OutdoorAmbient=Color3.new(1,1,1)
+        Lighting.Ambient=Color3.fromRGB(120,125,135)
+        Lighting.OutdoorAmbient=Color3.fromRGB(145,150,160)
         Lighting.GlobalShadows=false
         Lighting.FogStart=0
         Lighting.FogEnd=1e9
-        pcall(function() Lighting.EnvironmentDiffuseScale=1; Lighting.EnvironmentSpecularScale=0 end)
+        pcall(function() Lighting.EnvironmentDiffuseScale=0.45; Lighting.EnvironmentSpecularScale=0.25 end)
         for _,item in ipairs(Lighting:GetDescendants()) do
             if item:IsA("Atmosphere") then
                 if not savedAtmospheres[item] then savedAtmospheres[item]={item.Density,item.Haze,item.Glare} end
-                item.Density=0; item.Haze=0; item.Glare=0
+                local values=savedAtmospheres[item]
+                item.Density=math.min(values[1],0.18); item.Haze=math.min(values[2],0.5); item.Glare=0
+            elseif item:IsA("BloomEffect") then
+                if savedBloom[item]==nil then savedBloom[item]=item.Enabled end
+                item.Enabled=false
             end
         end
     end
@@ -4658,6 +4705,10 @@ state.initializeFullbright=function()
             end) end
         end
         table.clear(savedAtmospheres)
+        for effect,enabled in pairs(savedBloom) do
+            if effect and effect.Parent then pcall(function() effect.Enabled=enabled end) end
+        end
+        table.clear(savedBloom)
         if state.antiLagEnabled then Lighting.GlobalShadows=false; Lighting.FogStart=9e9; Lighting.FogEnd=9e9 end
     end
     createToggle("Fullbright",nextOrder(),false,function(on)
@@ -6741,7 +6792,7 @@ local function findShortcutKey(text)
     if requested=="browserback" then return Enum.KeyCode.Backspace end
     return nil
 end
-for _, name in ipairs({"Fly","Noclip","Freecam","Migraine","Photo Mode","Character Recovery"}) do
+for _, name in ipairs({"Fly","Noclip","Freecam","Unlock Mouse","Migraine","Photo Mode","Character Recovery"}) do
     local shortcutRow = rowFrame(nextOrder(), 30)
     create("TextLabel", {
         Size=UDim2.new(0,72,1,0), BackgroundTransparency=1, Text=name,
@@ -7263,7 +7314,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.3.10 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.3.12 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -7297,6 +7348,7 @@ track(UserInputService.InputBegan:Connect(function(input, processed)
             fireFly()
         elseif input.KeyCode == shortcutKeys.Noclip then fireNoclip()
         elseif input.KeyCode == shortcutKeys.Freecam then fireFreecam()
+        elseif input.KeyCode == shortcutKeys["Unlock Mouse"] and state.fireUnlockMouse then state.fireUnlockMouse()
         elseif input.KeyCode == shortcutKeys["Photo Mode"] and setPhotoModeToggle then
             setPhotoModeToggle(not state.photoModeEnabled)
         elseif input.KeyCode == shortcutKeys["Character Recovery"] and state.setCharacterRecoveryLoop then
@@ -7462,7 +7514,7 @@ state.initializeCommandConsole=function()
             {command="!fogend <value>",description="Set and lock the lighting FogEnd"},
             {command="!fov <20-120>",description="Set and lock the camera field of view"},
             {command="!fps <30-1000>",description="Set the client FPS cap"},
-            {command="!fullbright <on|off>",description="Force clear, shadowless client lighting"},
+            {command="!fullbright <on|off>",description="Use balanced daylight without blown-out whites"},
             {command="!goto <player>",description="Teleport to an in-game player"},
             {command="!help",description="Show a compact command summary"},
             {command="!jumpheight <value>",description="Set and lock jump height"},
@@ -8099,7 +8151,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.3.10] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.3.12] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.3.10] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.3.12] Loaded, but this executor does not expose queue_on_teleport")
 end
