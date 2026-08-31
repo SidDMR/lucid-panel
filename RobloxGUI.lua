@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.3.4
+--// Lucid Panel v5.3.8
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -353,7 +353,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.3.4",
+    Text                   = "LUCID PANEL  •  v5.3.8",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -659,7 +659,7 @@ state.initializeLucidDock=function()
         Amber={background=Color3.fromRGB(26,17,5),panel=Color3.fromRGB(43,29,9),surface=Color3.fromRGB(63,43,14),surface2=Color3.fromRGB(87,60,20),accent=Color3.fromRGB(245,165,25),text=Color3.fromRGB(240,240,245),muted=Color3.fromRGB(165,165,175)},
     }
     state.themeColors={}; for name,palette in pairs(state.themePalettes) do state.themeColors[name]=palette.accent end
-    local dock=create("Frame",{Name="LucidBottomDock",Size=UDim2.new(0,420,0,38),
+    local dock=create("Frame",{Name="LucidBottomDock",Size=UDim2.new(0,452,0,42),
         AnchorPoint=Vector2.new(0.5,1),Position=UDim2.new(0.5,0,1,-10),
         BackgroundColor3=Color3.fromRGB(17,17,22),BackgroundTransparency=0.12,
         BorderSizePixel=0,Active=true,Draggable=true,ZIndex=150,Parent=screenGui})
@@ -671,16 +671,17 @@ state.initializeLucidDock=function()
         BackgroundColor3=Color3.fromRGB(82,58,145),BackgroundTransparency=0.15,BorderSizePixel=0,
         Text="",AutoButtonColor=false,Active=true,ZIndex=153,Parent=dock})
     create("UICorner",{CornerRadius=UDim.new(1,0),Parent=dragHandle})
-    local stats=create("TextLabel",{Size=UDim2.new(0,106,0,17),Position=UDim2.new(0,8,0,2),Active=true,
+    local stats=create("TextLabel",{Size=UDim2.new(0,138,0,18),Position=UDim2.new(0,8,0,3),Active=true,
         BackgroundTransparency=1,Text="● FPS --    ● PING --ms",TextColor3=Color3.fromRGB(205,205,215),
-        TextSize=9,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
+        TextSize=10,Font=Enum.Font.GothamSemibold,TextXAlignment=Enum.TextXAlignment.Left,
         TextYAlignment=Enum.TextYAlignment.Top,RichText=true,ZIndex=151,Parent=dock})
-    local executorLabel=create("TextLabel",{Size=UDim2.new(0,66,0,14),Position=UDim2.new(0,8,0,20),Active=true,
-        BackgroundTransparency=1,BorderSizePixel=0,Text="● Potassium",TextColor3=Color3.fromRGB(95,225,165),
-        TextSize=8,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=151,Parent=dock})
-    local brand=create("TextLabel",{Size=UDim2.new(0,38,0,14),Position=UDim2.new(0,72,0,20),Active=true,
+    local executorLabel=create("TextLabel",{Size=UDim2.new(0,82,0,16),Position=UDim2.new(0,8,0,22),Active=true,
+        BackgroundTransparency=1,BorderSizePixel=0,Text="● Potassium",TextColor3=Color3.fromRGB(55,215,235),
+        TextSize=9,Font=Enum.Font.GothamSemibold,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=151,Parent=dock})
+    executorLabel:SetAttribute("LucidSemanticText",true)
+    local brand=create("TextLabel",{Size=UDim2.new(0,44,0,16),Position=UDim2.new(0,94,0,22),Active=true,
         BackgroundTransparency=1,BorderSizePixel=0,
-        Text="LUCID",TextColor3=Color3.fromRGB(225,225,232),TextSize=8,Font=Enum.Font.GothamSemibold,
+        Text="LUCID",TextColor3=Color3.fromRGB(225,225,232),TextSize=9,Font=Enum.Font.GothamSemibold,
         ZIndex=151,Parent=dock})
     local buttonData={
         {"rbxassetid://7733960981","Home"},{"rbxassetid://7743875962","Player"},
@@ -691,7 +692,7 @@ state.initializeLucidDock=function()
     state.lucidDockButtons={}
     state.lucidDockIcons={}
     for index,item in ipairs(buttonData) do
-        local button=create("ImageButton",{Size=UDim2.new(0,34,0,30),Position=UDim2.new(0,128+(index-1)*40,0,4),
+        local button=create("ImageButton",{Size=UDim2.new(0,34,0,30),Position=UDim2.new(0,154+(index-1)*40,0,6),
             BackgroundColor3=Color3.fromRGB(28,27,34),BackgroundTransparency=1,BorderSizePixel=0,
             Image="",AutoButtonColor=false,ZIndex=151,Parent=dock})
         create("UICorner",{CornerRadius=UDim.new(0,6),Parent=button})
@@ -780,7 +781,8 @@ state.initializeLucidDock=function()
                 if interactive then textRole="text"; instance:SetAttribute("LucidThemeTextRole",textRole)
                 elseif not textRole then
                     local c=instance.TextColor3
-                    local semantic=(c.R>c.G*1.5 and c.R>c.B*1.3) or (c.G>c.R*1.35 and c.G>c.B*1.1)
+                    local semantic=instance:GetAttribute("LucidSemanticText")==true
+                        or (c.R>c.G*1.5 and c.R>c.B*1.3) or (c.G>c.R*1.35 and c.G>c.B*1.1)
                     if not semantic then
                         textRole=(c.R+c.G+c.B)/3>0.62 and "text" or "muted"
                         instance:SetAttribute("LucidThemeTextRole",textRole)
@@ -3667,7 +3669,7 @@ end
 initializeTeleportAndESP()
 
 useCategory("Teleport & Coordinates")
-sectionLabel("Custom Spawn Point", nextOrder())
+sectionLabel("Respawn at Death Position", nextOrder())
 local spawnDelayRow = rowFrame(nextOrder(), 30)
 create("TextLabel", {
     Size = UDim2.new(0, 92, 1, 0), BackgroundTransparency = 1,
@@ -3681,8 +3683,7 @@ local spawnDelayBox = styledBox(spawnDelayRow, {
 })
 
 local spawnpointCFrame = nil
-local fireSpawnpoint
-local _, spawnpointToggle = createToggle("Enable at current position", nextOrder(), false, function(on)
+createToggle("Return Where I Died", nextOrder(), false, function(on)
     if on then
         local delayValue = tonumber(spawnDelayBox.Text)
         if not delayValue or delayValue < 0 then delayValue = 0.1 end
@@ -3690,18 +3691,18 @@ local _, spawnpointToggle = createToggle("Enable at current position", nextOrder
         spawnDelayBox.Text = tostring(delayValue)
         local character = LocalPlayer.Character
         local root = character and character:FindFirstChild("HumanoidRootPart")
-        if not root then
-            task.defer(function() if fireSpawnpoint then fireSpawnpoint() end end)
-            return
-        end
-        spawnpointCFrame = root.CFrame
         state.spawnpointEnabled = true
+        state.spawnpointLastAliveCFrame = root and root.CFrame or nil
+        state.spawnpointCapturedCharacter = nil
+        spawnpointCFrame = nil
+        notifyLucid("Death respawn armed","Your next death position will become the respawn point",Color3.fromRGB(75,210,120))
     else
         state.spawnpointEnabled = false
         spawnpointCFrame = nil
+        state.spawnpointLastAliveCFrame = nil
+        state.spawnpointCapturedCharacter = nil
     end
 end)
-fireSpawnpoint = spawnpointToggle
 spawnDelayBox.FocusLost:Connect(function()
     local value = tonumber(spawnDelayBox.Text)
     if value and value >= 0 then state.spawnpointDelay = value end
@@ -3710,7 +3711,16 @@ end)
 addCleanup(function()
     state.spawnpointEnabled = false
     spawnpointCFrame = nil
+    state.spawnpointLastAliveCFrame = nil
+    state.spawnpointCapturedCharacter = nil
 end)
+track(LocalPlayer.CharacterRemoving:Connect(function(character)
+    if state.spawnpointEnabled and state.spawnpointCapturedCharacter~=character then
+        local root=character:FindFirstChild("HumanoidRootPart")
+        spawnpointCFrame=(root and root.CFrame) or state.spawnpointLastAliveCFrame
+        state.spawnpointCapturedCharacter=character
+    end
+end))
 
 -- ════════════════════════════════════════════════════════════
 --  CREDIT FOOTER
@@ -5007,7 +5017,9 @@ local emoteLoading=false
 local emoteRequestGeneration=0
 stopEmote=function()
     emoteSyncActive=false; emoteSyncPlayer=nil; emoteSyncAnimationId=nil; emoteSyncElapsed=0
+    state.customPlaybackDirection=nil
     if state.customKeyframeApi then state.customKeyframeApi.stop() end
+    if state.customPlaybackApi and state.customPlaybackApi.onStopped then state.customPlaybackApi.onStopped() end
     if emoteTrack then pcall(function() emoteTrack:Stop(0.15) end) end
     if emoteAnimation then emoteAnimation:Destroy() end
     emoteTrack=nil; emoteAnimation=nil; currentEmoteName=nil
@@ -5081,16 +5093,19 @@ track(RunService.Heartbeat:Connect(function(dt)
         task.defer(function()
             if state.keepEmoteMoving and currentEmoteName and emoteTrack then
                 pcall(function()
+                    local customDirection=tonumber(state.customPlaybackDirection) or 1
                     emoteTrack.Priority=Enum.AnimationPriority.Action4
                     emoteTrack.Looped=true
                     emoteTrack:Play(0.05,1,emoteSpeed)
-                    emoteTrack:AdjustSpeed(emoteSpeed)
+                    if customDirection<0 and emoteTrack.Length>0 then emoteTrack.TimePosition=math.max(emoteTrack.Length-0.001,0) end
+                    emoteTrack:AdjustSpeed(customDirection<0 and -state.customEmoteSpeed or emoteSpeed)
                 end)
             end
             emoteResumeBusy=false
         end)
     end
 end))
+currentSection=state.emoteModuleTabs.player
 sectionLabel("Player Emote Sync",nextOrder())
 local emoteSyncSettingsRow=rowFrame(nextOrder(),28)
 create("TextLabel",{Size=UDim2.new(1,-78,1,0),BackgroundTransparency=1,Text="Sync tolerance (seconds)",
@@ -5191,6 +5206,7 @@ local stopSyncButton=actionButton("Stop Sync",function(button)
     stopEmoteSync(true); button.Text="Emote sync stopped"
     task.delay(1,function() if button.Parent then button.Text="Stop Sync" end end)
 end,Color3.fromRGB(85,48,62))
+currentSection=state.emoteModuleTabs.main
 
 track(RunService.Heartbeat:Connect(function(dt)
     if not emoteSyncActive then return end
@@ -5601,42 +5617,109 @@ state.initializeEmoteStudio=function(api)
         BackgroundTransparency=0.35,BackgroundColor3=Color3.fromRGB(25,24,34),BorderSizePixel=0,ScrollBarThickness=3,
         LayoutOrder=nextOrder(),Parent=currentSection})
     create("UICorner",{CornerRadius=UDim.new(0,6),Parent=customList}); create("UIListLayout",{Padding=UDim.new(0,4),Parent=customList})
-    local customSpeedRow=rowFrame(nextOrder(),30)
-    create("TextLabel",{Size=UDim2.new(1,-138,1,0),BackgroundTransparency=1,Text="Custom Speed (0-15)",
-        TextColor3=Color3.fromRGB(210,205,220),TextSize=10,Font=Enum.Font.Gotham,
-        TextXAlignment=Enum.TextXAlignment.Left,Parent=customSpeedRow})
-    local customSpeedBox=styledBox(customSpeedRow,{Size=UDim2.new(0,58,0,24),Position=UDim2.new(1,-132,0.5,-12),
-        Text=string.format("%.2f",state.customEmoteSpeed),PlaceholderText="0-15"})
-    local customSpeedReset=create("TextButton",{Size=UDim2.new(0,68,0,24),Position=UDim2.new(1,-68,0.5,-12),
-        BackgroundColor3=Color3.fromRGB(48,43,65),BorderSizePixel=0,Text="Reset",
-        TextColor3=Color3.fromRGB(230,225,240),TextSize=10,Font=Enum.Font.GothamSemibold,Parent=customSpeedRow})
-    create("UICorner",{CornerRadius=UDim.new(0,5),Parent=customSpeedReset})
-    customSpeedBox.FocusLost:Connect(function()
-        state.customEmoteSpeed=math.clamp(tonumber(customSpeedBox.Text) or state.customEmoteSpeed,0,15)
-        customSpeedBox.Text=string.format("%.2f",state.customEmoteSpeed); saveGlobalEmoteFavorites()
-    end)
-    customSpeedReset.MouseButton1Click:Connect(function()
-        state.customEmoteSpeed=1; customSpeedBox.Text="1.00"; saveGlobalEmoteFavorites()
-    end)
+    local activeCustomKey=nil
+    local activeCustomDirection=0
+    local updateCustomSpeedAccent=function() end
+    local function initializeCustomSpeedControl()
+        local speedRow=rowFrame(nextOrder(),52)
+        create("TextLabel",{Size=UDim2.new(0,98,0,20),BackgroundTransparency=1,Text="Animation Speed",
+            TextColor3=Color3.fromRGB(220,215,230),TextSize=10,Font=Enum.Font.Gotham,
+            TextXAlignment=Enum.TextXAlignment.Left,Parent=speedRow})
+        local speedBox=create("TextBox",{Size=UDim2.new(0,30,0,20),Position=UDim2.new(0,98,0,0),
+            BackgroundTransparency=1,BorderSizePixel=0,Text=tostring(math.floor((tonumber(state.customEmoteSpeed) or 1)+0.5)),
+            PlaceholderText="0-15",TextColor3=Color3.fromRGB(70,220,125),PlaceholderColor3=Color3.fromRGB(105,150,120),
+            TextSize=10,Font=Enum.Font.GothamBold,ClearTextOnFocus=false,Parent=speedRow})
+        local reset=create("TextButton",{Size=UDim2.new(0,44,0,20),Position=UDim2.new(1,-44,0,0),
+            BackgroundColor3=Color3.fromRGB(43,42,48),BackgroundTransparency=0.15,BorderSizePixel=0,Text="Reset",
+            TextColor3=Color3.fromRGB(205,200,215),TextSize=9,Font=Enum.Font.Gotham,Parent=speedRow})
+        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=reset})
+        local slider=create("Frame",{Size=UDim2.new(1,-8,0,16),Position=UDim2.new(0,4,0,28),
+            BackgroundTransparency=1,BorderSizePixel=0,Active=true,Parent=speedRow})
+        local rail=create("Frame",{Size=UDim2.new(1,0,0,5),Position=UDim2.new(0,0,0.5,-2),
+            BackgroundColor3=Color3.fromRGB(45,64,55),BorderSizePixel=0,Parent=slider})
+        create("UICorner",{CornerRadius=UDim.new(1,0),Parent=rail})
+        local fill=create("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=Color3.fromRGB(65,210,120),
+            BorderSizePixel=0,Parent=rail})
+        create("UICorner",{CornerRadius=UDim.new(1,0),Parent=fill})
+        local knob=create("Frame",{Size=UDim2.new(0,14,0,14),AnchorPoint=Vector2.new(0.5,0.5),
+            Position=UDim2.new(0,0,0.5,0),BackgroundColor3=Color3.fromRGB(245,245,245),BorderSizePixel=0,Parent=slider})
+        create("UICorner",{CornerRadius=UDim.new(1,0),Parent=knob})
+        local dragging=false
+        updateCustomSpeedAccent=function()
+            fill.BackgroundColor3=activeCustomDirection==-1 and Color3.fromRGB(215,60,82) or Color3.fromRGB(65,210,120)
+        end
+        local function setSpeed(value,persist)
+            value=math.floor(math.clamp(tonumber(value) or state.customEmoteSpeed or 1,0,15)+0.5)
+            state.customEmoteSpeed=value; speedBox.Text=tostring(value)
+            local ratio=value/15
+            fill.Size=UDim2.new(ratio,0,1,0); knob.Position=UDim2.new(ratio,0,0.5,0)
+            local trackItem=api.getTrack()
+            if trackItem and activeCustomDirection~=0 then pcall(function() trackItem:AdjustSpeed(activeCustomDirection*value) end) end
+            if persist then saveGlobalEmoteFavorites() end
+        end
+        local function setFromInput(input)
+            local ratio=math.clamp((input.Position.X-slider.AbsolutePosition.X)/math.max(slider.AbsoluteSize.X,1),0,1)
+            setSpeed(ratio*15,false)
+        end
+        slider.InputBegan:Connect(function(input)
+            if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+                dragging=true; setFromInput(input)
+            end
+        end)
+        track(UserInputService.InputChanged:Connect(function(input)
+            if dragging and (input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch) then setFromInput(input) end
+        end))
+        track(UserInputService.InputEnded:Connect(function(input)
+            if dragging and (input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch) then
+                dragging=false; saveGlobalEmoteFavorites()
+            end
+        end))
+        speedBox.FocusLost:Connect(function() setSpeed(speedBox.Text,true) end)
+        reset.MouseButton1Click:Connect(function() setSpeed(1,true) end)
+        setSpeed(state.customEmoteSpeed,false); updateCustomSpeedAccent()
+    end
+    initializeCustomSpeedControl()
     local pendingCustomBind=nil
     local refreshCustom
-    local function playCustom(item)
+    local function clearCustomPlayback()
+        activeCustomKey=nil; activeCustomDirection=0
+        updateCustomSpeedAccent()
+        if refreshCustom then refreshCustom() end
+    end
+    state.customPlaybackApi={onStopped=clearCustomPlayback}
+    addCleanup(function() if state.customPlaybackApi and state.customPlaybackApi.onStopped==clearCustomPlayback then state.customPlaybackApi=nil end end)
+    local function playCustom(entry,direction)
+        local item=entry.item
+        direction=direction==-1 and -1 or 1
+        if activeCustomKey==entry.key and activeCustomDirection==direction then
+            stopEmote(); emoteStatus.Text="Custom animation stopped: "..tostring(item.name); return
+        end
         if item.type=="keyframes" and item.code then
             local sequence,message=state.decodeCustomKeyframeCode(item.code)
             if not sequence then emoteStatus.Text="Custom error: "..tostring(message); return end
             stopEmote()
-            local ok,playError=state.customKeyframeApi.play(sequence,function() return state.customEmoteSpeed end,function() return item.reverse==true end)
-            emoteStatus.Text=ok and ("Playing custom keyframes: "..tostring(item.name)) or ("Custom error: "..tostring(playError))
+            local ok,playError=state.customKeyframeApi.play(sequence,function() return state.customEmoteSpeed end,function() return direction==-1 end)
+            if not ok then emoteStatus.Text="Custom error: "..tostring(playError); return end
         else
-            api.play(item.id,item.name)
-            task.defer(function()
+            local ok=api.play(item.id,item.name)
+            if not ok then return end
+            task.spawn(function()
                 local track=api.getTrack()
                 if track then
-                    if item.reverse and track.Length>0 then track.TimePosition=track.Length end
-                    track:AdjustSpeed((item.reverse and -1 or 1)*state.customEmoteSpeed)
+                    local deadline=os.clock()+1.5
+                    while direction==-1 and track.Length<=0 and os.clock()<deadline do RunService.Heartbeat:Wait() end
+                    if activeCustomKey==entry.key and activeCustomDirection==direction and api.getTrack()==track then
+                        if direction==-1 then track.TimePosition=math.max(track.Length-0.001,0) end
+                        track:AdjustSpeed(direction*state.customEmoteSpeed)
+                    end
                 end
             end)
         end
+        activeCustomKey=entry.key; activeCustomDirection=direction
+        state.customPlaybackDirection=direction
+        updateCustomSpeedAccent()
+        emoteStatus.Text=(direction==-1 and "Animation Reversed: " or "Animation Forward: ")..tostring(item.name)
+        refreshCustom()
     end
     refreshCustom=function()
         for _,child in ipairs(customList:GetChildren()) do if child:IsA("GuiObject") then child:Destroy() end end
@@ -5651,22 +5734,30 @@ state.initializeEmoteStudio=function(api)
         for _,entry in ipairs(items) do
             local item=entry.item
             local row=create("Frame",{Size=UDim2.new(1,-4,0,30),BackgroundTransparency=1,Parent=customList})
-            local play=create("TextButton",{Size=UDim2.new(1,-116,0,28),BackgroundColor3=Color3.fromRGB(43,39,57),BorderSizePixel=0,
+            local isActive=activeCustomKey==entry.key
+            local playColor=isActive and (activeCustomDirection==-1 and Color3.fromRGB(112,38,52) or Color3.fromRGB(38,105,65)) or Color3.fromRGB(43,39,57)
+            local play=create("TextButton",{Size=UDim2.new(1,-116,0,28),BackgroundColor3=playColor,BorderSizePixel=0,
                 Text=tostring(item.name),TextColor3=Color3.fromRGB(230,225,240),TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=row})
-            local reverse=create("TextButton",{Size=UDim2.new(0,26,0,28),Position=UDim2.new(1,-112,0,0),BackgroundTransparency=1,
-                BorderSizePixel=0,Text=item.reverse and "↶" or "↻",TextColor3=item.reverse and Color3.fromRGB(105,220,145) or Color3.fromRGB(180,175,195),TextSize=17,Font=Enum.Font.GothamBold,Parent=row})
+            create("UIPadding",{PaddingLeft=UDim.new(0,8),Parent=play})
+            local reversing=isActive and activeCustomDirection==-1
+            local reverse=create("TextButton",{Size=UDim2.new(0,26,0,26),Position=UDim2.new(1,-112,0,1),
+                BackgroundColor3=reversing and Color3.fromRGB(125,42,55) or Color3.fromRGB(35,32,45),BackgroundTransparency=reversing and 0.15 or 0.55,
+                BorderSizePixel=0,Text="↶",TextColor3=reversing and Color3.fromRGB(255,225,230) or Color3.fromRGB(180,175,195),TextSize=17,Font=Enum.Font.GothamBold,Parent=row})
             local favorite=create("TextButton",{Size=UDim2.new(0,26,0,28),Position=UDim2.new(1,-84,0,0),BackgroundTransparency=1,
                 BorderSizePixel=0,Text=item.favorite and "★" or "☆",TextColor3=item.favorite and Color3.fromRGB(255,215,55) or Color3.fromRGB(180,175,195),TextSize=17,Font=Enum.Font.GothamBold,Parent=row})
             local bind=create("TextButton",{Size=UDim2.new(0,26,0,28),Position=UDim2.new(1,-56,0,0),BackgroundTransparency=1,
                 BorderSizePixel=0,Text=item.keybind or "⌨",TextColor3=Color3.fromRGB(180,175,195),TextSize=item.keybind and 8 or 14,Font=Enum.Font.GothamSemibold,Parent=row})
             local remove=create("TextButton",{Size=UDim2.new(0,26,0,24),Position=UDim2.new(1,-27,0,2),BackgroundColor3=Color3.fromRGB(85,45,55),
                 BorderSizePixel=0,Text="X",TextColor3=Color3.fromRGB(240,180,190),TextSize=10,Font=Enum.Font.GothamBold,Parent=row})
-            create("UICorner",{CornerRadius=UDim.new(0,5),Parent=play}); create("UICorner",{CornerRadius=UDim.new(0,5),Parent=remove})
-            play.MouseButton1Click:Connect(function() playCustom(item) end)
-            reverse.MouseButton1Click:Connect(function() item.reverse=not item.reverse; saveGlobalEmoteFavorites(); refreshCustom() end)
+            create("UICorner",{CornerRadius=UDim.new(0,5),Parent=play}); create("UICorner",{CornerRadius=UDim.new(0,5),Parent=reverse}); create("UICorner",{CornerRadius=UDim.new(0,5),Parent=remove})
+            play.MouseButton1Click:Connect(function() playCustom(entry,1) end)
+            reverse.MouseButton1Click:Connect(function() playCustom(entry,-1) end)
             favorite.MouseButton1Click:Connect(function() item.favorite=not item.favorite; saveGlobalEmoteFavorites(); refreshCustom() end)
             bind.MouseButton1Click:Connect(function() pendingCustomBind=entry; bind.Text="..." end)
-            remove.MouseButton1Click:Connect(function() state.emoteCustoms[entry.key]=nil; saveGlobalEmoteFavorites(); refreshCustom() end)
+            remove.MouseButton1Click:Connect(function()
+                if activeCustomKey==entry.key then stopEmote() end
+                state.emoteCustoms[entry.key]=nil; saveGlobalEmoteFavorites(); refreshCustom()
+            end)
         end
     end
     customAdd.MouseButton1Click:Connect(function()
@@ -5693,8 +5784,8 @@ state.initializeEmoteStudio=function(api)
             pendingCustomBind=nil; saveGlobalEmoteFavorites(); refreshCustom(); return
         end
         if processed or UserInputService:GetFocusedTextBox() then return end
-        for _,item in pairs(state.emoteCustoms) do
-            if item.keybind and input.KeyCode==Enum.KeyCode[item.keybind] then playCustom(item); break end
+        for key,item in pairs(state.emoteCustoms) do
+            if item.keybind and input.KeyCode==Enum.KeyCode[item.keybind] then playCustom({key=key,item=item},1); break end
         end
     end))
     customSearch:GetPropertyChangedSignal("Text"):Connect(refreshCustom); refreshCustom()
@@ -6561,7 +6652,7 @@ end
 -- Panic is also bound to End. It turns off intrusive features and repairs physics.
 local function panicReset()
     for name, setter in pairs(toggleRegistry) do
-        if name ~= "Enable at current position" then pcall(setter, false) end
+        if name ~= "Return Where I Died" then pcall(setter, false) end
     end
     state.flyEnabled=false; state.freecamEnabled=false; state.noclipEnabled=false; state.airWalkEnabled=false
     restoreNoclipCollisions(); destroyPlatform()
@@ -7108,7 +7199,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.3.4 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.3.8 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -7533,6 +7624,13 @@ local function onCharacterAdded(char)
     -- Wait for humanoid to load
     local h = char:WaitForChild("Humanoid", 10)
     if not h then return end
+    track(h.Died:Connect(function()
+        if state.spawnpointEnabled and char==LocalPlayer.Character then
+            local deathRoot=char:FindFirstChild("HumanoidRootPart")
+            spawnpointCFrame=(deathRoot and deathRoot.CFrame) or state.spawnpointLastAliveCFrame
+            state.spawnpointCapturedCharacter=char
+        end
+    end))
     restoreNoclipCollisions()
     removeStaleFloatPads()
     originalHipHeight = h.HipHeight
@@ -7577,8 +7675,8 @@ local function onCharacterAdded(char)
         end)
     end
 
-    -- IY spawnpoint: wait the configured delay after a new root exists, then
-    -- restore the saved CFrame if the toggle is still active.
+    -- Death respawn: restore the CFrame captured when the previous humanoid
+    -- died. A few short passes prevent late game spawn logic from overriding it.
     if state.spawnpointEnabled and spawnpointCFrame then
         local savedPosition = spawnpointCFrame
         local savedDelay = state.spawnpointDelay
@@ -7586,10 +7684,12 @@ local function onCharacterAdded(char)
             local root = char:WaitForChild("HumanoidRootPart", 10)
             if not root then return end
             task.wait(savedDelay)
-            if state.spawnpointEnabled and spawnpointCFrame == savedPosition
-                and char == LocalPlayer.Character and root.Parent then
-                root.CFrame = savedPosition
+            for attempt=1,3 do
+                if not (state.spawnpointEnabled and spawnpointCFrame == savedPosition
+                    and char == LocalPlayer.Character and root.Parent) then break end
+                pcall(function() char:PivotTo(savedPosition) end)
                 clearCharacterVelocity(char)
+                if attempt<3 then task.wait(0.05) end
             end
         end)
     end
@@ -7611,6 +7711,10 @@ track(RunService.Heartbeat:Connect(function(dt)
 
     local h = char:FindFirstChildOfClass("Humanoid")
     local hrp = char:FindFirstChild("HumanoidRootPart")
+
+    if state.spawnpointEnabled and h and h.Health>0 and hrp then
+        state.spawnpointLastAliveCFrame=hrp.CFrame
+    end
 
     -- IY-style freeze enforcement. Some games attempt to unanchor the root.
     if state.freezeEnabled and hrp then
@@ -7891,7 +7995,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.3.4] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.3.8] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.3.4] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.3.8] Loaded, but this executor does not expose queue_on_teleport")
 end
