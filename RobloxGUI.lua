@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.3.12
+--// Lucid Panel v5.3.14
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -355,7 +355,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.3.12",
+    Text                   = "LUCID PANEL  •  v5.3.14",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -4126,8 +4126,12 @@ state.initializeMouseUnlock=function()
     local savedMouse=nil
     local function applyUnlockedMouse()
         if not state.mouseUnlockEnabled then return end
-        UserInputService.MouseBehavior=Enum.MouseBehavior.Default
-        UserInputService.MouseIconEnabled=true
+        if UserInputService.MouseBehavior~=Enum.MouseBehavior.Default then
+            UserInputService.MouseBehavior=Enum.MouseBehavior.Default
+        end
+        if not UserInputService.MouseIconEnabled then
+            UserInputService.MouseIconEnabled=true
+        end
     end
     local _,fireUnlockMouse=createToggle("Unlock Mouse",nextOrder(),false,function(on)
         state.mouseUnlockEnabled=on
@@ -4664,35 +4668,47 @@ state.initializeFullbright=function()
     local savedLighting=nil
     local savedAtmospheres={}
     local savedBloom={}
-    local elapsed=0
+    local applying=false
+    local targets={Brightness=1.75,ExposureCompensation=-0.2,ClockTime=14,
+        Ambient=Color3.fromRGB(120,125,135),OutdoorAmbient=Color3.fromRGB(145,150,160),
+        GlobalShadows=false,FogStart=0,FogEnd=1e9,EnvironmentDiffuseScale=0.45,EnvironmentSpecularScale=0.25}
     local function suspendConflictingLocks()
         for _,name in ipairs({"Lock Comfort Preset","Lock Selected Night Time","Lock FogEnd","Disable Bright Effects"}) do
             local setter=toggleRegistry[name]
             if setter and activeFeatures[name] then setter(false) end
         end
     end
+    local function processLightingEffect(item)
+        if not state.fullbrightEnabled then return end
+        if item:IsA("Atmosphere") then
+            if not savedAtmospheres[item] then savedAtmospheres[item]={item.Density,item.Haze,item.Glare} end
+            local values=savedAtmospheres[item]
+            local density=math.min(values[1],0.18)
+            local haze=math.min(values[2],0.5)
+            if item.Density~=density then item.Density=density end
+            if item.Haze~=haze then item.Haze=haze end
+            if item.Glare~=0 then item.Glare=0 end
+        elseif item:IsA("BloomEffect") then
+            if savedBloom[item]==nil then savedBloom[item]=item.Enabled end
+            if item.Enabled then item.Enabled=false end
+        end
+    end
+    local function enforceLightingProperty(property)
+        if not state.fullbrightEnabled or applying then return end
+        local target=targets[property]
+        if target==nil then return end
+        applying=true
+        pcall(function() if Lighting[property]~=target then Lighting[property]=target end end)
+        applying=false
+    end
     local function applyFullbright()
         if not state.fullbrightEnabled then return end
-        suspendConflictingLocks()
-        Lighting.Brightness=1.75
-        Lighting.ExposureCompensation=-0.2
-        Lighting.ClockTime=14
-        Lighting.Ambient=Color3.fromRGB(120,125,135)
-        Lighting.OutdoorAmbient=Color3.fromRGB(145,150,160)
-        Lighting.GlobalShadows=false
-        Lighting.FogStart=0
-        Lighting.FogEnd=1e9
-        pcall(function() Lighting.EnvironmentDiffuseScale=0.45; Lighting.EnvironmentSpecularScale=0.25 end)
-        for _,item in ipairs(Lighting:GetDescendants()) do
-            if item:IsA("Atmosphere") then
-                if not savedAtmospheres[item] then savedAtmospheres[item]={item.Density,item.Haze,item.Glare} end
-                local values=savedAtmospheres[item]
-                item.Density=math.min(values[1],0.18); item.Haze=math.min(values[2],0.5); item.Glare=0
-            elseif item:IsA("BloomEffect") then
-                if savedBloom[item]==nil then savedBloom[item]=item.Enabled end
-                item.Enabled=false
-            end
+        applying=true
+        for property,target in pairs(targets) do
+            pcall(function() if Lighting[property]~=target then Lighting[property]=target end end)
         end
+        applying=false
+        for _,item in ipairs(Lighting:GetDescendants()) do processLightingEffect(item) end
     end
     local function restoreFullbright()
         if savedLighting then
@@ -4714,6 +4730,7 @@ state.initializeFullbright=function()
     createToggle("Fullbright",nextOrder(),false,function(on)
         state.fullbrightEnabled=on
         if on then
+            suspendConflictingLocks()
             if not savedLighting then
                 savedLighting={Brightness=Lighting.Brightness,ExposureCompensation=Lighting.ExposureCompensation,
                     ClockTime=Lighting.ClockTime,Ambient=Lighting.Ambient,OutdoorAmbient=Lighting.OutdoorAmbient,
@@ -4723,10 +4740,9 @@ state.initializeFullbright=function()
             applyFullbright()
         else restoreFullbright() end
     end)
-    track(RunService.Heartbeat:Connect(function(dt)
-        if not state.fullbrightEnabled then return end
-        elapsed+=dt
-        if elapsed>=0.2 then elapsed=0; applyFullbright() end
+    track(Lighting.Changed:Connect(enforceLightingProperty))
+    track(Lighting.DescendantAdded:Connect(function(item)
+        if state.fullbrightEnabled then task.defer(processLightingEffect,item) end
     end))
     addCleanup(function() state.fullbrightEnabled=false; restoreFullbright() end)
 end
@@ -7314,7 +7330,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.3.12 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.3.14 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -7859,6 +7875,13 @@ end
 
 -- Single consolidated Heartbeat for all per-frame logic
 track(RunService.Heartbeat:Connect(function(dt)
+    local needsCharacterFrame=state.spawnpointEnabled or state.freezeEnabled or state.antiPushEnabled
+        or state.antiFlingEnabled or state.walkspeedLocked or state.jumpHeightLocked
+        or state.noclipEnabled or state.airWalkEnabled
+    local needsGlobalFrame=state.maxZoomLocked or state.fogEndLocked
+    local needsCoordinateRefresh=mainFrame.Visible
+    if not needsCharacterFrame and not needsGlobalFrame and not needsCoordinateRefresh then return end
+
     local char = LocalPlayer.Character
     if not char then
         destroyPlatform()
@@ -8006,8 +8029,8 @@ track(RunService.Heartbeat:Connect(function(dt)
 
     -- Coordinate labels do not need a physics-frame refresh. Limiting UI text
     -- invalidation substantially reduces layout/render work while moving.
-    state.coordUpdateElapsed=(state.coordUpdateElapsed or 0)+dt
-    if hrp and state.coordUpdateElapsed>=(state.lowPerformanceMode and 0.25 or 0.1) then
+    if needsCoordinateRefresh then state.coordUpdateElapsed=(state.coordUpdateElapsed or 0)+dt end
+    if needsCoordinateRefresh and hrp and state.coordUpdateElapsed>=(state.lowPerformanceMode and 0.25 or 0.1) then
         state.coordUpdateElapsed=0
         local pos = hrp.Position
         coordLiveLabel.Text = string.format(
@@ -8151,7 +8174,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.3.12] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.3.14] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.3.12] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.3.14] Loaded, but this executor does not expose queue_on_teleport")
 end
