@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.3.14
+--// Lucid Panel v5.3.15
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -355,7 +355,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.3.14",
+    Text                   = "LUCID PANEL  •  v5.3.15",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -7330,7 +7330,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.3.14 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.3.15 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -7480,8 +7480,13 @@ state.initializeCommandConsole=function()
     create("UICorner",{CornerRadius=UDim.new(0,8),Parent=console})
     create("UIStroke",{Color=state.currentThemePalette and state.currentThemePalette.stroke or Color3.fromRGB(58,58,68),
         Thickness=1,Transparency=0.2,Parent=console})
-    local input=styledBox(console,{Size=UDim2.new(1,-58,0,28),Position=UDim2.new(0,7,0,7),
+    local input=styledBox(console,{Size=UDim2.new(1,-84,0,28),Position=UDim2.new(0,7,0,7),
         Text="",PlaceholderText="> type a command...",ClearTextOnFocus=false,ZIndex=171})
+    local collapseButton=create("TextButton",{Size=UDim2.new(0,22,0,22),Position=UDim2.new(1,-76,0,10),
+        BackgroundColor3=Color3.fromRGB(30,30,36),BorderSizePixel=0,Text="▼",
+        TextColor3=Color3.fromRGB(190,190,200),TextSize=9,Font=Enum.Font.GothamBold,
+        AutoButtonColor=true,ZIndex=172,Parent=console})
+    create("UICorner",{CornerRadius=UDim.new(0,5),Parent=collapseButton})
     local keyLabel=create("TextLabel",{Size=UDim2.new(0,43,0,28),Position=UDim2.new(1,-50,0,7),
         BackgroundColor3=Color3.fromRGB(30,30,36),BorderSizePixel=0,Text="F6",
         TextColor3=Color3.fromRGB(190,190,200),TextSize=10,Font=Enum.Font.GothamSemibold,
@@ -7756,6 +7761,7 @@ state.initializeCommandConsole=function()
         else browser.Visible=false; input:ReleaseFocus(); browserSearch:ReleaseFocus() end
         if state.refreshLucidDock then state.refreshLucidDock() end
     end
+    collapseButton.MouseButton1Click:Connect(function() state.toggleCommandConsole(false) end)
     track(UserInputService.InputBegan:Connect(function(event,processed)
         if event.KeyCode==Enum.KeyCode.F6 and (not processed or UserInputService:GetFocusedTextBox()==input) then state.toggleCommandConsole() end
     end))
@@ -8174,7 +8180,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.3.14] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.3.15] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.3.14] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.3.15] Loaded, but this executor does not expose queue_on_teleport")
 end
