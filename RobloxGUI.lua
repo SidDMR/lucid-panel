@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.3.24
+--// Lucid Panel v5.3.25
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -355,7 +355,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.3.24",
+    Text                   = "LUCID PANEL  •  v5.3.25",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -3397,17 +3397,27 @@ local function initializePlayerESP()
         yellowHighlights[player]=nil
     end
     local function applyYellowHighlight(player)
-        removeYellowHighlight(player)
-        if state.namedHighlightsSuppressed or not player or not yellowNames[player.Name] or not player.Character then return end
-        local highlight=Instance.new("Highlight")
-        highlight.Name="LucidYellowPlayerHighlight"; highlight.Adornee=player.Character
+        local character=player and player.Character
+        if state.namedHighlightsSuppressed or not player or not yellowNames[player.Name] or not character then
+            if player then removeYellowHighlight(player) end
+            return
+        end
+        local highlight=yellowHighlights[player]
+        if not highlight or not highlight.Parent or highlight.Adornee~=character then
+            removeYellowHighlight(player)
+            highlight=Instance.new("Highlight")
+            highlight.Name="LucidYellowPlayerHighlight"; highlight.Adornee=character
+            highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; highlight.Parent=screenGui
+            yellowHighlights[player]=highlight
+        end
         local color=highlightColor(state.specialHighlightColor,Color3.fromRGB(255,225,45))
-        highlight.FillColor=color
-        highlight.FillTransparency=state.espHighlightStyle=="Hard" and 1 or math.clamp(espTransparency+0.08,0,0.94)
-        highlight.OutlineColor=color:Lerp(Color3.new(1,1,1),0.35)
-        highlight.OutlineTransparency=state.espHighlightStyle=="Hard" and math.clamp(espTransparency-0.7,0,0.3) or 0.58
-        highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; highlight.Parent=player.Character
-        yellowHighlights[player]=highlight
+        local fillTransparency=state.espHighlightStyle=="Hard" and 1 or math.clamp(espTransparency+0.08,0,0.94)
+        local outlineColor=color:Lerp(Color3.new(1,1,1),0.35)
+        local outlineTransparency=state.espHighlightStyle=="Hard" and math.clamp(espTransparency-0.7,0,0.3) or 0.58
+        if highlight.FillColor~=color then highlight.FillColor=color end
+        if highlight.FillTransparency~=fillTransparency then highlight.FillTransparency=fillTransparency end
+        if highlight.OutlineColor~=outlineColor then highlight.OutlineColor=outlineColor end
+        if highlight.OutlineTransparency~=outlineTransparency then highlight.OutlineTransparency=outlineTransparency end
     end
     local function watchYellowPlayer(player)
         if player==LocalPlayer or yellowCharacterConnections[player] then return end
@@ -3531,17 +3541,27 @@ local function initializePlayerESP()
             pinkHighlights[player]=nil
         end
         local function applyPinkHighlight(player)
-            removePinkHighlight(player)
-            if state.namedHighlightsSuppressed or not player or not state.pinkHighlightNames[player.Name] or yellowNames[player.Name] or not player.Character then return end
-            local highlight=Instance.new("Highlight")
-            highlight.Name="LucidPinkPlayerHighlight"; highlight.Adornee=player.Character
+            local character=player and player.Character
+            if state.namedHighlightsSuppressed or not player or not state.pinkHighlightNames[player.Name] or yellowNames[player.Name] or not character then
+                if player then removePinkHighlight(player) end
+                return
+            end
+            local highlight=pinkHighlights[player]
+            if not highlight or not highlight.Parent or highlight.Adornee~=character then
+                removePinkHighlight(player)
+                highlight=Instance.new("Highlight")
+                highlight.Name="LucidPinkPlayerHighlight"; highlight.Adornee=character
+                highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; highlight.Parent=screenGui
+                pinkHighlights[player]=highlight
+            end
             local color=highlightColor(state.superSpecialHighlightColor,Color3.fromRGB(255,155,205))
-            highlight.FillColor=color
-            highlight.FillTransparency=state.espHighlightStyle=="Hard" and 1 or math.clamp(espTransparency-0.08,0,0.88)
-            highlight.OutlineColor=color:Lerp(Color3.new(1,1,1),0.35)
-            highlight.OutlineTransparency=state.espHighlightStyle=="Hard" and math.clamp(espTransparency-0.7,0,0.3) or 0.48
-            highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; highlight.Parent=player.Character
-            pinkHighlights[player]=highlight
+            local fillTransparency=state.espHighlightStyle=="Hard" and 1 or math.clamp(espTransparency-0.08,0,0.88)
+            local outlineColor=color:Lerp(Color3.new(1,1,1),0.35)
+            local outlineTransparency=state.espHighlightStyle=="Hard" and math.clamp(espTransparency-0.7,0,0.3) or 0.48
+            if highlight.FillColor~=color then highlight.FillColor=color end
+            if highlight.FillTransparency~=fillTransparency then highlight.FillTransparency=fillTransparency end
+            if highlight.OutlineColor~=outlineColor then highlight.OutlineColor=outlineColor end
+            if highlight.OutlineTransparency~=outlineTransparency then highlight.OutlineTransparency=outlineTransparency end
         end
         local function watchPinkPlayer(player)
             if player==LocalPlayer or pinkConnections[player] then return end
@@ -3655,17 +3675,28 @@ local function initializePlayerESP()
             local highlight=blackHighlights[player]; if highlight and highlight.Parent then highlight:Destroy() end; blackHighlights[player]=nil
         end
         local function applyBlackHighlight(player)
-            removeBlackHighlight(player)
+            local character=player and player.Character
             if state.namedHighlightsSuppressed or not player or not state.blackHighlightNames[player.Name] or yellowNames[player.Name]
-                or state.pinkHighlightNames[player.Name] or not player.Character then return end
-            local highlight=Instance.new("Highlight")
-            highlight.Name="LucidBlackPlayerHighlight"; highlight.Adornee=player.Character
+                or state.pinkHighlightNames[player.Name] or not character then
+                if player then removeBlackHighlight(player) end
+                return
+            end
+            local highlight=blackHighlights[player]
+            if not highlight or not highlight.Parent or highlight.Adornee~=character then
+                removeBlackHighlight(player)
+                highlight=Instance.new("Highlight")
+                highlight.Name="LucidBlackPlayerHighlight"; highlight.Adornee=character
+                highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; highlight.Parent=screenGui
+                blackHighlights[player]=highlight
+            end
             local color=highlightColor(state.exploiterHighlightColor,Color3.fromRGB(205,35,75))
-            highlight.FillColor=color
-            highlight.FillTransparency=state.espHighlightStyle=="Hard" and 1 or math.clamp(espTransparency,0,0.9)
-            highlight.OutlineColor=color:Lerp(Color3.new(1,1,1),0.35)
-            highlight.OutlineTransparency=state.espHighlightStyle=="Hard" and math.clamp(espTransparency-0.7,0,0.3) or 0.5
-            highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; highlight.Parent=player.Character; blackHighlights[player]=highlight
+            local fillTransparency=state.espHighlightStyle=="Hard" and 1 or math.clamp(espTransparency,0,0.9)
+            local outlineColor=color:Lerp(Color3.new(1,1,1),0.35)
+            local outlineTransparency=state.espHighlightStyle=="Hard" and math.clamp(espTransparency-0.7,0,0.3) or 0.5
+            if highlight.FillColor~=color then highlight.FillColor=color end
+            if highlight.FillTransparency~=fillTransparency then highlight.FillTransparency=fillTransparency end
+            if highlight.OutlineColor~=outlineColor then highlight.OutlineColor=outlineColor end
+            if highlight.OutlineTransparency~=outlineTransparency then highlight.OutlineTransparency=outlineTransparency end
         end
         local function watchBlackPlayer(player)
             if player==LocalPlayer or blackConnections[player] then return end
@@ -7567,7 +7598,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.3.24 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.3.25 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -8506,7 +8537,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.3.24] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.3.25] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.3.24] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.3.25] Loaded, but this executor does not expose queue_on_teleport")
 end
