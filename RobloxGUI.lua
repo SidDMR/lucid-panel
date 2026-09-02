@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.3.22
+--// Lucid Panel v5.3.24
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -355,7 +355,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.3.22",
+    Text                   = "LUCID PANEL  •  v5.3.24",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -512,15 +512,31 @@ local function createCategory(name, order, openByDefault)
         Size=UDim2.new(0,285,0,340),
         Position=UDim2.new(0.5,-460+((order%4)*36),0.5,-170+((order%5)*24)),
         BackgroundColor3=Color3.fromRGB(24,22,34), BackgroundTransparency=0.12,
-        BorderSizePixel=0, Active=true, Draggable=true, Visible=false, Parent=screenGui,
+        BorderSizePixel=0, Active=true, Draggable=name~="Emotes", Visible=false, Parent=screenGui,
     })
     create("UICorner", { CornerRadius=UDim.new(0,9), Parent=dock })
     create("UIStroke", { Color=Color3.fromRGB(115,85,190), Thickness=1.3, Parent=dock })
-    create("TextLabel", {
+    local dockTitle=create("TextLabel", {
         Size=UDim2.new(1,-116,0,34), Position=UDim2.new(0,10,0,0), BackgroundTransparency=1,
         Text=name, TextColor3=Color3.fromRGB(210,190,255), TextSize=13,
         Font=Enum.Font.GothamBold, TextXAlignment=Enum.TextXAlignment.Left, Parent=dock,
     })
+    if name=="Emotes" then
+        dockTitle.Active=true
+        local dragInput,startPosition,startWindow=nil,nil,nil
+        dockTitle.InputBegan:Connect(function(input)
+            if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+                dragInput=input; startPosition=input.Position; startWindow=dock.Position
+            end
+        end)
+        track(UserInputService.InputChanged:Connect(function(input)
+            if dragInput and ((dragInput.UserInputType==Enum.UserInputType.MouseButton1 and input.UserInputType==Enum.UserInputType.MouseMovement) or input==dragInput) then
+                local delta=input.Position-startPosition
+                dock.Position=UDim2.new(startWindow.X.Scale,startWindow.X.Offset+delta.X,startWindow.Y.Scale,startWindow.Y.Offset+delta.Y)
+            end
+        end))
+        track(UserInputService.InputEnded:Connect(function(input) if input==dragInput then dragInput=nil end end))
+    end
     local pinButton=create("TextButton", {
         Size=UDim2.new(0,34,0,26), Position=UDim2.new(1,-106,0,4),
         BackgroundColor3=Color3.fromRGB(65,58,85), BorderSizePixel=0, Text="Pin",
@@ -5849,9 +5865,18 @@ state.initializeEmoteStudio=function(api)
             LayoutOrder=nextOrder(),Parent=parent})
         create("UICorner",{CornerRadius=UDim.new(0,6),Parent=button}); button.MouseButton1Click:Connect(function() callback(button) end); return button
     end
-    local function speedControl(parent,withSlider)
+    local function speedControl(parent,withSlider,afterRow)
         local row=create("Frame",{Size=UDim2.new(1,0,0,withSlider and 52 or 30),BackgroundTransparency=1,
             LayoutOrder=withSlider and 100000 or nextOrder(),Parent=parent})
+        if afterRow then
+            local order=afterRow.LayoutOrder+1
+            for _,sibling in ipairs(parent:GetChildren()) do
+                if sibling:IsA("GuiObject") and sibling~=row and sibling.LayoutOrder>=order then
+                    sibling.LayoutOrder+=1
+                end
+            end
+            row.LayoutOrder=order
+        end
         if withSlider then
             create("TextLabel",{Size=UDim2.new(0,98,0,20),BackgroundTransparency=1,Text="Animation Speed",
                 TextColor3=Color3.fromRGB(220,215,230),TextSize=10,Font=Enum.Font.Gotham,
@@ -5899,8 +5924,8 @@ state.initializeEmoteStudio=function(api)
         end)
     end
     emoteSpeedRow.Visible=false
-    speedControl(state.emoteModuleTabs.main,true)
-    speedControl(state.emoteModuleTabs.player,true)
+    speedControl(state.emoteModuleTabs.main,true,loadMoreEmotesButton.Parent)
+    speedControl(state.emoteModuleTabs.player,true,stopSyncButton.Parent)
 
     -- CUSTOM
     currentSection=state.emoteModuleTabs.custom
@@ -6197,7 +6222,7 @@ state.initializeEmoteStudio=function(api)
         selectedPreset=name; presetSelect.Text="Preset: "..name; presetName.Text=""; saveGlobalEmoteFavorites()
     end)
     smallButton(currentSection,"Advanced / Sync Tools",function() state.emoteModuleTabs.set("Legacy") end,Color3.fromRGB(65,52,95))
-    speedControl(currentSection); speedControl(state.emoteModuleTabs.favorites,true)
+    speedControl(currentSection); speedControl(state.emoteModuleTabs.favorites,true,state.emoteModuleTabs.favoriteStopRow)
     if LocalPlayer.Character then bindStateSpeeds(LocalPlayer.Character) end
     track(LocalPlayer.CharacterAdded:Connect(function(character)
         task.defer(bindStateSpeeds,character); if state.emotePresetEnabled then task.delay(1,applyStates) end
@@ -7542,7 +7567,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.3.22 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.3.24 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -8024,6 +8049,7 @@ state.initializeCommandConsole=function()
         if state.refreshLucidDock then state.refreshLucidDock() end
     end
     local consoleBelow=false
+    local consoleSettingsPath="LucidPanel/command_console.json"
     local function setConsoleBelow(below)
         consoleBelow=below==true
         if consoleBelow then
@@ -8040,7 +8066,28 @@ state.initializeCommandConsole=function()
             collapseButton.Text="▼"
         end
     end
-    collapseButton.MouseButton1Click:Connect(function() setConsoleBelow(not consoleBelow) end)
+    -- Global interface preference: independent of the currently loaded profile.
+    if readfile then
+        local ok,saved=pcall(function() return HttpService:JSONDecode(readfile(consoleSettingsPath)) end)
+        if ok and type(saved)=="table" and type(saved.belowDock)=="boolean" then
+            setConsoleBelow(saved.belowDock)
+        end
+    end
+    collapseButton.MouseButton1Click:Connect(function()
+        setConsoleBelow(not consoleBelow)
+        local saved=false
+        if writefile then
+            saved=pcall(function()
+                if makefolder and (not isfolder or not isfolder("LucidPanel")) then
+                    pcall(makefolder,"LucidPanel")
+                end
+                writefile(consoleSettingsPath,HttpService:JSONEncode({belowDock=consoleBelow}))
+            end)
+        end
+        if not saved then
+            notifyLucid("Position changed — not saved","Executor file storage is unavailable or the write failed.",Color3.fromRGB(235,175,70))
+        end
+    end)
     track(UserInputService.InputBegan:Connect(function(event,processed)
         if event.KeyCode==Enum.KeyCode.F6 and (not processed or UserInputService:GetFocusedTextBox()==input) then state.toggleCommandConsole() end
     end))
@@ -8459,7 +8506,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.3.22] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.3.24] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.3.22] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.3.24] Loaded, but this executor does not expose queue_on_teleport")
 end
