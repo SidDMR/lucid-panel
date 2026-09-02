@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.3.20
+--// Lucid Panel v5.3.21
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -355,7 +355,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.3.20",
+    Text                   = "LUCID PANEL  •  v5.3.21",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -5445,6 +5445,60 @@ track(RunService.Heartbeat:Connect(function(dt)
     end)
     emoteStatus.Text="Synced with "..emoteSyncPlayer.Name.." | "..tostring(state.emoteSyncMode).." | "..tostring(sourceId)
 end))
+state.emoteSearch={}
+function state.emoteSearch.normalize(value)
+    return tostring(value or ""):lower():gsub("%p", ""):gsub("%s+", " "):match("^%s*(.-)%s*$")
+end
+function state.emoteSearch.rank(name,query)
+    local text=state.emoteSearch.normalize(name)
+    local needle=state.emoteSearch.normalize(query)
+    if needle=="" then return 0 end
+    local compact=text:gsub("%s", "")
+    local wanted=needle:gsub("%s", "")
+    if text==needle or compact==wanted then return 0 end
+    if compact:sub(1,#wanted)==wanted then return 1 end
+    if compact:find(wanted,1,true) then return 2 end
+    for word in needle:gmatch("%S+") do
+        if not text:find(word,1,true) then return nil end
+    end
+    return 3
+end
+function state.emoteSearch.sort(items,query)
+    table.sort(items,function(a,b)
+        local ar=state.emoteSearch.rank(a.name,query) or 4
+        local br=state.emoteSearch.rank(b.name,query) or 4
+        if ar~=br then return ar<br end
+        local an,bn=state.emoteSearch.normalize(a.name),state.emoteSearch.normalize(b.name)
+        if an==bn then return tostring(a.id)<tostring(b.id) end
+        return an<bn
+    end)
+end
+function state.emoteSearch.bind(box,callback,ready,invalidate)
+    local revision=0
+    local function submit()
+        revision+=1
+        if screenGui.Parent and (not ready or ready()) then callback() end
+    end
+    box:GetPropertyChangedSignal("Text"):Connect(function()
+        revision+=1
+        local request=revision
+        if invalidate then invalidate() end
+        task.delay(0.2,function()
+            if request==revision and box.Parent and screenGui.Parent and (not ready or ready()) then callback() end
+        end)
+    end)
+    return submit
+end
+function state.emoteSearch.addClear(box)
+    local size=box.Size
+    box.Size=UDim2.new(size.X.Scale,size.X.Offset-26,size.Y.Scale,size.Y.Offset)
+    local position=box.Position
+    local button=create("TextButton",{Size=UDim2.new(0,22,0,22),
+        Position=UDim2.new(position.X.Scale+size.X.Scale,position.X.Offset+size.X.Offset-24,position.Y.Scale,position.Y.Offset+2),
+        BackgroundTransparency=1,BorderSizePixel=0,Text="×",TextSize=16,Font=Enum.Font.Gotham,
+        TextColor3=Color3.fromRGB(165,165,175),Parent=box.Parent})
+    button.MouseButton1Click:Connect(function() box.Text="" end)
+end
 local function clearEmoteResults()
     for _,child in ipairs(emoteResults:GetChildren()) do if child:IsA("GuiObject") then child:Destroy() end end
 end
@@ -5524,16 +5578,17 @@ state.initializePlayerEmoteBrowser=function()
         end
     end
     local function renderPlayerEmotes()
+        emoteRequestGeneration+=1
+        emoteLoading=false; emoteSearchButton.Text="Search"
         emoteView="player"; clearEmoteResults(); emoteResults.Parent=state.emoteModuleTabs.player
-        local query=filterBox.Text:match("^%s*(.-)%s*$"):lower()
-        local shown=0
+        local query=filterBox.Text
+        local matches={}
         for _,item in ipairs(state.playerEmoteBrowserResults or {}) do
-            if query=="" or item.name:lower():find(query,1,true) then
-                createEmoteResult(item.id,item.name,item.equipped and "[Equipped]" or "[Owned]")
-                shown=shown+1
-            end
+            if state.emoteSearch.rank(item.name,query) then table.insert(matches,item) end
         end
-        if shown==0 and state.playerEmoteBrowserResults then status.Text="No emotes match this filter." end
+        state.emoteSearch.sort(matches,query)
+        for _,item in ipairs(matches) do createEmoteResult(item.id,item.name,item.equipped and "[Equipped]" or "[Owned]") end
+        status.Text=#matches>0 and ("Player emotes: "..#matches) or "No emotes match this filter."
     end
     local function loadPlayerEmotes()
         local player=findPlayer(playerBox.Text)
@@ -5600,17 +5655,21 @@ state.initializePlayerEmoteBrowser=function()
     end)
     loadButton.MouseButton1Click:Connect(loadPlayerEmotes)
     playerBox.FocusLost:Connect(function(enterPressed) if enterPressed then loadPlayerEmotes() end end)
-    filterBox:GetPropertyChangedSignal("Text"):Connect(function()
-        if state.emoteModuleTabs.active=="Player" and state.playerEmoteBrowserResults then renderPlayerEmotes() end
+    state.emoteSearch.bind(filterBox,renderPlayerEmotes,function()
+        return state.emoteModuleTabs.active=="Player" and state.playerEmoteBrowserResults~=nil
     end)
+    state.emoteSearch.addClear(filterBox)
     currentSection=previousSection
 end
 state.initializePlayerEmoteBrowser()
 
 local function showFavoriteEmotes()
+    emoteRequestGeneration+=1
+    emoteLoading=false; emoteSearchButton.Text="Search"
     emoteView="favorites"; clearEmoteResults()
     state.emoteModuleTabs.set("Favs"); emoteResults.Parent=state.emoteModuleTabs.favorites
-    mainFavoriteSearchRow.Visible=true; mainFavoriteSearchBox.Text=tostring(state.emoteFavoriteQuery or "")
+    mainFavoriteSearchRow.Visible=true
+    if mainFavoriteSearchBox.Text~=tostring(state.emoteFavoriteQuery or "") then mainFavoriteSearchBox.Text=tostring(state.emoteFavoriteQuery or "") end
     browseEmotesButton.BackgroundColor3=Color3.fromRGB(48,43,65)
     favoriteEmotesButton.BackgroundColor3=Color3.fromRGB(78,55,135)
     local favorites={}
@@ -5620,7 +5679,7 @@ local function showFavoriteEmotes()
             local normalizedId=tostring(info.id or id)
             local originalName=tostring(info.name or ("Emote "..normalizedId))
             local shown=tostring(state.emoteAliases[normalizedId] or originalName)
-            if query=="" or shown:lower():find(query,1,true) or originalName:lower():find(query,1,true) then
+            if state.emoteSearch.rank(shown,query) or state.emoteSearch.rank(originalName,query) then
                 table.insert(favorites,{id=normalizedId,name=originalName,sortName=shown:lower()})
             end
         end
@@ -5630,7 +5689,7 @@ local function showFavoriteEmotes()
         return a.sortName<b.sortName
     end)
     for _,info in ipairs(favorites) do createEmoteResult(info.id,info.name) end
-    emoteStatus.Text=#favorites>0 and ("Favorite emotes: "..#favorites) or "No favorite emotes yet"
+    emoteStatus.Text=#favorites>0 and ("Favorite emotes: "..#favorites) or (query~="" and "No favorites match this search" or "No favorite emotes yet")
 end
 state.emoteModuleTabs.showMain=function(refreshContents)
     state.emoteModuleTabs.set("All"); emoteResults.Parent=state.emoteModuleTabs.main
@@ -5649,11 +5708,13 @@ browseEmotesButton.MouseButton1Click:Connect(function()
 end)
 favoriteEmotesButton.MouseButton1Click:Connect(showFavoriteEmotes)
 state.emoteModuleTabs.favoritesButton.MouseButton1Click:Connect(showFavoriteEmotes)
-mainFavoriteSearchButton.MouseButton1Click:Connect(function()
+state.emoteSearch.submitFavorites=state.emoteSearch.bind(mainFavoriteSearchBox,function()
     state.emoteFavoriteQuery=mainFavoriteSearchBox.Text:match("^%s*(.-)%s*$"); showFavoriteEmotes()
-end)
+end,function() return state.emoteModuleTabs.active=="Favs" end)
+state.emoteSearch.addClear(mainFavoriteSearchBox)
+mainFavoriteSearchButton.MouseButton1Click:Connect(state.emoteSearch.submitFavorites)
 mainFavoriteSearchBox.FocusLost:Connect(function(enterPressed)
-    if enterPressed then state.emoteFavoriteQuery=mainFavoriteSearchBox.Text:match("^%s*(.-)%s*$"); showFavoriteEmotes() end
+    if enterPressed then state.emoteSearch.submitFavorites() end
 end)
 loadEmoteResults=function(append)
     state.emoteModuleTabs.showMain(false)
@@ -5662,55 +5723,66 @@ loadEmoteResults=function(append)
     browseEmotesButton.BackgroundColor3=Color3.fromRGB(78,55,135)
     favoriteEmotesButton.BackgroundColor3=Color3.fromRGB(48,43,65)
     emoteLoading=true; emoteSearchButton.Text="Loading..."
+    emoteStatus.Text="Searching..."
     emoteRequestGeneration=emoteRequestGeneration+1
     local generation=emoteRequestGeneration
+    local requestQuery=emoteQuery
     if not append then emoteCursor=nil; emotePages=nil; clearEmoteResults() end
+    local requestPages=emotePages
+    local requestCursor=emoteCursor
     local completed=false
     local ok=false
     local data=nil
-    local cacheKey=emoteQuery:lower()
-    local cached=not append and state.emoteSearchCache[cacheKey]
-    if cached and type(cached.items)=="table" and os.time()-(tonumber(cached.savedAt) or 0)<604800 then
-        ok=true; data=cached.items; completed=true
-    else task.spawn(function()
+    local cacheKey=state.emoteSearch.normalize(requestQuery)
+    -- Always fetch a fresh first page so cached results cannot lose pagination.
+    task.spawn(function()
         ok,data=pcall(function()
-            if append and emotePages then
-                if emotePages.IsFinished then return {} end
-                emotePages:AdvanceToNextPageAsync()
-                return emotePages:GetCurrentPage()
+            if append and requestPages then
+                if requestPages.IsFinished then return {} end
+                requestPages:AdvanceToNextPageAsync()
+                return requestPages:GetCurrentPage()
             end
-            if append and emoteCursor and not emotePages then error("Continue HTTP catalog cursor") end
+            if append and requestCursor and not requestPages then error("Continue HTTP catalog cursor") end
             local params=CatalogSearchParams.new()
-            params.SearchKeyword=emoteQuery
+            params.SearchKeyword=state.emoteSearch.normalize(requestQuery)
             params.AssetTypes={Enum.AvatarAssetType.EmoteAnimation}
             params.IncludeOffSale=false
             params.SalesTypeFilter=Enum.SalesTypeFilter.All
             params.SortType=Enum.CatalogSortType.Relevance
             params.Limit=math.clamp(tonumber(state.emoteResultLimit) or 30,10,30)
-            emotePages=AvatarEditorService:SearchCatalogAsync(params)
-            return emotePages:GetCurrentPage()
+            requestPages=AvatarEditorService:SearchCatalogAsync(params)
+            return requestPages:GetCurrentPage()
         end)
         if not ok then
+            if generation~=emoteRequestGeneration then completed=true; return end
+            requestPages=nil
             local url="https://catalog.roblox.com/v1/search/items/details?Category=12&Subcategory=39&IncludeNotForSale=false&salesTypeFilter=1&Limit="..math.clamp(tonumber(state.emoteResultLimit) or 30,10,30).."&SortType=0&SortAggregation=5"
-            if emoteQuery~="" then url=url.."&Keyword="..HttpService:UrlEncode(emoteQuery) end
-            if append and emoteCursor then url=url.."&Cursor="..HttpService:UrlEncode(emoteCursor) end
+            if requestQuery~="" then url=url.."&Keyword="..HttpService:UrlEncode(state.emoteSearch.normalize(requestQuery)) end
+            if append and requestCursor then url=url.."&Cursor="..HttpService:UrlEncode(requestCursor) end
             local httpOk,body=pcall(function() return game:HttpGet(url,true) end)
             if httpOk and type(body)=="string" and body:sub(1,1)=="{" then
-                local decoded=HttpService:JSONDecode(body)
-                data=decoded.data; emoteCursor=decoded.nextPageCursor; ok=type(data)=="table"
+                local decodedOk,decoded=pcall(function() return HttpService:JSONDecode(body) end)
+                if decodedOk and type(decoded)=="table" then
+                    data=decoded.data; requestCursor=decoded.nextPageCursor; ok=type(data)=="table"
+                end
             end
         end
         completed=true
-    end) end
+    end)
     local started=os.clock()
     while not completed and os.clock()-started<12 and generation==emoteRequestGeneration do task.wait(0.1) end
     if generation~=emoteRequestGeneration then return end
+    if state.emoteModuleTabs.active~="All" then
+        emoteLoading=false; emoteSearchButton.Text="Search"; return
+    end
     if not completed then
+        emoteRequestGeneration+=1
         emoteLoading=false; emoteSearchButton.Text="Search"
         emoteStatus.Text="Catalog request timed out — try again"
         return
     end
     if ok and type(data)=="table" then
+        emotePages=requestPages; emoteCursor=requestCursor
         local filtered={}
         local cacheItems={}
         for _,item in ipairs(data) do
@@ -5728,14 +5800,14 @@ loadEmoteResults=function(append)
                 if matches then table.insert(filtered,{id=id,name=name}) end
             end
         end
-        table.sort(filtered,function(a,b) return a.name:lower()<b.name:lower() end)
+        state.emoteSearch.sort(filtered,requestQuery)
         for _,item in ipairs(filtered) do createEmoteResult(item.id,item.name) end
-        if not append and not cached then
+        if not append then
             state.emoteSearchCache[cacheKey]={savedAt=os.time(),items=cacheItems}
             local cacheKeys={}; for key,entry in pairs(state.emoteSearchCache) do table.insert(cacheKeys,{key=key,time=tonumber(entry.savedAt) or 0}) end
             table.sort(cacheKeys,function(a,b) return a.time>b.time end)
             for index=13,#cacheKeys do state.emoteSearchCache[cacheKeys[index].key]=nil end
-            saveGlobalEmoteFavorites()
+            -- Keep typing-related cache updates in memory, not synchronous file writes.
         end
         emoteStatus.Text=#filtered>0 and ("Found "..#filtered.." — click a name to play") or "No emotes matched this search/filter"
     else
@@ -5743,13 +5815,20 @@ loadEmoteResults=function(append)
     end
     emoteLoading=false; emoteSearchButton.Text="Search"
 end
-emoteSearchButton.MouseButton1Click:Connect(function()
+state.emoteSearch.submitCatalog=state.emoteSearch.bind(emoteSearchBox,function()
     emoteQuery=emoteSearchBox.Text:match("^%s*(.-)%s*$"); loadEmoteResults(false)
+end,function() return state.emoteModuleTabs.active=="All" end,function()
+    emoteRequestGeneration+=1
+    emotePages=nil; emoteCursor=nil
+    emoteLoading=false; emoteSearchButton.Text="Search"
 end)
+state.emoteSearch.addClear(emoteSearchBox)
+emoteSearchButton.MouseButton1Click:Connect(state.emoteSearch.submitCatalog)
 emoteSearchBox.FocusLost:Connect(function(enterPressed)
-    if enterPressed then emoteQuery=emoteSearchBox.Text:match("^%s*(.-)%s*$"); loadEmoteResults(false) end
+    if enterPressed then state.emoteSearch.submitCatalog() end
 end)
 local loadMoreEmotesButton=actionButton("Load More Emotes",function(button)
+    if emoteLoading then return end
     if (emotePages and not emotePages.IsFinished) or emoteCursor then loadEmoteResults(true)
     else button.Text="No more results"; task.delay(1,function() if button.Parent then button.Text="Load More Emotes" end end) end
 end)
@@ -7417,7 +7496,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.3.20 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.3.21 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -8334,7 +8413,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.3.20] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.3.21] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.3.20] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.3.21] Loaded, but this executor does not expose queue_on_teleport")
 end
