@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.3.21
+--// Lucid Panel v5.3.22
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -355,7 +355,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.3.21",
+    Text                   = "LUCID PANEL  •  v5.3.22",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -5158,11 +5158,16 @@ local emoteSyncElapsed=0
 createToggle("Keep Emote While Moving",nextOrder(),true,function(on)
     state.keepEmoteMoving=on
 end)
-emoteSpeedBox.FocusLost:Connect(function()
-    emoteSpeed=math.clamp(tonumber(emoteSpeedBox.Text) or emoteSpeed,0.1,5)
+state.emoteSpeedViews={}
+state.setEmotePlaybackSpeed=function(value)
+    emoteSpeed=math.clamp(tonumber(value) or emoteSpeed,0,15)
     state.emoteSpeed=emoteSpeed
-    emoteSpeedBox.Text=string.format("%.1f",emoteSpeed)
+    emoteSpeedBox.Text=tostring(emoteSpeed)
+    for _,refresh in ipairs(state.emoteSpeedViews) do refresh(emoteSpeed) end
     if emoteTrack then pcall(function() emoteTrack:AdjustSpeed(emoteSpeed) end) end
+end
+emoteSpeedBox.FocusLost:Connect(function()
+    state.setEmotePlaybackSpeed(emoteSpeedBox.Text)
 end)
 local emoteStatus=create("TextLabel",{Size=UDim2.new(1,0,0,22),BackgroundTransparency=1,
     Text="Search to load emotes",TextColor3=Color3.fromRGB(160,150,180),TextSize=10,
@@ -5241,8 +5246,7 @@ local function playEmote(assetId,name)
     if not animator then emoteStatus.Text="Character Animator unavailable"; return false end
     local savedSpeed=tonumber((state.emoteSpeeds or {})[tostring(assetId)])
     if savedSpeed then
-        emoteSpeed=math.clamp(savedSpeed,0.1,5); state.emoteSpeed=emoteSpeed
-        emoteSpeedBox.Text=string.format("%.1f",emoteSpeed)
+        state.setEmotePlaybackSpeed(savedSpeed)
     end
     local emoteKey="Lucid_"..tostring(assetId)
     local track=nil
@@ -5845,16 +5849,58 @@ state.initializeEmoteStudio=function(api)
             LayoutOrder=nextOrder(),Parent=parent})
         create("UICorner",{CornerRadius=UDim.new(0,6),Parent=button}); button.MouseButton1Click:Connect(function() callback(button) end); return button
     end
-    local function speedControl(parent)
-        local row=create("Frame",{Size=UDim2.new(1,0,0,30),BackgroundTransparency=1,LayoutOrder=nextOrder(),Parent=parent})
+    local function speedControl(parent,withSlider)
+        local row=create("Frame",{Size=UDim2.new(1,0,0,withSlider and 52 or 30),BackgroundTransparency=1,
+            LayoutOrder=withSlider and 100000 or nextOrder(),Parent=parent})
+        if withSlider then
+            create("TextLabel",{Size=UDim2.new(0,98,0,20),BackgroundTransparency=1,Text="Animation Speed",
+                TextColor3=Color3.fromRGB(220,215,230),TextSize=10,Font=Enum.Font.Gotham,
+                TextXAlignment=Enum.TextXAlignment.Left,Parent=row})
+            local box=create("TextBox",{Size=UDim2.new(0,40,0,20),Position=UDim2.new(0,98,0,0),
+                BackgroundTransparency=1,BorderSizePixel=0,Text=tostring(emoteSpeed),PlaceholderText="0-15",
+                TextColor3=Color3.fromRGB(70,220,125),TextSize=10,Font=Enum.Font.GothamBold,ClearTextOnFocus=false,Parent=row})
+            local reset=create("TextButton",{Size=UDim2.new(0,44,0,20),Position=UDim2.new(1,-44,0,0),
+                BackgroundColor3=Color3.fromRGB(43,42,48),BorderSizePixel=0,Text="Reset",TextSize=9,
+                TextColor3=Color3.fromRGB(205,200,215),Font=Enum.Font.Gotham,Parent=row})
+            create("UICorner",{CornerRadius=UDim.new(0,5),Parent=reset})
+            local slider=create("Frame",{Size=UDim2.new(1,-8,0,16),Position=UDim2.new(0,4,0,28),
+                BackgroundTransparency=1,Active=true,Parent=row})
+            local rail=create("Frame",{Size=UDim2.new(1,0,0,5),Position=UDim2.new(0,0,0.5,-2),
+                BackgroundColor3=Color3.fromRGB(45,64,55),BorderSizePixel=0,Parent=slider})
+            local fill=create("Frame",{Size=UDim2.new(emoteSpeed/15,0,1,0),BackgroundColor3=Color3.fromRGB(65,210,120),BorderSizePixel=0,Parent=rail})
+            local knob=create("Frame",{Size=UDim2.new(0,14,0,14),AnchorPoint=Vector2.new(0.5,0.5),
+                Position=UDim2.new(emoteSpeed/15,0,0.5,0),BackgroundColor3=Color3.fromRGB(245,245,245),BorderSizePixel=0,Parent=slider})
+            for _,part in ipairs({rail,fill,knob}) do create("UICorner",{CornerRadius=UDim.new(1,0),Parent=part}) end
+            table.insert(state.emoteSpeedViews,function(value)
+                box.Text=tostring(value); fill.Size=UDim2.new(value/15,0,1,0); knob.Position=UDim2.new(value/15,0,0.5,0)
+            end)
+            local dragInput=nil
+            local function update(input)
+                local ratio=math.clamp((input.Position.X-slider.AbsolutePosition.X)/math.max(slider.AbsoluteSize.X,1),0,1)
+                state.setEmotePlaybackSpeed(math.floor(ratio*15+0.5))
+            end
+            slider.InputBegan:Connect(function(input)
+                if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then dragInput=input; update(input) end
+            end)
+            track(UserInputService.InputChanged:Connect(function(input)
+                if dragInput and ((dragInput.UserInputType==Enum.UserInputType.MouseButton1 and input.UserInputType==Enum.UserInputType.MouseMovement) or input==dragInput) then update(input) end
+            end))
+            track(UserInputService.InputEnded:Connect(function(input) if input==dragInput then dragInput=nil end end))
+            box.FocusLost:Connect(function() state.setEmotePlaybackSpeed(box.Text) end)
+            reset.MouseButton1Click:Connect(function() state.setEmotePlaybackSpeed(1) end)
+            return
+        end
         create("TextLabel",{Size=UDim2.new(1,-78,1,0),BackgroundTransparency=1,Text="Animation Speed",
             TextColor3=Color3.fromRGB(210,205,220),TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=row})
-        local box=styledBox(row,{Size=UDim2.new(0,70,0,24),Position=UDim2.new(1,-70,0.5,-12),Text=string.format("%.1f",state.emoteSpeed),PlaceholderText="0.1-5"})
+        local box=styledBox(row,{Size=UDim2.new(0,70,0,24),Position=UDim2.new(1,-70,0.5,-12),Text=tostring(state.emoteSpeed),PlaceholderText="0-15"})
+        table.insert(state.emoteSpeedViews,function(value) box.Text=tostring(value) end)
         box.FocusLost:Connect(function()
-            state.emoteSpeed=math.clamp(tonumber(box.Text) or state.emoteSpeed,0.1,5); box.Text=string.format("%.1f",state.emoteSpeed)
-            emoteSpeed=state.emoteSpeed; emoteSpeedBox.Text=box.Text; local track=api.getTrack(); if track then pcall(function() track:AdjustSpeed(emoteSpeed) end) end
+            state.setEmotePlaybackSpeed(box.Text)
         end)
     end
+    emoteSpeedRow.Visible=false
+    speedControl(state.emoteModuleTabs.main,true)
+    speedControl(state.emoteModuleTabs.player,true)
 
     -- CUSTOM
     currentSection=state.emoteModuleTabs.custom
@@ -6151,7 +6197,7 @@ state.initializeEmoteStudio=function(api)
         selectedPreset=name; presetSelect.Text="Preset: "..name; presetName.Text=""; saveGlobalEmoteFavorites()
     end)
     smallButton(currentSection,"Advanced / Sync Tools",function() state.emoteModuleTabs.set("Legacy") end,Color3.fromRGB(65,52,95))
-    speedControl(currentSection); speedControl(state.emoteModuleTabs.favorites)
+    speedControl(currentSection); speedControl(state.emoteModuleTabs.favorites,true)
     if LocalPlayer.Character then bindStateSpeeds(LocalPlayer.Character) end
     track(LocalPlayer.CharacterAdded:Connect(function(character)
         task.defer(bindStateSpeeds,character); if state.emotePresetEnabled then task.delay(1,applyStates) end
@@ -6436,7 +6482,7 @@ if emotesDock then
     state.updateEmoteResultsHeight=function()
         if emotesDock.Visible then
             local active=state.emoteModuleTabs.active or "All"
-            local reserved=active=="Favs" and 125 or 255
+            local reserved=active=="Favs" and 147 or (active=="Player" and 307 or (active=="All" and 279 or 255))
             local minimum=active=="Favs" and 190 or 100
             emoteResults.Size=UDim2.new(1,-4,0,math.max(minimum,emotesDock.AbsoluteSize.Y-reserved))
         else
@@ -6698,7 +6744,7 @@ loadNamedProfile = function(button)
         if state.espHighlightStyle~="Soft" then state.espHighlightStyle="Hard" end
         highlightStyleButton.Text="Highlight Style: "..state.espHighlightStyle
     end
-    emoteSpeed=state.emoteSpeed; updateText(emoteSpeedBox,string.format("%.1f",emoteSpeed))
+    state.setEmotePlaybackSpeed(state.emoteSpeed)
     updateText(emoteSyncToleranceBox,string.format("%.2f",state.emoteSyncTolerance))
     if gotoApi.setOffset then gotoApi.setOffset(state.gotoOffsetX,state.gotoOffsetY,state.gotoOffsetZ) end
     -- Safe startup: remembered toggle states are intentionally not activated.
@@ -7496,7 +7542,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.3.21 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.3.22 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -8413,7 +8459,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.3.21] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.3.22] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.3.21] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.3.22] Loaded, but this executor does not expose queue_on_teleport")
 end
