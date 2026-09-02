@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.3.16
+--// Lucid Panel v5.3.19
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -355,7 +355,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.3.16",
+    Text                   = "LUCID PANEL  •  v5.3.19",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -3276,6 +3276,62 @@ local function initializePlayerESP()
                 LayoutOrder=1,Parent=container})
         end
     end
+    local function registerHighlightListWindow(api,list,title,key,restoreVisible,refreshList)
+        local originalParent=list.Parent
+        local detached=false
+        local pinned=true
+        local minimized=false
+        local window=create("Frame",{Name="Lucid"..key.."ListWindow",Size=UDim2.new(0,330,0,300),
+            Position=UDim2.new(0.5,-165,0.5,-150),BackgroundColor3=Color3.fromRGB(24,22,34),
+            BackgroundTransparency=0.12,BorderSizePixel=0,Active=true,Draggable=true,Visible=false,Parent=screenGui})
+        create("UICorner",{CornerRadius=UDim.new(0,9),Parent=window})
+        create("UIStroke",{Color=Color3.fromRGB(115,85,190),Thickness=1.3,Parent=window})
+        create("TextLabel",{Size=UDim2.new(1,-116,0,34),Position=UDim2.new(0,10,0,0),BackgroundTransparency=1,
+            Text=title,TextColor3=Color3.fromRGB(210,190,255),TextSize=12,Font=Enum.Font.GothamBold,
+            TextXAlignment=Enum.TextXAlignment.Left,Parent=window})
+        local function control(text,x,width,color)
+            local button=create("TextButton",{Size=UDim2.new(0,width,0,26),Position=UDim2.new(1,x,0,4),
+                BackgroundColor3=color,BorderSizePixel=0,Text=text,TextColor3=Color3.new(1,1,1),
+                TextSize=11,Font=Enum.Font.GothamSemibold,Parent=window})
+            create("UICorner",{CornerRadius=UDim.new(0,6),Parent=button})
+            return button
+        end
+        local pin=control("ON",-106,34,Color3.fromRGB(150,115,45))
+        local minimize=control("-",-68,28,Color3.fromRGB(65,58,85))
+        local close=control("X",-32,28,Color3.fromRGB(105,65,75))
+        local body=create("ScrollingFrame",{Size=UDim2.new(1,-16,1,-44),Position=UDim2.new(0,8,0,38),
+            BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=3,AutomaticCanvasSize=Enum.AutomaticSize.Y,
+            CanvasSize=UDim2.new(),Parent=window})
+        local expandedSize=window.Size
+        local function setPinned(value)
+            pinned=value==true
+            pin.Text=pinned and "ON" or "Pin"
+            pin.BackgroundColor3=pinned and Color3.fromRGB(150,115,45) or Color3.fromRGB(65,58,85)
+        end
+        local function setDetached(value)
+            detached=value==true; api.listDetached=detached
+            list.Parent=detached and body or originalParent
+            list.Visible=detached or restoreVisible()
+            window.Visible=detached and not state.photoModeEnabled
+        end
+        api.openList=function()
+            refreshList()
+            if minimized then
+                minimized=false; window.Size=expandedSize; body.Visible=true; minimize.Text="-"
+            end
+            setDetached(true)
+        end
+        pin.MouseButton1Click:Connect(function() setPinned(not pinned) end)
+        minimize.MouseButton1Click:Connect(function()
+            if not minimized then expandedSize=window.Size end
+            minimized=not minimized; body.Visible=not minimized
+            window.Size=minimized and UDim2.new(0,expandedSize.X.Offset,0,34) or expandedSize
+            minimize.Text=minimized and "+" or "-"
+        end)
+        close.MouseButton1Click:Connect(function() setDetached(false) end)
+        registerDetachableWindow(window,function() return pinned end,function() return detached end,setPinned,setDetached)
+        addCleanup(function() if window.Parent then setDetached(false) end end)
+    end
     local yellowHighlights={}
     local yellowCharacterConnections={}
     local specialColorRow=rowFrame(nextOrder(),28)
@@ -3316,6 +3372,7 @@ local function initializePlayerESP()
         yellowStatus.Text=(yellowListOpen and "v  " or ">  ").."Highlighted Players ("..(#online+#offline)..")"
     end
     yellowStatus.MouseButton1Click:Connect(function()
+        if state.yellowHighlightApi.listDetached then state.yellowHighlightApi.openList(); return end
         yellowListOpen=not yellowListOpen; yellowList.Visible=yellowListOpen; refreshYellowStatus()
     end)
     removeYellowHighlight=function(player)
@@ -3349,6 +3406,7 @@ local function initializePlayerESP()
         yellowNames[player.Name]=true; yellowBox.Text=""; watchYellowPlayer(player); applyYellowHighlight(player); refreshYellowStatus(); refreshESP()
         if state.pinkHighlightApi.refresh then state.pinkHighlightApi.refresh() end
         if state.blackHighlightApi.refresh then state.blackHighlightApi.refresh() end
+        if state.persistHighlightChange then state.persistHighlightChange(player.Name,"Special") end
     end
     local function removeYellowPlayer()
         local query=yellowBox.Text:match("^%s*(.-)%s*$"):lower(); local removedName=nil
@@ -3398,6 +3456,7 @@ local function initializePlayerESP()
         if not state.yellowHighlightApi.setColor(specialColorBox.Text) then specialColorBox.Text=state.specialHighlightColor end
     end)
     state.yellowHighlightApi.refreshColor=function() specialColorBox.Text=state.specialHighlightColor end
+    registerHighlightListWindow(state.yellowHighlightApi,yellowList,"Special Highlights","SH",function() return yellowListOpen end,refreshYellowStatus)
     local clearYellowButton=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(105,82,34),
         BorderSizePixel=0,Text="Clear Special Highlights",TextColor3=Color3.fromRGB(240,235,245),TextSize=11,
         Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
@@ -3447,6 +3506,7 @@ local function initializePlayerESP()
             pinkStatus.Text=(pinkListOpen and "v  " or ">  ").."Highlighted Players ("..(#online+#offline)..")"
         end
         pinkStatus.MouseButton1Click:Connect(function()
+            if state.pinkHighlightApi.listDetached then state.pinkHighlightApi.openList(); return end
             pinkListOpen=not pinkListOpen; pinkList.Visible=pinkListOpen; refreshPinkStatus()
         end)
         removePinkHighlight=function(player)
@@ -3484,6 +3544,7 @@ local function initializePlayerESP()
             if not player then pinkBox.Text="Player not found"; return end
             state.pinkHighlightNames[player.Name]=true; pinkBox.Text=""; watchPinkPlayer(player); applyPinkHighlight(player); refreshPinkStatus(); refreshESP()
             if state.blackHighlightApi.refresh then state.blackHighlightApi.refresh() end
+            if state.persistHighlightChange then state.persistHighlightChange(player.Name,"Super Special") end
         end
         pinkAdd.MouseButton1Click:Connect(addPinkPlayer)
         pinkRemove.MouseButton1Click:Connect(function()
@@ -3522,6 +3583,7 @@ local function initializePlayerESP()
             if not state.pinkHighlightApi.setColor(superColorBox.Text) then superColorBox.Text=state.superSpecialHighlightColor end
         end)
         state.pinkHighlightApi.refreshColor=function() superColorBox.Text=state.superSpecialHighlightColor end
+        registerHighlightListWindow(state.pinkHighlightApi,pinkList,"Super Special Highlights","SSH",function() return pinkListOpen end,refreshPinkStatus)
         local clearPinkButton=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(120,65,92),
             BorderSizePixel=0,Text="Clear Super Special Highlights",TextColor3=Color3.fromRGB(240,235,245),TextSize=11,
             Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
@@ -3570,6 +3632,7 @@ local function initializePlayerESP()
             blackStatus.Text=(blackListOpen and "v  " or ">  ").."Highlighted Players ("..(#online+#offline)..")"
         end
         blackStatus.MouseButton1Click:Connect(function()
+            if state.blackHighlightApi.listDetached then state.blackHighlightApi.openList(); return end
             blackListOpen=not blackListOpen; blackList.Visible=blackListOpen; refreshBlackStatus()
         end)
         removeBlackHighlight=function(player)
@@ -3603,6 +3666,7 @@ local function initializePlayerESP()
             local player=findGotoPlayer(blackBox.Text)
             if not player then blackBox.Text="Player not found"; return end
             state.blackHighlightNames[player.Name]=true; blackBox.Text=""; watchBlackPlayer(player); applyBlackHighlight(player); refreshBlackStatus(); refreshESP()
+            if state.persistHighlightChange then state.persistHighlightChange(player.Name,"Exploiter") end
         end
         blackAdd.MouseButton1Click:Connect(addBlackPlayer)
         blackRemove.MouseButton1Click:Connect(function()
@@ -3632,6 +3696,7 @@ local function initializePlayerESP()
             if not state.blackHighlightApi.setColor(exploiterColorBox.Text) then exploiterColorBox.Text=state.exploiterHighlightColor end
         end)
         state.blackHighlightApi.refreshColor=function() exploiterColorBox.Text=state.exploiterHighlightColor end
+        registerHighlightListWindow(state.blackHighlightApi,blackList,"Exploiter Highlights","EH",function() return blackListOpen end,refreshBlackStatus)
         local clearBlackButton=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(105,35,52),BorderSizePixel=0,
             Text="Clear Exploiter Highlights",TextColor3=Color3.fromRGB(240,220,225),TextSize=11,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
         create("UICorner",{CornerRadius=UDim.new(0,6),Parent=clearBlackButton})
@@ -6364,6 +6429,7 @@ create("TextLabel",{Size=UDim2.new(1,0,0,32),BackgroundTransparency=1,
     LayoutOrder=nextOrder(),Parent=currentSection})
 local profileNameRow=rowFrame(nextOrder(),28)
 local profileNameBox=styledBox(profileNameRow,{Size=UDim2.new(1,0,0,26),Text="default",PlaceholderText="Profile name"})
+local activeProfileName=nil
 local profileListOpen=false
 local profileListButton=create("TextButton",{Size=UDim2.new(1,0,0,26),BackgroundColor3=Color3.fromRGB(54,46,76),
     BorderSizePixel=0,Text=">  Saved Profiles",TextColor3=Color3.fromRGB(225,215,240),TextSize=11,
@@ -6410,19 +6476,22 @@ profileListButton.MouseButton1Click:Connect(function()
     profileListButton.Text=(profileListOpen and "v  " or ">  ").."Saved Profiles"
     if profileListOpen then refreshProfileList() end
 end)
-local function getProfilePath()
-    local safeName=profileNameBox.Text:gsub("[^%w_%-]","")
+local function getProfilePath(profileOverride)
+    local safeName=tostring(profileOverride or profileNameBox.Text):gsub("[^%w_%-]","")
     if safeName=="" then safeName="default" end
-    profileNameBox.Text=safeName
-    return "LucidPanel/profile_"..safeName..".json"
+    if not profileOverride then profileNameBox.Text=safeName end
+    return "LucidPanel/profile_"..safeName..".json",safeName
 end
-actionButton("Save Named Profile", function(button)
-    if not writefile then button.Text="File API unavailable"; return end
+local function saveNamedProfile(button,profileOverride,silent)
+    if not writefile then
+        if button then button.Text="File API unavailable" end
+        return false
+    end
     pcall(function() if makefolder and (not isfolder or not isfolder("LucidPanel")) then makefolder("LucidPanel") end end)
     -- Preserve waypoint groups belonging to other places when this profile is
     -- updated. PlaceId isolation prevents coordinates leaking across games.
     local payload = {}
-    local profilePath=getProfilePath()
+    local profilePath,savedName=getProfilePath(profileOverride)
     if readfile and (not isfile or isfile(profilePath)) then
         pcall(function() payload=HttpService:JSONDecode(readfile(profilePath)) end)
     end
@@ -6488,11 +6557,17 @@ actionButton("Save Named Profile", function(button)
         end)
     end
     local ok = encodedOk and pcall(writefile, profilePath, encoded)
-    button.Text = ok and "Profile saved" or (encodedOk and "Write failed" or "Profile data invalid")
-    notifyLucid(ok and "Profile saved" or "Profile save failed",
-        ok and profileNameBox.Text or button.Text,ok and Color3.fromRGB(75,210,120) or Color3.fromRGB(230,90,105))
+    local resultText=ok and "Profile saved" or (encodedOk and "Write failed" or "Profile data invalid")
+    if button then button.Text=resultText end
+    if not silent then notifyLucid(ok and "Profile saved" or "Profile save failed",
+        ok and savedName or resultText,ok and Color3.fromRGB(75,210,120) or Color3.fromRGB(230,90,105)) end
     if ok and profileListOpen then refreshProfileList() end
-    task.delay(1.5,function() if button.Parent then button.Text="Save Named Profile" end end)
+    if button then task.delay(1.5,function() if button.Parent then button.Text="Save Named Profile" end end) end
+    return ok,savedName
+end
+actionButton("Save Named Profile", function(button)
+    local ok,savedName=saveNamedProfile(button,nil,false)
+    if ok then activeProfileName=savedName end
 end)
 loadNamedProfile = function(button)
     local originalButtonText=button.Text
@@ -6641,11 +6716,23 @@ loadNamedProfile = function(button)
     applySavedComfortPreset()
     if state.playerLightEnabled then applyPlayerLight() else removePlayerLight() end
     button.Text="Profile loaded — settings restored"
+    activeProfileName=profileNameBox.Text
     notifyLucid(recovered and "Profile recovered from backup" or "Profile loaded",profileNameBox.Text,
         recovered and Color3.fromRGB(235,175,70) or Color3.fromRGB(75,210,120))
     task.delay(1.5,function()
         if button.Parent and button.Text=="Profile loaded — settings restored" then button.Text=originalButtonText end
     end)
+end
+state.persistHighlightChange=function(playerName,highlightType,removed)
+    local profileName=activeProfileName
+    local saved=profileName and saveNamedProfile(nil,profileName,true) or false
+    local message=tostring(playerName)..(removed and " removed from " or " added to ")..tostring(highlightType).." highlights"
+    if profileName then
+        message=message..(saved and " • saved to " or " • could not save to ")..profileName
+    else
+        message=message.." • no profile loaded"
+    end
+    notifyLucid(removed and "Highlight removed" or "Highlight added",message,saved and Color3.fromRGB(75,210,120) or Color3.fromRGB(235,175,70))
 end
 local loadProfileButton=actionButton("Load Named Profile", function(button) loadNamedProfile(button) end)
 loadProfileButton.Name="LoadNamedProfileButton"
@@ -7330,7 +7417,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.3.16 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.3.19 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -7529,6 +7616,12 @@ state.initializeCommandConsole=function()
     local function buildCommandCatalog()
         local catalog={
             {command="!eh <player>",description="Add a player to Exploiter highlights"},
+            {command="!lsh",description="Detach the Special highlight list into a window"},
+            {command="!lssh",description="Detach the Super Special highlight list into a window"},
+            {command="!leh",description="Detach the Exploiter highlight list into a window"},
+            {command="!reh <player>",description="Remove a saved player from Exploiter highlights (online or offline)"},
+            {command="!rsh <player>",description="Remove a saved player from Special highlights (online or offline)"},
+            {command="!rssh <player>",description="Remove a saved player from Super Special highlights (online or offline)"},
             {command="!ehc <#RRGGBB>",description="Set the Exploiter highlight color"},
             {command="!emote <animationId> [name]",description="Play an animation by asset ID"},
             {command="!fb <on|off>",description="Enable or disable Fullbright"},
@@ -7656,7 +7749,39 @@ state.initializeCommandConsole=function()
         end
         table.insert(names,player.Name)
         if api.setNames then api.setNames(names) end
+        if state.persistHighlightChange then state.persistHighlightChange(player.Name,label:upper()) end
         finish(true,player.Name.." added to "..label:upper().." highlights")
+    end
+    local function removeNamedHighlight(api,query,label,highlightType)
+        query=tostring(query or ""):match("^%s*(.-)%s*$"):lower()
+        if query=="" then finish(false,"Use: !"..label.." <player>"); return end
+        if not api.getNames or not api.setNames then finish(false,"Highlight list unavailable"); return end
+        local names=api.getNames()
+        local selected=nil
+        -- Exact saved usernames win; otherwise require a unique match in this list.
+        for index,name in ipairs(names) do
+            if name:lower()==query then selected=index; break end
+        end
+        if not selected then
+            for index,name in ipairs(names) do
+                local player=Players:FindFirstChild(name)
+                local matches=name:lower():sub(1,#query)==query
+                    or (player and player.DisplayName:lower():sub(1,#query)==query)
+                if matches then
+                    if selected then finish(false,"Multiple saved players match; use the full username"); return end
+                    selected=index
+                end
+            end
+        end
+        if not selected then finish(false,"No matching player in "..highlightType.." highlights"); return end
+        local removedName=table.remove(names,selected)
+        api.setNames(names)
+        -- Refresh lower-priority highlights after removing a higher-priority entry.
+        if state.yellowHighlightApi.refresh then state.yellowHighlightApi.refresh() end
+        if state.pinkHighlightApi.refresh then state.pinkHighlightApi.refresh() end
+        if state.blackHighlightApi.refresh then state.blackHighlightApi.refresh() end
+        if state.persistHighlightChange then state.persistHighlightChange(removedName,highlightType,true) end
+        finish(true,removedName.." removed from "..highlightType.." highlights")
     end
     local function setNamedHighlightColor(api,value,label)
         if api.setColor and api.setColor(value) then
@@ -7696,6 +7821,14 @@ state.initializeCommandConsole=function()
                 finish(succeeded,state.customReanimationStatus or ("Local Reanimation: "..(desired and "ON" or "OFF")))
             else finish(false,"Local Reanimation unavailable") end
             return
+        elseif command=="lsh" or command=="lssh" or command=="leh" then
+            local api=command=="lsh" and state.yellowHighlightApi or (command=="lssh" and state.pinkHighlightApi or state.blackHighlightApi)
+            if api.openList then api.openList(); finish(true,"Highlight list opened")
+            else finish(false,"Highlight list unavailable") end
+            return
+        elseif command=="rsh" then removeNamedHighlight(state.yellowHighlightApi,rest,"rsh","Special"); return
+        elseif command=="rssh" then removeNamedHighlight(state.pinkHighlightApi,rest,"rssh","Super Special"); return
+        elseif command=="reh" then removeNamedHighlight(state.blackHighlightApi,rest,"reh","Exploiter"); return
         elseif command=="sh" then addNamedHighlight(state.yellowHighlightApi,rest,"sh"); return
         elseif command=="ssh" then addNamedHighlight(state.pinkHighlightApi,rest,"ssh"); return
         elseif command=="eh" then addNamedHighlight(state.blackHighlightApi,rest,"eh"); return
@@ -8197,7 +8330,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.3.16] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.3.19] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.3.16] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.3.19] Loaded, but this executor does not expose queue_on_teleport")
 end
