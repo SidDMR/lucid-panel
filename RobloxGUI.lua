@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.3.26
+--// Lucid Panel v5.3.27
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -355,7 +355,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.3.26",
+    Text                   = "LUCID PANEL  •  v5.3.27",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -5274,6 +5274,7 @@ stopEmote=function()
     if emoteTrack then pcall(function() emoteTrack:Stop(0.15) end) end
     if emoteAnimation then emoteAnimation:Destroy() end
     emoteTrack=nil; emoteAnimation=nil; currentEmoteName=nil
+    state.emotePlaybackPaused=false
     emoteResumeBusy=false
     emoteStatus.Text="Emote stopped"
 end
@@ -5289,6 +5290,7 @@ emoteResults.LayoutOrder=nextOrder()
 local function playEmote(assetId,name)
     emoteSyncActive=false; emoteSyncPlayer=nil; emoteSyncAnimationId=nil
     stopEmote()
+    state.emotePlaybackPaused=false
     local character=LocalPlayer.Character
     local humanoid=character and character:FindFirstChildOfClass("Humanoid")
     local animator=humanoid and humanoid:FindFirstChildOfClass("Animator")
@@ -5334,6 +5336,18 @@ local function playEmote(assetId,name)
     return true
 end
 track(RunService.Heartbeat:Connect(function(dt)
+    -- Some games/Animate scripts reset a normal track to 1x after GUI input
+    -- ends. Enforce only when the value actually differs, at a low frequency.
+    if not emoteSyncActive and currentEmoteName and emoteTrack
+        and not state.customPlaybackDirection and not state.emotePlaybackPaused and not state.emotePoseHeld then
+        state.emoteSpeedEnforceElapsed=(state.emoteSpeedEnforceElapsed or 0)+dt
+        if state.emoteSpeedEnforceElapsed>=(state.lowPerformanceMode and 0.3 or 0.15) then
+            state.emoteSpeedEnforceElapsed=0
+            pcall(function()
+                if math.abs(emoteTrack.Speed-emoteSpeed)>0.001 then emoteTrack:AdjustSpeed(emoteSpeed) end
+            end)
+        end
+    end
     if emoteSyncActive or not state.keepEmoteMoving or not currentEmoteName or not emoteTrack or emoteResumeBusy then return end
     state.emoteResumeElapsed=(state.emoteResumeElapsed or 0)+dt
     if state.emoteResumeElapsed<(state.lowPerformanceMode and 0.25 or 0.1) then return end
@@ -5944,7 +5958,9 @@ state.initializeEmoteStudio=function(api)
             track(UserInputService.InputChanged:Connect(function(input)
                 if dragInput and ((dragInput.UserInputType==Enum.UserInputType.MouseButton1 and input.UserInputType==Enum.UserInputType.MouseMovement) or input==dragInput) then update(input) end
             end))
-            track(UserInputService.InputEnded:Connect(function(input) if input==dragInput then dragInput=nil end end))
+            track(UserInputService.InputEnded:Connect(function(input)
+                if input==dragInput then dragInput=nil; state.setEmotePlaybackSpeed(state.emoteSpeed) end
+            end))
             box.FocusLost:Connect(function() state.setEmotePlaybackSpeed(box.Text) end)
             reset.MouseButton1Click:Connect(function() state.setEmotePlaybackSpeed(1) end)
             return
@@ -6290,12 +6306,13 @@ state.initializeAdvancedEmotes=function(api)
         local track=api.getTrack()
         if not track then button.Text="No emote playing"; return end
         paused=not paused
+        state.emotePlaybackPaused=paused
         if paused then track:AdjustSpeed(0); button.Text="Resume Emote"
         else track:AdjustSpeed(api.getSpeed()); button.Text="Pause Emote" end
     end)
     actionButton("Restart Current Emote",function(button)
         local track=api.getTrack()
-        if track then track.TimePosition=0; track:AdjustSpeed(api.getSpeed()); paused=false; button.Text="Emote restarted"
+        if track then track.TimePosition=0; track:AdjustSpeed(api.getSpeed()); paused=false; state.emotePlaybackPaused=false; button.Text="Emote restarted"
         else button.Text="No emote playing" end
     end)
     actionButton("Repeat Last Emote",function(button)
@@ -7601,7 +7618,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.3.26 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.3.27 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -8540,7 +8557,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.3.26] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.3.27] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.3.26] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.3.27] Loaded, but this executor does not expose queue_on_teleport")
 end
