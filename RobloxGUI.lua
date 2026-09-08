@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.4.1
+--// Lucid Panel v5.4.2
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -355,7 +355,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.4.1",
+    Text                   = "LUCID PANEL  •  v5.4.2",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -7571,6 +7571,13 @@ local function unloadDexPlusPlus()
     end
     local removed=0
     local visited={}
+    for _,gui in ipairs(sharedEnvironment.__LUCID_DEX_GUIS or {}) do
+        if typeof(gui)=="Instance" and gui.Parent then
+            removed+=1
+            pcall(function() gui:Destroy() end)
+        end
+    end
+    sharedEnvironment.__LUCID_DEX_GUIS=nil
     for _,container in ipairs(containers) do
         if container and not visited[container] then
             visited[container]=true
@@ -7599,13 +7606,36 @@ actionButton("Launch Dex++ Explorer", function(button)
     sharedEnvironment.__LUCID_DEX_LOADING=loadToken
     button.Text="Loading Dex++..."
     task.spawn(function()
+        local previous={}
+        local dexContainers={CoreGui,LocalPlayer:FindFirstChildOfClass("PlayerGui")}
+        if type(gethui)=="function" then
+            local ok,hiddenUi=pcall(gethui)
+            if ok and hiddenUi then table.insert(dexContainers,hiddenUi) end
+        end
+        for _,container in ipairs(dexContainers) do
+            if container then for _,gui in ipairs(container:GetChildren()) do previous[gui]=true end end
+        end
         local fetched, source=pcall(function()
-            return game:HttpGet("https://github.com/AZYsGithub/DexPlusPlus/releases/latest/download/out.lua")
+            -- Moon Dex is the compatibility variant exposed by Infinite Yield as
+            -- `mdex`. Dex++ 3.0 currently throws while inspecting its internal
+            -- ImageButton named "Up" on some executors (missing `Arrow`).
+            return game:HttpGet("https://raw.githubusercontent.com/infyiff/backup/main/dex.lua")
         end)
         local launched=false
         if sharedEnvironment.__LUCID_DEX_LOADING==loadToken and fetched and type(source)=="string" and #source>0 then
             local compiled, dexChunk=pcall(loadstring,source)
             if compiled and type(dexChunk)=="function" then launched=pcall(dexChunk) end
+        end
+        if launched then
+            local created={}
+            for _,container in ipairs(dexContainers) do
+                if container then
+                    for _,gui in ipairs(container:GetChildren()) do
+                        if not previous[gui] and gui~=screenGui then table.insert(created,gui) end
+                    end
+                end
+            end
+            sharedEnvironment.__LUCID_DEX_GUIS=created
         end
         if sharedEnvironment.__LUCID_DEX_LOADING==loadToken then
             sharedEnvironment.__LUCID_DEX_LOADING=nil
@@ -7623,7 +7653,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.4.1 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.4.2 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -8611,7 +8641,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.4.1] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.4.2] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.4.1] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.4.2] Loaded, but this executor does not expose queue_on_teleport")
 end
