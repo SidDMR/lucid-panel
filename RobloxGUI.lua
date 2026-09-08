@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.4.0
+--// Lucid Panel v5.4.1
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -355,7 +355,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.4.0",
+    Text                   = "LUCID PANEL  •  v5.4.1",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -7623,7 +7623,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.4.0 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.4.1 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -7828,6 +7828,9 @@ state.initializeCommandConsole=function()
     local function buildCommandCatalog()
         local catalog={
             {command="!desync",description="Stop player emote synchronization"},
+            {command="!dex",description="Launch Dex++ Explorer"},
+            {command="!dex unload",description="Unload Dex++ Explorer"},
+            {command="!undex",description="Unload Dex++ Explorer"},
             {command="!eh <player>",description="Add a player to Exploiter highlights"},
             {command="!lsh",description="Detach the Special highlight list into a window"},
             {command="!lssh",description="Detach the Super Special highlight list into a window"},
@@ -8011,6 +8014,18 @@ state.initializeCommandConsole=function()
         if command=="" then return end
         if command=="help" or command=="commands" then
             finish(true,"!goto !loopgoto !sync !waypoint !espall !noclip !fly !freecam !walkspeed !fogend …")
+            return
+        elseif command=="dex" then
+            local unloadRequested=normalize(rest)=="unload" or normalize(rest)=="off"
+            local actionName=unloadRequested and "Unload Dex++" or "Launch Dex++ Explorer"
+            local dexAction=state.commandActions and state.commandActions[actionName]
+            if dexAction then dexAction(); finish(true,unloadRequested and "Unloading Dex++ Explorer" or "Launching Dex++ Explorer")
+            else finish(false,"Dex++ action unavailable") end
+            return
+        elseif command=="undex" or command=="unloaddex" then
+            local unloadDex=state.commandActions and state.commandActions["Unload Dex++"]
+            if unloadDex then unloadDex(); finish(true,"Unloading Dex++ Explorer")
+            else finish(false,"Dex++ unload unavailable") end
             return
         elseif command=="open" then
             local target=rest:sub(1,1):upper()..rest:sub(2):lower()
@@ -8596,7 +8611,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.4.0] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.4.1] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.4.0] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.4.1] Loaded, but this executor does not expose queue_on_teleport")
 end
