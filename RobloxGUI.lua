@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.3.29
+--// Lucid Panel v5.4.0
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -355,7 +355,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.3.29",
+    Text                   = "LUCID PANEL  •  v5.3.31",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -847,6 +847,7 @@ state.initializeLucidDock=function()
     end
     local frames=0
     local elapsed=0
+    local lastStatsText=nil
     local function metricHex(value,low,mid,high,higherIsBetter)
         local red=Color3.fromRGB(235,70,80)
         local yellow=Color3.fromRGB(235,190,65)
@@ -865,13 +866,14 @@ state.initializeLucidDock=function()
     end
     track(RunService.RenderStepped:Connect(function(dt)
         frames=frames+1; elapsed=elapsed+dt
-        if elapsed<0.5 then return end
+        if elapsed<1 then return end
         local fps=math.floor(frames/elapsed+0.5); frames=0; elapsed=0
         local ping=0
         pcall(function() ping=math.floor(game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue()+0.5) end)
         local fpsColor=metricHex(fps,60,180,300,true)
         local pingColor=metricHex(ping,1,150,300,false)
-        stats.Text=string.format('<font color="%s">● FPS %d</font>    <font color="%s">● PING %dms</font>',fpsColor,fps,pingColor,ping)
+        local nextText=string.format('<font color="%s">● FPS %d</font>    <font color="%s">● PING %dms</font>',fpsColor,fps,pingColor,ping)
+        if nextText~=lastStatsText then stats.Text=nextText; lastStatsText=nextText end
     end))
     track(mainFrame:GetPropertyChangedSignal("Visible"):Connect(state.refreshLucidDock))
     state.applyAccentTheme(state.accentTheme)
@@ -2617,8 +2619,8 @@ create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = rejoinBtn })
 create("UIStroke", { Color = Color3.fromRGB(90, 60, 180), Thickness = 1, Parent = rejoinBtn })
 
 -- IY-style rejoin (source: admin.lua lines 6876-6885)
-rejoinBtn.MouseButton1Click:Connect(function()
-    rejoinBtn.Text = "Rejoining..."
+local function rejoinServer()
+    if rejoinBtn and rejoinBtn.Parent then rejoinBtn.Text = "Rejoining..." end
     local PlaceId = game.PlaceId
     local JobId = game.JobId
     if #Players:GetPlayers() <= 1 then
@@ -2634,7 +2636,9 @@ rejoinBtn.MouseButton1Click:Connect(function()
             TeleportService:TeleportToPlaceInstance(PlaceId, JobId, LocalPlayer)
         end)
     end
-end)
+end
+state.rejoinServer=rejoinServer
+rejoinBtn.MouseButton1Click:Connect(rejoinServer)
 
 -- ════════════════════════════════════════════════════════════
 --  PRIVATE SERVER JOIN
@@ -7619,7 +7623,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.3.29 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.3.31 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -7746,15 +7750,21 @@ state.initializeHomeDashboard=function()
         TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=nextOrder(),Parent=currentSection})
     task.spawn(function()
         while screenGui.Parent do
-            local names={}; for name,enabled in pairs(activeFeatures) do if enabled then table.insert(names,name) end end
-            table.sort(names)
-            if profileSummary and profileSummary.Parent then
-                profileSummary.Text="Profile: "..tostring(profileNameBox and profileNameBox.Text or "unknown").."  |  Place: "..tostring(game.PlaceId)
+            local homeVisible=(mainFrame.Visible and state.mainNavigation.active=="Home" and categoryMeta.Home.isOpen())
+                or (categoryMeta.Home.dock and categoryMeta.Home.dock.Visible)
+            if homeVisible then
+                local names={}; for name,enabled in pairs(activeFeatures) do if enabled then table.insert(names,name) end end
+                table.sort(names)
+                if profileSummary and profileSummary.Parent then
+                    local text="Profile: "..tostring(profileNameBox and profileNameBox.Text or "unknown").."  |  Place: "..tostring(game.PlaceId)
+                    if profileSummary.Text~=text then profileSummary.Text=text end
+                end
+                if activeSummary and activeSummary.Parent then
+                    local text=#names==0 and "No optional features enabled" or ("ON ("..#names.."): "..table.concat(names,", "))
+                    if activeSummary.Text~=text then activeSummary.Text=text end
+                end
             end
-            if activeSummary and activeSummary.Parent then
-                activeSummary.Text=#names==0 and "No optional features enabled" or ("ON ("..#names.."): "..table.concat(names,", "))
-            end
-            task.wait(state.lowPerformanceMode and 2 or 0.75)
+            task.wait(homeVisible and (state.lowPerformanceMode and 2 or 0.75) or 2)
         end
     end)
 end
@@ -7840,6 +7850,7 @@ state.initializeCommandConsole=function()
             {command="!open <section>",description="Open Home, Player, World, Tools or Settings"},
             {command="!panel",description="Show or hide the main Lucid panel"},
             {command="!return",description="Return to the previous teleport position"},
+            {command="!rj",description="Rejoin using the IY-style same-server routine"},
             {command="!reanim <on|off>",description="Control Local Reanimation for Custom keyframes"},
             {command="!sh <player>",description="Add a player to Special highlights"},
             {command="!shc <#RRGGBB>",description="Set the Special highlight color"},
@@ -8015,6 +8026,7 @@ state.initializeCommandConsole=function()
             return
         elseif command=="unloopgoto" or command=="stopgoto" then state.gotoApi.setLoop(nil,false); finish(true,"Loop goto disabled"); return
         elseif command=="return" or command=="returnposition" then state.gotoApi.returnPrevious(); finish(true,"Returned to previous position"); return
+        elseif command=="rj" then finish(true,"Rejoining server..."); task.defer(state.rejoinServer); return
         elseif command=="reanim" or command=="reanimation" then
             local setter=toggleRegistry["Local Reanimation"]
             local desired=boolArgument(rest,state.customReanimationEnabled)
@@ -8172,7 +8184,10 @@ task.spawn(function()
     local diagnosticsFailed=false
     while screenGui.Parent do
         if diagnosticsFailed then break end
-        local ok, err=pcall(function()
+        local diagnosticsVisible=(mainFrame.Visible and state.mainNavigation.active=="Settings" and categoryMeta.Diagnostics.isOpen())
+            or (categoryMeta.Diagnostics.dock and categoryMeta.Diagnostics.dock.Visible)
+        local ok, err=true,nil
+        if diagnosticsVisible then ok,err=pcall(function()
             local char=LocalPlayer.Character; local h=char and char:FindFirstChildOfClass("Humanoid")
             local root=char and char:FindFirstChild("HumanoidRootPart")
             local rig=h and tostring(h.RigType):gsub("Enum.HumanoidRigType.","") or "None"
@@ -8180,17 +8195,18 @@ task.spawn(function()
             local speed=root and math.floor(root.AssemblyLinearVelocity.Magnitude+0.5) or 0
             local activeCount=0; for _,enabled in pairs(activeFeatures) do if enabled then activeCount=activeCount+1 end end
             local detachedCount=0; for _,item in ipairs(detachableWindows) do if item.isDetached() then detachedCount=detachedCount+1 end end
-            diagnosticsLabel.Text=string.format("Place: %s\nRig: %s | State: %s\nWalkSpeed: %s | HipHeight: %s | Velocity: %s\nLucid: %d connections | %d active | %d detached | %s\nActive: %s",
+            local text=string.format("Place: %s\nRig: %s | State: %s\nWalkSpeed: %s | HipHeight: %s | Velocity: %s\nLucid: %d connections | %d active | %d detached | %s\nActive: %s",
                 tostring(game.PlaceId), rig, humanoidState, h and tostring(h.WalkSpeed) or "-",
                 h and string.format("%.2f",h.HipHeight) or "-", speed,#connections,activeCount,detachedCount,
                 state.lowPerformanceMode and "LOW PERF" or "NORMAL",statusLabelRef and statusLabelRef.Text or "Anti-AFK")
-        end)
+            if diagnosticsLabel.Text~=text then diagnosticsLabel.Text=text end
+        end) end
         if not ok then
             diagnosticsLabel.Text="Diagnostics unavailable\n"..tostring(err)
             warn("[Lucid v4 / Diagnostics] "..tostring(err))
             diagnosticsFailed=true
         end
-        task.wait(state.lowPerformanceMode and 2.5 or 1)
+        task.wait(diagnosticsVisible and (state.lowPerformanceMode and 2.5 or 1) or 2)
     end
 end)
 end
@@ -8580,7 +8596,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.3.29] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.4.0] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.3.29] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.4.0] Loaded, but this executor does not expose queue_on_teleport")
 end
