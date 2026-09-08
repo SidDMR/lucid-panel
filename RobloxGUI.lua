@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.3.27
+--// Lucid Panel v5.3.29
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -355,7 +355,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.3.27",
+    Text                   = "LUCID PANEL  •  v5.3.29",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -6547,6 +6547,7 @@ state.emoteCommandApi={
         emoteStatus.Text=#(items or {})>0 and ("Showing "..#items.." emotes") or emptyText
     end,
     setSyncName=function(name) emoteSyncBox.Text=name end,beginSync=beginEmoteSync,
+    stopSync=function() stopEmoteSync(true) end,
     cancelSearch=function()
         emoteRequestGeneration=emoteRequestGeneration+1; emoteLoading=false; emoteSearchButton.Text="Search"; emoteStatus.Text="Catalog search cancelled"
     end,
@@ -7618,7 +7619,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.3.27 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.3.29 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -7816,6 +7817,7 @@ state.initializeCommandConsole=function()
     local function normalize(value) return tostring(value or ""):lower():gsub("%b()",""):gsub("[^%w]","") end
     local function buildCommandCatalog()
         local catalog={
+            {command="!desync",description="Stop player emote synchronization"},
             {command="!eh <player>",description="Add a player to Exploiter highlights"},
             {command="!lsh",description="Detach the Special highlight list into a window"},
             {command="!lssh",description="Detach the Super Special highlight list into a window"},
@@ -8040,6 +8042,8 @@ state.initializeCommandConsole=function()
             if rest=="" then finish(false,"Use: !sync <player>")
             else state.emoteCommandApi.setSyncName(rest); state.emoteCommandApi.beginSync(); finish(true,"Syncing with "..rest) end
             return
+        elseif command=="desync" then
+            state.emoteCommandApi.stopSync(); finish(true,"Player emote sync stopped"); return
         elseif command=="stopsync" or command=="stopemote" then state.emoteCommandApi.stop(); finish(true,"Emote playback/sync stopped"); return
         elseif command=="emote" then
             local id,name=rest:match("^(%d+)%s*(.*)$")
@@ -8086,6 +8090,25 @@ state.initializeCommandConsole=function()
         end
         finish(false,"Unknown command: !"..command.." | use !help")
     end
+    local chatAliases={commands=true,stopgoto=true,returnposition=true,reanimation=true,
+        wp=true,waypointmarkers=true,ws=true,jh=true,fpscap=true}
+    local function isRecognizedChatCommand(text)
+        local first=tostring(text or ""):match("^%s*!?(%S+)")
+        local token=normalize(first)
+        if token=="" then return false end
+        if chatAliases[token] then return true end
+        for _,entry in ipairs(buildCommandCatalog()) do
+            if normalize(entry.command:match("^!?([^%s<]+)"))==token then return true end
+        end
+        return false
+    end
+    -- LocalPlayer.Chatted supports both legacy and modern chat on the client in
+    -- the environments Lucid targets. Only the first word is treated as the
+    -- command token; ordinary messages with an unknown first word are ignored.
+    track(LocalPlayer.Chatted:Connect(function(message)
+        if isRecognizedChatCommand(message) then task.defer(runCommand,message) end
+    end))
+    state.runLucidCommand=runCommand
     input.FocusLost:Connect(function(enterPressed)
         if not enterPressed then return end
         local text=input.Text
@@ -8557,7 +8580,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.3.27] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.3.29] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.3.27] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.3.29] Loaded, but this executor does not expose queue_on_teleport")
 end
