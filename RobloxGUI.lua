@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.3.25
+--// Lucid Panel v5.3.26
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -355,7 +355,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.3.25",
+    Text                   = "LUCID PANEL  •  v5.3.26",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -3261,8 +3261,11 @@ local function initializePlayerESP()
     end)
 
     sectionLabel("Special Player Highlights",nextOrder())
-    local function renderHighlightRoster(container,online,offline,color,onRemove)
+    local function renderHighlightRoster(container,online,offline,color,onRemove,visible)
         for _,child in ipairs(container:GetChildren()) do if child:IsA("GuiObject") then child:Destroy() end end
+        -- Collapsed rosters retain only their saved-name tables and count. This
+        -- avoids hundreds of invisible GUI/layout instances for large lists.
+        if not visible then return end
         local order=0
         local function addGroup(title,names)
             if #names==0 then return end
@@ -3329,9 +3332,9 @@ local function initializePlayerESP()
             list.Parent=detached and body or originalParent
             list.Visible=detached or restoreVisible()
             window.Visible=detached and not state.photoModeEnabled
+            refreshList()
         end
         api.openList=function()
-            refreshList()
             if minimized then
                 minimized=false; window.Size=expandedSize; body.Visible=true; minimize.Text="-"
             end
@@ -3384,7 +3387,7 @@ local function initializePlayerESP()
             refreshYellowStatus(); refreshESP()
             if state.pinkHighlightApi.refresh then state.pinkHighlightApi.refresh() end
             if state.blackHighlightApi.refresh then state.blackHighlightApi.refresh() end
-        end)
+        end,yellowListOpen or state.yellowHighlightApi.listDetached)
         yellowStatus.Text=(yellowListOpen and "v  " or ">  ").."Highlighted Players ("..(#online+#offline)..")"
     end
     yellowStatus.MouseButton1Click:Connect(function()
@@ -3528,7 +3531,7 @@ local function initializePlayerESP()
                 for playerKey in pairs(pinkHighlights) do if playerKey.Name==name then removePinkHighlight(playerKey) end end
                 refreshPinkStatus(); refreshESP()
                 if state.blackHighlightApi.refresh then state.blackHighlightApi.refresh() end
-            end)
+            end,pinkListOpen or state.pinkHighlightApi.listDetached)
             pinkStatus.Text=(pinkListOpen and "v  " or ">  ").."Highlighted Players ("..(#online+#offline)..")"
         end
         pinkStatus.MouseButton1Click:Connect(function()
@@ -3664,7 +3667,7 @@ local function initializePlayerESP()
                 state.blackHighlightNames[name]=nil
                 for playerKey in pairs(blackHighlights) do if playerKey.Name==name then removeBlackHighlight(playerKey) end end
                 refreshBlackStatus(); refreshESP()
-            end)
+            end,blackListOpen or state.blackHighlightApi.listDetached)
             blackStatus.Text=(blackListOpen and "v  " or ">  ").."Highlighted Players ("..(#online+#offline)..")"
         end
         blackStatus.MouseButton1Click:Connect(function()
@@ -7598,7 +7601,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.3.25 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.3.26 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -8537,7 +8540,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.3.25] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.3.26] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.3.25] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.3.26] Loaded, but this executor does not expose queue_on_teleport")
 end
