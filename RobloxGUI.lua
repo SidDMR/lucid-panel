@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.4.8
+--// Lucid Panel v5.4.9
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -355,7 +355,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.4.8",
+    Text                   = "LUCID PANEL  •  v5.4.9",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -7682,7 +7682,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.4.8 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.4.9 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -7925,7 +7925,7 @@ state.initializeCommandConsole=function()
     local shortCommandAliases={
         hlp="help",op="open",pnl="panel",gt="goto",lg="loopgoto",ulg="unloopgoto",rt="return",
         sy="sync",dsy="desync",sem="stopemote",ssy="stopsync",us="unspec",em="emote",
-        ra="reanim",fe="fogend",dx="dex",udx="undex",
+        ra="reanim",fe="fogend",dx="dex",udx="undex",res="restore",
     }
     local function buildCommandCatalog()
         local catalog={
@@ -7956,6 +7956,7 @@ state.initializeCommandConsole=function()
             {command="!open <section>",description="Open Home, Player, World, Tools or Settings"},
             {command="!panel",description="Show or hide the main Lucid panel"},
             {command="!return",description="Return to the previous teleport position"},
+            {command="!restore",description="Recover the local character and restore its camera"},
             {command="!rj",description="Rejoin using the IY-style same-server routine"},
             {command="!reanim <on|off>",description="Control Local Reanimation for Custom keyframes"},
             {command="!sh <player>",description="Add a player to Special highlights"},
@@ -8167,6 +8168,11 @@ state.initializeCommandConsole=function()
             return
         elseif command=="unloopgoto" or command=="stopgoto" then state.gotoApi.setLoop(nil,false); finish(true,"Loop goto disabled"); return
         elseif command=="return" or command=="returnposition" then state.gotoApi.returnPrevious(); finish(true,"Returned to previous position"); return
+        elseif command=="restore" or command=="recover" then
+            if state.recoverCharacter then state.recoverCharacter() end
+            local stopSpectating=state.commandActions and state.commandActions["Stop Spectating"]
+            if stopSpectating then stopSpectating() end
+            finish(state.recoverCharacter~=nil,"Character and camera restored"); return
         elseif command=="rj" then finish(true,"Rejoining server..."); task.defer(state.rejoinServer); return
         elseif command=="reanim" or command=="reanimation" then
             local setter=toggleRegistry["Local Reanimation"]
@@ -8275,7 +8281,7 @@ state.initializeCommandConsole=function()
         end
         finish(false,"Unknown command: !"..command.." | use !help")
     end
-    local chatAliases={commands=true,stopgoto=true,returnposition=true,reanimation=true,spectate=true,
+    local chatAliases={commands=true,stopgoto=true,returnposition=true,reanimation=true,spectate=true,recover=true,
         wp=true,waypointmarkers=true,ws=true,jh=true,fpscap=true}
     for command in pairs(toggleCommandAliases) do chatAliases[command]=true end
     for command in pairs(actionCommandAliases) do chatAliases[command]=true end
@@ -8773,7 +8779,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.4.8] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.4.9] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.4.8] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.4.9] Loaded, but this executor does not expose queue_on_teleport")
 end
