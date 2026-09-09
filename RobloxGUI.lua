@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.4.2
+--// Lucid Panel v5.4.3
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -355,7 +355,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.4.2",
+    Text                   = "LUCID PANEL  •  v5.4.3",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -7653,7 +7653,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.4.2 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.4.3 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -7876,6 +7876,7 @@ state.initializeCommandConsole=function()
             {command="!fps <30-1000>",description="Set the client FPS cap"},
             {command="!fullbright <on|off>",description="Use balanced daylight without blown-out whites"},
             {command="!goto <player>",description="Teleport to an in-game player"},
+            {command="!gto <player>",description="Alias for goto"},
             {command="!help",description="Show a compact command summary"},
             {command="!jumpheight <value>",description="Set and lock jump height"},
             {command="!loopgoto <player>",description="Continuously follow a player"},
@@ -7893,6 +7894,7 @@ state.initializeCommandConsole=function()
             {command="!ssh <player>",description="Add a player to Super Special highlights"},
             {command="!sshc <#RRGGBB>",description="Set the Super Special highlight color"},
             {command="!sync <player>",description="Synchronize with a player's current emote"},
+            {command="!unspec",description="Stop spectating and return the camera to your character"},
             {command="!unloopgoto",description="Disable loop goto"},
             {command="!walkspeed <value>",description="Set and lock WalkSpeed"},
             {command="!waypoint delete <name>",description="Delete a named waypoint"},
@@ -8063,8 +8065,8 @@ state.initializeCommandConsole=function()
             else finish(false,"Use: !open home/player/world/tools/settings") end
             return
         elseif command=="panel" then mainFrame.Visible=not mainFrame.Visible; finish(true,"Panel "..(mainFrame.Visible and "shown" or "hidden")); return
-        elseif command=="goto" then
-            if rest=="" then finish(false,"Use: !goto <player>") else state.gotoApi.go(rest); finish(true,"Going to "..rest) end
+        elseif command=="goto" or command=="gto" then
+            if rest=="" then finish(false,"Use: !"..command.." <player>") else state.gotoApi.go(rest); finish(true,"Going to "..rest) end
             return
         elseif command=="loopgoto" then
             if rest=="" then finish(false,"Use: !loopgoto <player>") else state.gotoApi.setLoop(rest,true); finish(true,"Loop goto: "..rest) end
@@ -8101,6 +8103,11 @@ state.initializeCommandConsole=function()
             return
         elseif command=="desync" then
             state.emoteCommandApi.stopSync(); finish(true,"Player emote sync stopped"); return
+        elseif command=="unspec" then
+            local stopSpectating=state.commandActions and state.commandActions["Stop Spectating"]
+            if stopSpectating then stopSpectating(); finish(true,"Spectating stopped")
+            else finish(false,"Stop Spectating action unavailable") end
+            return
         elseif command=="stopsync" or command=="stopemote" then state.emoteCommandApi.stop(); finish(true,"Emote playback/sync stopped"); return
         elseif command=="emote" then
             local id,name=rest:match("^(%d+)%s*(.*)$")
@@ -8641,7 +8648,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.4.2] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.4.3] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.4.2] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.4.3] Loaded, but this executor does not expose queue_on_teleport")
 end
