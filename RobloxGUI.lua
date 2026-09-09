@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.4.7
+--// Lucid Panel v5.4.8
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -355,7 +355,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.4.7",
+    Text                   = "LUCID PANEL  •  v5.4.8",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -4785,12 +4785,34 @@ end))
 state.initializeFullbright=function()
     sectionLabel("Visibility",nextOrder())
     local savedLighting=nil
-    local savedAtmospheres={}
     local savedBloom={}
+    local savedColorCorrections={}
+    local effectConnections={}
     local applying=false
-    local targets={Brightness=1.75,ExposureCompensation=-0.2,ClockTime=14,
-        Ambient=Color3.fromRGB(120,125,135),OutdoorAmbient=Color3.fromRGB(145,150,160),
-        GlobalShadows=false,FogStart=0,FogEnd=1e9,EnvironmentDiffuseScale=0.45,EnvironmentSpecularScale=0.25}
+    local targets={}
+    local function luminance(color)
+        return color.R*0.2126+color.G*0.7152+color.B*0.0722
+    end
+    local function liftColor(color,minimum)
+        local current=luminance(color)
+        if current>=minimum then return color end
+        local amount=(minimum-current)/math.max(0.001,1-current)
+        return color:Lerp(Color3.new(1,1,1),math.clamp(amount,0,0.42))
+    end
+    local function buildAdaptiveTargets()
+        local source=savedLighting
+        local ambientDarkness=1-math.clamp((luminance(source.Ambient)+luminance(source.OutdoorAmbient))*0.5,0,1)
+        local exposureDarkness=math.clamp(-source.ExposureCompensation/2,0,1)
+        local brightnessDarkness=1-math.clamp(source.Brightness/3,0,1)
+        local darkness=math.clamp(ambientDarkness*0.45+exposureDarkness*0.3+brightnessDarkness*0.25,0,1)
+        targets={
+            Brightness=math.max(source.Brightness,1.35+darkness*0.55),
+            ExposureCompensation=math.max(source.ExposureCompensation,0.08+darkness*0.32),
+            Ambient=liftColor(source.Ambient,0.24+darkness*0.08),
+            OutdoorAmbient=liftColor(source.OutdoorAmbient,0.28+darkness*0.08),
+            EnvironmentDiffuseScale=math.max(source.EnvironmentDiffuseScale,0.3),
+        }
+    end
     local function suspendConflictingLocks()
         for _,name in ipairs({"Lock Comfort Preset","Lock Selected Night Time","Lock FogEnd","Disable Bright Effects"}) do
             local setter=toggleRegistry[name]
@@ -4799,17 +4821,25 @@ state.initializeFullbright=function()
     end
     local function processLightingEffect(item)
         if not state.fullbrightEnabled then return end
-        if item:IsA("Atmosphere") then
-            if not savedAtmospheres[item] then savedAtmospheres[item]={item.Density,item.Haze,item.Glare} end
-            local values=savedAtmospheres[item]
-            local density=math.min(values[1],0.18)
-            local haze=math.min(values[2],0.5)
-            if item.Density~=density then item.Density=density end
-            if item.Haze~=haze then item.Haze=haze end
-            if item.Glare~=0 then item.Glare=0 end
-        elseif item:IsA("BloomEffect") then
+        if (item:IsA("BloomEffect") or item:IsA("ColorCorrectionEffect")) and not effectConnections[item] then
+            effectConnections[item]=track(item.Changed:Connect(function()
+                if state.fullbrightEnabled then task.defer(processLightingEffect,item) end
+            end))
+        end
+        if item:IsA("BloomEffect") then
             if savedBloom[item]==nil then savedBloom[item]=item.Enabled end
             if item.Enabled then item.Enabled=false end
+        elseif item:IsA("ColorCorrectionEffect") then
+            if not savedColorCorrections[item] then
+                savedColorCorrections[item]={item.Brightness,item.Contrast}
+            end
+            local values=savedColorCorrections[item]
+            -- Preserve saturation and tint, but prevent a strong darkness filter
+            -- from cancelling the adaptive visibility lift.
+            local brightness=math.max(values[1],-0.02)
+            local contrast=math.min(values[2],0.12)
+            if item.Brightness~=brightness then item.Brightness=brightness end
+            if item.Contrast~=contrast then item.Contrast=contrast end
         end
     end
     local function enforceLightingProperty(property)
@@ -4834,17 +4864,16 @@ state.initializeFullbright=function()
             for property,value in pairs(savedLighting) do pcall(function() Lighting[property]=value end) end
             savedLighting=nil
         end
-        for atmosphere,values in pairs(savedAtmospheres) do
-            if atmosphere and atmosphere.Parent then pcall(function()
-                atmosphere.Density=values[1]; atmosphere.Haze=values[2]; atmosphere.Glare=values[3]
-            end) end
-        end
-        table.clear(savedAtmospheres)
         for effect,enabled in pairs(savedBloom) do
             if effect and effect.Parent then pcall(function() effect.Enabled=enabled end) end
         end
         table.clear(savedBloom)
-        if state.antiLagEnabled then Lighting.GlobalShadows=false; Lighting.FogStart=9e9; Lighting.FogEnd=9e9 end
+        for effect,values in pairs(savedColorCorrections) do
+            if effect and effect.Parent then pcall(function()
+                effect.Brightness=values[1]; effect.Contrast=values[2]
+            end) end
+        end
+        table.clear(savedColorCorrections)
     end
     createToggle("Fullbright",nextOrder(),false,function(on)
         state.fullbrightEnabled=on
@@ -4852,10 +4881,10 @@ state.initializeFullbright=function()
             suspendConflictingLocks()
             if not savedLighting then
                 savedLighting={Brightness=Lighting.Brightness,ExposureCompensation=Lighting.ExposureCompensation,
-                    ClockTime=Lighting.ClockTime,Ambient=Lighting.Ambient,OutdoorAmbient=Lighting.OutdoorAmbient,
-                    GlobalShadows=Lighting.GlobalShadows,FogStart=Lighting.FogStart,FogEnd=Lighting.FogEnd,
-                    EnvironmentDiffuseScale=Lighting.EnvironmentDiffuseScale,EnvironmentSpecularScale=Lighting.EnvironmentSpecularScale}
+                    Ambient=Lighting.Ambient,OutdoorAmbient=Lighting.OutdoorAmbient,
+                    EnvironmentDiffuseScale=Lighting.EnvironmentDiffuseScale}
             end
+            buildAdaptiveTargets()
             applyFullbright()
         else restoreFullbright() end
     end)
@@ -7653,7 +7682,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.4.7 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.4.8 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -8744,7 +8773,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.4.7] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.4.8] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.4.7] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.4.8] Loaded, but this executor does not expose queue_on_teleport")
 end
