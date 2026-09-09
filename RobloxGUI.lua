@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.4.3
+--// Lucid Panel v5.4.7
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -355,7 +355,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.4.3",
+    Text                   = "LUCID PANEL  •  v5.4.7",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -4635,7 +4635,7 @@ waypointDropdownButton.MouseButton1Click:Connect(function() setWaypointDropdownO
 registerFavorite("Quick Waypoint List", function()
     categoryMeta["Waypoints"].setOpen(true)
     setWaypointDropdownOpen(true)
-end, waypointDropdownRow)
+end, waypointDropdownRow, waypointDropdownButton)
 refreshWaypointDropdown=function()
     for _,marker in pairs(waypointMarkers) do marker:Destroy() end
     table.clear(waypointMarkers)
@@ -7653,7 +7653,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.4.3 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.4.7 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -7855,6 +7855,49 @@ state.initializeCommandConsole=function()
         CanvasSize=UDim2.new(),ZIndex=181,Parent=browser})
     create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,4),Parent=commandList})
     local function normalize(value) return tostring(value or ""):lower():gsub("%b()",""):gsub("[^%w]","") end
+    local toggleCommandAliases={
+        esp="ESP All",ea="ESP All",noclip="Enable Noclip",antifling="Enable Anti-Fling",airwalk="Enable Air Walk",freeze="Freeze Me",
+        infjump="Enable Inf. Jump",shiftlock="Enable Shift Lock Option",clicktp="Left Alt + Click TP",
+        autoclick="Enable AutoClick",spawnpoint="Return Where I Died",recovery="Character Recovery Loop",
+        camerashake="Remove Camera Shake",unlockmouse="Unlock Mouse",photomode="Photo Mode — Clean Freecam",
+        isolate="Photo Isolation — Hide Other Players",hideplayers="Hide Named Players",
+        comfortlock="Lock Comfort Preset",brighteffects="Disable Bright Effects",
+        keepemoting="Keep Emote While Moving",presetanimations="Enable Preset Animations",posehold="Pose Hold",
+        resumeemote="Resume Last Emote After Respawn",autoplayemote="Auto-play Last Emote On Join",
+        compact="Compact Panel",lowperf="Low Performance Mode",render3d="Disable 3D Rendering",
+        backpackorder="Auto-arrange Saved Backpack Order",bananas="Remove Banana Peels",landmines="Remove Landmines",
+        bananaesp="Banana Peel ESP (Yellow)",landmineesp="Landmine ESP (Red)",wormesp="Scary Worm ESP (Red 90% Transparent)",
+        nc="Enable Noclip",af="Enable Anti-Fling",aw="Enable Air Walk",frz="Freeze Me",ij="Enable Inf. Jump",
+        sl="Enable Shift Lock Option",ctp="Left Alt + Click TP",ac="Enable AutoClick",sp="Return Where I Died",
+        cr="Character Recovery Loop",rcs="Remove Camera Shake",um="Unlock Mouse",pm="Photo Mode — Clean Freecam",
+        iso="Photo Isolation — Hide Other Players",hp="Hide Named Players",cl="Lock Comfort Preset",
+        be="Disable Bright Effects",kem="Keep Emote While Moving",pa="Enable Preset Animations",ph="Pose Hold",
+        rle="Resume Last Emote After Respawn",ape="Auto-play Last Emote On Join",cp="Compact Panel",
+        lp="Low Performance Mode",r3d="Disable 3D Rendering",bo="Auto-arrange Saved Backpack Order",
+        rb="Remove Banana Peels",rlm="Remove Landmines",besp="Banana Peel ESP (Yellow)",
+        lesp="Landmine ESP (Red)",wesp="Scary Worm ESP (Red 90% Transparent)",
+    }
+    local actionCommandAliases={
+        firstperson="First Person",thirdperson="Third Person / Restore",restorelighting="Restore Lighting",
+        copyjobid="Copy Job ID",joinjobid="Join Job ID",serverhop="Server Hop",saveprofile="Save Named Profile",
+        exportprofile="Export Profile to Clipboard",importprofile="Import Profile from Text Box",
+        deleteprofile="Delete Selected Profile",showwindows="Show All Detached Windows",
+        resetwindows="Reset Off-screen Windows",snapwindows="Snap Detached Windows to Edges",
+        panic="PANIC / Reset Features [End]",refreshbackpack="Refresh Detected Backpack Tools",
+        clearbackpack="Clear Backpack Auto-Remove List",savebackpackorder="Save Current Backpack Order",
+        copydiagnostics="Copy Diagnostic Report",cleanup="Emergency Cleanup Only",
+        fp="First Person",tp="Third Person / Restore",rl="Restore Lighting",cji="Copy Job ID",jji="Join Job ID",
+        shp="Server Hop",svp="Save Named Profile",exp="Export Profile to Clipboard",imp="Import Profile from Text Box",
+        dp="Delete Selected Profile",saw="Show All Detached Windows",row="Reset Off-screen Windows",
+        snw="Snap Detached Windows to Edges",pn="PANIC / Reset Features [End]",
+        rbt="Refresh Detected Backpack Tools",cbt="Clear Backpack Auto-Remove List",
+        sbo="Save Current Backpack Order",cdr="Copy Diagnostic Report",ecu="Emergency Cleanup Only",
+    }
+    local shortCommandAliases={
+        hlp="help",op="open",pnl="panel",gt="goto",lg="loopgoto",ulg="unloopgoto",rt="return",
+        sy="sync",dsy="desync",sem="stopemote",ssy="stopsync",us="unspec",em="emote",
+        ra="reanim",fe="fogend",dx="dex",udx="undex",
+    }
     local function buildCommandCatalog()
         local catalog={
             {command="!desync",description="Stop player emote synchronization"},
@@ -7870,7 +7913,7 @@ state.initializeCommandConsole=function()
             {command="!rssh <player>",description="Remove a saved player from Super Special highlights (online or offline)"},
             {command="!ehc <#RRGGBB>",description="Set the Exploiter highlight color"},
             {command="!emote <animationId> [name]",description="Play an animation by asset ID"},
-            {command="!fb <on|off>",description="Enable or disable Fullbright"},
+            {command="!fb [on|off]",description="Toggle Fullbright, or explicitly enable/disable it"},
             {command="!fogend <value>",description="Set and lock the lighting FogEnd"},
             {command="!fov <20-120>",description="Set and lock the camera field of view"},
             {command="!fps <30-1000>",description="Set the client FPS cap"},
@@ -7902,6 +7945,11 @@ state.initializeCommandConsole=function()
             {command="!waypoint list",description="List saved waypoints"},
             {command="!waypoint save <name>",description="Save your current position"},
             {command="!waypoint show <on|off>",description="Control waypoint markers"},
+            {command="!wp <name>",description="Save or update a waypoint"},
+            {command="!gwp <name>",description="Go to a waypoint"},
+            {command="!dwp <name>",description="Delete a waypoint"},
+            {command="!lwp",description="List saved waypoints"},
+            {command="!swp <on|off>",description="Show or hide waypoint markers"},
         }
         local known={}
         for _,entry in ipairs(catalog) do known[normalize(entry.command:match("^!?([^%s<]+)"))]=true end
@@ -7917,6 +7965,22 @@ state.initializeCommandConsole=function()
                 table.insert(catalog,{command="!"..command,description="Action: "..label}); known[command]=true
             end
         end
+        for command,label in pairs(toggleCommandAliases) do
+            if toggleRegistry[label] and not known[command] then
+                table.insert(catalog,{command="!"..command.." [on|off]",description="Toggle: "..label}); known[command]=true
+            end
+        end
+        for command,label in pairs(actionCommandAliases) do
+            if state.commandActions and state.commandActions[label] and not known[command] then
+                table.insert(catalog,{command="!"..command,description="Action: "..label}); known[command]=true
+            end
+        end
+        for command,target in pairs(shortCommandAliases) do
+            if not known[command] then
+                table.insert(catalog,{command="!"..command,description="Short for !"..target}); known[command]=true
+            end
+        end
+        if not known.spec then table.insert(catalog,{command="!spec <player>",description="Spectate an in-game player"}); known.spec=true end
         table.sort(catalog,function(a,b) return a.command:lower()<b.command:lower() end)
         return catalog
     end
@@ -8043,6 +8107,7 @@ state.initializeCommandConsole=function()
         local raw=tostring(text or ""):match("^%s*(.-)%s*$"):gsub("^!","")
         local command,rest=raw:match("^(%S+)%s*(.-)%s*$")
         command=normalize(command)
+        command=shortCommandAliases[command] or command
         if command=="" then return end
         if command=="help" or command=="commands" then
             finish(true,"!goto !loopgoto !sync !waypoint !espall !noclip !fly !freecam !walkspeed !fogend …")
@@ -8108,14 +8173,31 @@ state.initializeCommandConsole=function()
             if stopSpectating then stopSpectating(); finish(true,"Spectating stopped")
             else finish(false,"Stop Spectating action unavailable") end
             return
+        elseif command=="spec" or command=="spectate" then
+            if rest~="" then state.gotoApi.box.Text=rest end
+            local spectate=state.commandActions and state.commandActions["Spectate GoTo Player"]
+            if rest=="" then finish(false,"Use: !spec <player>")
+            elseif spectate then spectate(); finish(true,"Spectating "..rest)
+            else finish(false,"Spectate action unavailable") end
+            return
         elseif command=="stopsync" or command=="stopemote" then state.emoteCommandApi.stop(); finish(true,"Emote playback/sync stopped"); return
         elseif command=="emote" then
             local id,name=rest:match("^(%d+)%s*(.*)$")
             if id then state.emoteCommandApi.play(tonumber(id),name~="" and name or ("Emote "..id)); finish(true,"Playing emote "..id)
             else finish(false,"Use: !emote <animationId> [name]") end
             return
-        elseif command=="waypoint" or command=="wp" then
-            local operation,name=rest:match("^(%S+)%s*(.-)%s*$"); operation=normalize(operation)
+        elseif command=="waypoint" or command=="wp" or command=="gwp" or command=="dwp" or command=="lwp" or command=="swp" then
+            local operation,name
+            if command=="gwp" then operation,name="goto",rest
+            elseif command=="dwp" then operation,name="delete",rest
+            elseif command=="lwp" then operation,name="list",""
+            elseif command=="swp" then operation,name="show",rest
+            else
+                operation,name=rest:match("^(%S+)%s*(.-)%s*$"); operation=normalize(operation)
+                local legacyOperation=operation=="save" or operation=="goto" or operation=="go" or operation=="delete"
+                    or operation=="remove" or operation=="list" or operation=="show"
+                if command=="wp" and not legacyOperation then operation,name="save",rest end
+            end
             if operation=="save" then local ok,msg=state.waypointApi.save(name); finish(ok,msg)
             elseif operation=="goto" or operation=="go" then local ok,msg=state.waypointApi.go(name); finish(ok,msg)
             elseif operation=="delete" or operation=="remove" then local ok,msg=state.waypointApi.delete(name); finish(ok,msg)
@@ -8143,6 +8225,16 @@ state.initializeCommandConsole=function()
             return
         elseif command=="migraine" then triggerMigraineComfort(); finish(true,"Migraine comfort applied"); return end
 
+        local toggleAlias=toggleCommandAliases[command]
+        if toggleAlias and toggleRegistry[toggleAlias] then
+            local desired=boolArgument(rest,activeFeatures[toggleAlias]); toggleRegistry[toggleAlias](desired)
+            finish(true,toggleAlias..": "..(desired and "ON" or "OFF")); return
+        end
+        local actionAlias=actionCommandAliases[command]
+        if actionAlias and state.commandActions and state.commandActions[actionAlias] then
+            state.commandActions[actionAlias](); finish(true,actionAlias); return
+        end
+
         for label,setter in pairs(toggleRegistry) do
             if normalize(label)==command then
                 local desired=boolArgument(rest,activeFeatures[label]); setter(desired)
@@ -8154,8 +8246,12 @@ state.initializeCommandConsole=function()
         end
         finish(false,"Unknown command: !"..command.." | use !help")
     end
-    local chatAliases={commands=true,stopgoto=true,returnposition=true,reanimation=true,
+    local chatAliases={commands=true,stopgoto=true,returnposition=true,reanimation=true,spectate=true,
         wp=true,waypointmarkers=true,ws=true,jh=true,fpscap=true}
+    for command in pairs(toggleCommandAliases) do chatAliases[command]=true end
+    for command in pairs(actionCommandAliases) do chatAliases[command]=true end
+    for command in pairs(shortCommandAliases) do chatAliases[command]=true end
+    for _,command in ipairs({"gwp","dwp","lwp","swp"}) do chatAliases[command]=true end
     local function isRecognizedChatCommand(text)
         local first=tostring(text or ""):match("^%s*!?(%S+)")
         local token=normalize(first)
@@ -8648,7 +8744,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.4.3] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.4.7] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.4.3] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.4.7] Loaded, but this executor does not expose queue_on_teleport")
 end
