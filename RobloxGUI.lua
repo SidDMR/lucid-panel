@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.4.11
+--// Lucid Panel v5.4.12
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -356,7 +356,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.4.11",
+    Text                   = "LUCID PANEL  •  v5.4.12",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -2851,8 +2851,8 @@ local loopGotoTarget = nil
 local loopGotoGeneration = 0
 local fireLoopGoto
 
-local loopGotoDirections = {"Right","Left","Up","Down","Forward","Backwards"}
-local function computeLoopGotoCFrame(targetRootPart, offset, direction)
+local loopGotoDirections = {"Right","Left","Up","Down","Forward","Backwards","In"}
+local function computeLoopGotoCFrame(myRoot, targetRootPart, offset, direction)
     local targetCF = targetRootPart.CFrame
     local px = math.abs(offset.X)
     if px < 0.01 then px = 3 end
@@ -2861,19 +2861,29 @@ local function computeLoopGotoCFrame(targetRootPart, offset, direction)
     elseif direction == "Left" then
         return targetCF * CFrame.new(-px, 0, 0)
     elseif direction == "Up" then
-        local char = targetRootPart.Parent
-        local head = char and char:FindFirstChild("Head")
-        local headTop = 2
-        if head then
-            headTop = (head.Position.Y + head.Size.Y * 0.5) - targetRootPart.Position.Y
+        local tChar = targetRootPart.Parent
+        local tHead = tChar and tChar:FindFirstChild("Head")
+        local headTopWorld = targetRootPart.Position.Y + 2
+        if tHead then
+            headTopWorld = tHead.Position.Y + tHead.Size.Y * 0.5
         end
-        return targetCF * CFrame.new(0, headTop, 0)
+        local myChar = myRoot.Parent
+        local myHumanoid = myChar and myChar:FindFirstChildOfClass("Humanoid")
+        local feetToRoot = 2
+        if myHumanoid then
+            feetToRoot = myHumanoid.HipHeight + myRoot.Size.Y * 0.5
+        end
+        local rootY = headTopWorld + 0.15 + feetToRoot
+        return CFrame.new(targetRootPart.Position.X, rootY, targetRootPart.Position.Z) *
+               (targetCF - targetCF.Position)
     elseif direction == "Down" then
         return targetCF * CFrame.new(0, -px, 0)
     elseif direction == "Forward" then
-        return targetCF * CFrame.new(0, 0, -0.1)
+        return targetCF * CFrame.new(0, 0, -px)
     elseif direction == "Backwards" then
-        return targetCF * CFrame.new(0, 0, 0.1)
+        return targetCF * CFrame.new(0, 0, px)
+    elseif direction == "In" then
+        return targetCF
     end
     return targetCF + offset
 end
@@ -2904,7 +2914,7 @@ local _, loopGotoToggle = createToggle("Loop Go To (uses player above)", nextOrd
                 local targetCharacter = loopGotoTarget and loopGotoTarget.Character
                 local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
                 if root and targetRoot then
-                    root.CFrame = computeLoopGotoCFrame(targetRoot, gotoOffset, state.loopGotoDirection)
+                    root.CFrame = computeLoopGotoCFrame(root, targetRoot, gotoOffset, state.loopGotoDirection)
                 end
                 RunService.Heartbeat:Wait()
             end
@@ -2928,13 +2938,28 @@ do
         TextColor3=Color3.fromRGB(220,215,240), TextSize=11,
         Font=Enum.Font.GothamSemibold, Text=state.loopGotoDirection, Parent=lgDirRow})
     create("UICorner", {CornerRadius=UDim.new(0,6), Parent=lgDirBtn})
+    local lgDirDropdown = create("Frame", {
+        Size=UDim2.new(1,-108,0,0), Position=UDim2.new(0,108,1,2),
+        AutomaticSize=Enum.AutomaticSize.Y, BackgroundColor3=Color3.fromRGB(38,36,52),
+        BorderSizePixel=0, Visible=false, ZIndex=10, Parent=lgDirRow})
+    create("UICorner", {CornerRadius=UDim.new(0,6), Parent=lgDirDropdown})
+    create("UIListLayout", {SortOrder=Enum.SortOrder.LayoutOrder, Padding=UDim.new(0,1), Parent=lgDirDropdown})
+    create("UIPadding", {PaddingTop=UDim.new(0,3), PaddingBottom=UDim.new(0,3), Parent=lgDirDropdown})
     local function setLoopGotoDirection(dir)
         state.loopGotoDirection = dir
         lgDirBtn.Text = dir
+        lgDirDropdown.Visible = false
+    end
+    for i, dir in ipairs(loopGotoDirections) do
+        local optBtn = create("TextButton", {
+            Size=UDim2.new(1,0,0,20), BackgroundColor3=Color3.fromRGB(50,48,65),
+            BackgroundTransparency=0.4, BorderSizePixel=0, Text=dir,
+            TextColor3=Color3.fromRGB(215,210,235), TextSize=10,
+            Font=Enum.Font.GothamSemibold, LayoutOrder=i, ZIndex=11, Parent=lgDirDropdown})
+        optBtn.MouseButton1Click:Connect(function() setLoopGotoDirection(dir) end)
     end
     lgDirBtn.MouseButton1Click:Connect(function()
-        local idx = table.find(loopGotoDirections, state.loopGotoDirection) or 0
-        setLoopGotoDirection(loopGotoDirections[(idx % #loopGotoDirections) + 1])
+        lgDirDropdown.Visible = not lgDirDropdown.Visible
     end)
     gotoApi.setLoopDirection = setLoopGotoDirection
 end
@@ -7734,7 +7759,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.4.11 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.4.12 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -8003,7 +8028,7 @@ state.initializeCommandConsole=function()
             {command="!gto <player>",description="Alias for goto"},
             {command="!help",description="Show a compact command summary"},
             {command="!jumpheight <value>",description="Set and lock jump height"},
-            {command="!lgdir <direction>",description="Set loop goto direction: right/left/up/down/forward/backwards"},
+            {command="!lgdir <direction>",description="Set loop goto direction: right/left/up/down/forward/backwards/in"},
             {command="!loopgoto <player>",description="Continuously follow a player"},
             {command="!migraine",description="Apply Migraine Comfort lighting"},
             {command="!open <section>",description="Open Home, Player, World, Tools or Settings"},
@@ -8220,10 +8245,10 @@ state.initializeCommandConsole=function()
             if rest=="" then finish(false,"Use: !loopgoto <player>") else state.gotoApi.setLoop(rest,true); finish(true,"Loop goto: "..rest) end
             return
         elseif command=="lgdir" or command=="loopgotodir" then
-            if rest=="" then finish(false,"Use: !lgdir right/left/up/down/forward/backwards"); return end
-            local dirMap={right="Right",left="Left",up="Up",down="Down",forward="Forward",forwards="Forward",backwards="Backwards",back="Backwards",behind="Backwards"}
+            if rest=="" then finish(false,"Use: !lgdir right/left/up/down/forward/backwards/in"); return end
+            local dirMap={right="Right",left="Left",up="Up",down="Down",forward="Forward",forwards="Forward",backwards="Backwards",back="Backwards",behind="Backwards",["in"]="In",inside="In",overlap="In"}
             local dir=dirMap[rest:lower()]
-            if not dir then finish(false,"Unknown direction. Use: right, left, up, down, forward, backwards"); return end
+            if not dir then finish(false,"Unknown direction. Use: right, left, up, down, forward, backwards, in"); return end
             if state.gotoApi.setLoopDirection then state.gotoApi.setLoopDirection(dir) end
             finish(true,"Loop goto direction: "..dir); return
         elseif command=="unloopgoto" or command=="stopgoto" then state.gotoApi.setLoop(nil,false); finish(true,"Loop goto disabled"); return
@@ -8839,7 +8864,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.4.11] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.4.12] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.4.11] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.4.12] Loaded, but this executor does not expose queue_on_teleport")
 end
