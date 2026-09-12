@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.4.10
+--// Lucid Panel v5.4.11
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -356,7 +356,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.4.10",
+    Text                   = "LUCID PANEL  •  v5.4.11",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -2852,22 +2852,28 @@ local loopGotoGeneration = 0
 local fireLoopGoto
 
 local loopGotoDirections = {"Right","Left","Up","Down","Forward","Backwards"}
-local function computeLoopGotoCFrame(targetCF, offset, direction)
+local function computeLoopGotoCFrame(targetRootPart, offset, direction)
+    local targetCF = targetRootPart.CFrame
     local px = math.abs(offset.X)
-    local py = offset.Y
     if px < 0.01 then px = 3 end
     if direction == "Right" then
-        return targetCF * CFrame.new(px, py, 0)
+        return targetCF * CFrame.new(px, 0, 0)
     elseif direction == "Left" then
-        return targetCF * CFrame.new(-px, py, 0)
+        return targetCF * CFrame.new(-px, 0, 0)
     elseif direction == "Up" then
-        return targetCF * CFrame.new(0, 4.5, 0)
+        local char = targetRootPart.Parent
+        local head = char and char:FindFirstChild("Head")
+        local headTop = 2
+        if head then
+            headTop = (head.Position.Y + head.Size.Y * 0.5) - targetRootPart.Position.Y
+        end
+        return targetCF * CFrame.new(0, headTop, 0)
     elseif direction == "Down" then
         return targetCF * CFrame.new(0, -px, 0)
     elseif direction == "Forward" then
-        return targetCF * CFrame.new(0, py, -px)
+        return targetCF * CFrame.new(0, 0, -0.1)
     elseif direction == "Backwards" then
-        return targetCF * CFrame.new(0, py, px)
+        return targetCF * CFrame.new(0, 0, 0.1)
     end
     return targetCF + offset
 end
@@ -2898,7 +2904,7 @@ local _, loopGotoToggle = createToggle("Loop Go To (uses player above)", nextOrd
                 local targetCharacter = loopGotoTarget and loopGotoTarget.Character
                 local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
                 if root and targetRoot then
-                    root.CFrame = computeLoopGotoCFrame(targetRoot.CFrame, gotoOffset, state.loopGotoDirection)
+                    root.CFrame = computeLoopGotoCFrame(targetRoot, gotoOffset, state.loopGotoDirection)
                 end
                 RunService.Heartbeat:Wait()
             end
@@ -7728,7 +7734,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.4.10 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.4.11 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -8833,7 +8839,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.4.10] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.4.11] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.4.10] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.4.11] Loaded, but this executor does not expose queue_on_teleport")
 end
