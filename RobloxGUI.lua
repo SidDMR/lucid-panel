@@ -2853,20 +2853,21 @@ local fireLoopGoto
 
 local loopGotoDirections = {"Right","Left","Up","Down","Forward","Backwards"}
 local function computeLoopGotoCFrame(targetCF, offset, direction)
-    local dist = offset.Magnitude
-    if dist < 0.01 then return targetCF end
+    local px = math.abs(offset.X)
+    local py = offset.Y
+    if px < 0.01 then px = 3 end
     if direction == "Right" then
-        return targetCF * CFrame.new(dist, 0, 0)
+        return targetCF * CFrame.new(px, py, 0)
     elseif direction == "Left" then
-        return targetCF * CFrame.new(-dist, 0, 0)
+        return targetCF * CFrame.new(-px, py, 0)
     elseif direction == "Up" then
-        return targetCF * CFrame.new(0, dist, 0)
+        return targetCF * CFrame.new(0, 4.5, 0)
     elseif direction == "Down" then
-        return targetCF * CFrame.new(0, -dist, 0)
+        return targetCF * CFrame.new(0, -px, 0)
     elseif direction == "Forward" then
-        return targetCF * CFrame.new(0, 0, -dist)
+        return targetCF * CFrame.new(0, py, -px)
     elseif direction == "Backwards" then
-        return targetCF * CFrame.new(0, 0, dist)
+        return targetCF * CFrame.new(0, py, px)
     end
     return targetCF + offset
 end
