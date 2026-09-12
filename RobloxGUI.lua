@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.4.9
+--// Lucid Panel v5.4.10
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -210,6 +210,7 @@ local state = {
     gotoOffsetX       = 3,
     gotoOffsetY       = 1,
     gotoOffsetZ       = 0,
+    loopGotoDirection = "Right",
     favoriteNames     = {},
     emoteFavorites    = {},
 }
@@ -355,7 +356,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.4.9",
+    Text                   = "LUCID PANEL  •  v5.4.10",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -2849,6 +2850,27 @@ end)
 local loopGotoTarget = nil
 local loopGotoGeneration = 0
 local fireLoopGoto
+
+local loopGotoDirections = {"Right","Left","Up","Down","Forward","Backwards"}
+local function computeLoopGotoCFrame(targetCF, offset, direction)
+    local dist = offset.Magnitude
+    if dist < 0.01 then return targetCF end
+    if direction == "Right" then
+        return targetCF * CFrame.new(dist, 0, 0)
+    elseif direction == "Left" then
+        return targetCF * CFrame.new(-dist, 0, 0)
+    elseif direction == "Up" then
+        return targetCF * CFrame.new(0, dist, 0)
+    elseif direction == "Down" then
+        return targetCF * CFrame.new(0, -dist, 0)
+    elseif direction == "Forward" then
+        return targetCF * CFrame.new(0, 0, -dist)
+    elseif direction == "Backwards" then
+        return targetCF * CFrame.new(0, 0, dist)
+    end
+    return targetCF + offset
+end
+
 local _, loopGotoToggle = createToggle("Loop Go To (uses player above)", nextOrder(), false, function(on)
     if on then
         local target = findGotoPlayer(gotoBox.Text)
@@ -2875,7 +2897,7 @@ local _, loopGotoToggle = createToggle("Loop Go To (uses player above)", nextOrd
                 local targetCharacter = loopGotoTarget and loopGotoTarget.Character
                 local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
                 if root and targetRoot then
-                    root.CFrame = targetRoot.CFrame + gotoOffset
+                    root.CFrame = computeLoopGotoCFrame(targetRoot.CFrame, gotoOffset, state.loopGotoDirection)
                 end
                 RunService.Heartbeat:Wait()
             end
@@ -2887,6 +2909,28 @@ local _, loopGotoToggle = createToggle("Loop Go To (uses player above)", nextOrd
     end
 end)
 fireLoopGoto = loopGotoToggle
+
+do
+    local lgDirRow = rowFrame(nextOrder(), 28)
+    create("TextLabel", {Size=UDim2.new(0,102,1,0), BackgroundTransparency=1,
+        Text="Loop GoTo Dir", TextColor3=Color3.fromRGB(185,175,205), TextSize=10,
+        Font=Enum.Font.Gotham, TextXAlignment=Enum.TextXAlignment.Left, Parent=lgDirRow})
+    local lgDirBtn = create("TextButton", {
+        Size=UDim2.new(1,-108,0,22), Position=UDim2.new(0,108,0.5,-11),
+        BackgroundColor3=Color3.fromRGB(50,48,65), BorderSizePixel=0,
+        TextColor3=Color3.fromRGB(220,215,240), TextSize=11,
+        Font=Enum.Font.GothamSemibold, Text=state.loopGotoDirection, Parent=lgDirRow})
+    create("UICorner", {CornerRadius=UDim.new(0,6), Parent=lgDirBtn})
+    local function setLoopGotoDirection(dir)
+        state.loopGotoDirection = dir
+        lgDirBtn.Text = dir
+    end
+    lgDirBtn.MouseButton1Click:Connect(function()
+        local idx = table.find(loopGotoDirections, state.loopGotoDirection) or 0
+        setLoopGotoDirection(loopGotoDirections[(idx % #loopGotoDirections) + 1])
+    end)
+    gotoApi.setLoopDirection = setLoopGotoDirection
+end
 gotoApi.go=function(name) gotoApi.box.Text=tostring(name or ""); goToRequestedPlayer() end
 gotoApi.returnPrevious=returnPreviousPosition
 gotoApi.setLoop=function(name,on)
@@ -6857,6 +6901,7 @@ loadNamedProfile = function(button)
     state.setEmotePlaybackSpeed(state.emoteSpeed)
     updateText(emoteSyncToleranceBox,string.format("%.2f",state.emoteSyncTolerance))
     if gotoApi.setOffset then gotoApi.setOffset(state.gotoOffsetX,state.gotoOffsetY,state.gotoOffsetZ) end
+    if gotoApi.setLoopDirection and state.loopGotoDirection then gotoApi.setLoopDirection(state.loopGotoDirection) end
     -- Safe startup: remembered toggle states are intentionally not activated.
     -- Import favorites from older profile files once, without replacing the
     -- global collection or tying it to this profile/place.
@@ -7682,7 +7727,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.4.9 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.4.10 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -7925,7 +7970,7 @@ state.initializeCommandConsole=function()
     local shortCommandAliases={
         hlp="help",op="open",pnl="panel",gt="goto",lg="loopgoto",ulg="unloopgoto",rt="return",
         sy="sync",dsy="desync",sem="stopemote",ssy="stopsync",us="unspec",em="emote",
-        ra="reanim",fe="fogend",dx="dex",udx="undex",res="restore",
+        ra="reanim",fe="fogend",dx="dex",udx="undex",res="restore",ld="lgdir",
     }
     local function buildCommandCatalog()
         local catalog={
@@ -7951,6 +7996,7 @@ state.initializeCommandConsole=function()
             {command="!gto <player>",description="Alias for goto"},
             {command="!help",description="Show a compact command summary"},
             {command="!jumpheight <value>",description="Set and lock jump height"},
+            {command="!lgdir <direction>",description="Set loop goto direction: right/left/up/down/forward/backwards"},
             {command="!loopgoto <player>",description="Continuously follow a player"},
             {command="!migraine",description="Apply Migraine Comfort lighting"},
             {command="!open <section>",description="Open Home, Player, World, Tools or Settings"},
@@ -8166,6 +8212,13 @@ state.initializeCommandConsole=function()
         elseif command=="loopgoto" then
             if rest=="" then finish(false,"Use: !loopgoto <player>") else state.gotoApi.setLoop(rest,true); finish(true,"Loop goto: "..rest) end
             return
+        elseif command=="lgdir" or command=="loopgotodir" then
+            if rest=="" then finish(false,"Use: !lgdir right/left/up/down/forward/backwards"); return end
+            local dirMap={right="Right",left="Left",up="Up",down="Down",forward="Forward",forwards="Forward",backwards="Backwards",back="Backwards",behind="Backwards"}
+            local dir=dirMap[rest:lower()]
+            if not dir then finish(false,"Unknown direction. Use: right, left, up, down, forward, backwards"); return end
+            if state.gotoApi.setLoopDirection then state.gotoApi.setLoopDirection(dir) end
+            finish(true,"Loop goto direction: "..dir); return
         elseif command=="unloopgoto" or command=="stopgoto" then state.gotoApi.setLoop(nil,false); finish(true,"Loop goto disabled"); return
         elseif command=="return" or command=="returnposition" then state.gotoApi.returnPrevious(); finish(true,"Returned to previous position"); return
         elseif command=="restore" or command=="recover" then
@@ -8779,7 +8832,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.4.9] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.4.10] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.4.9] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.4.10] Loaded, but this executor does not expose queue_on_teleport")
 end
