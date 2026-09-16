@@ -7653,6 +7653,62 @@ if game.PlaceId==136070094363960 then
         scaryWormEspEnabled=on
         if on then task.defer(scanScaryWorms) else clearScaryWormHighlights() end
     end)
+
+    -- Remove KillParts: hybrid event + lightweight backup poll.
+    -- ChildAdded catches newly created KillParts instantly. A yielded
+    -- 0.1 s backup poll handles reparenting or edge cases the event misses.
+    local removeKillPartsEnabled = false
+    local killPartsConnection = nil
+    local killPartsPollToken = nil -- unique token per toggle-on cycle
+
+    local function destroyKillParts()
+        local target = workspace:FindFirstChild("KillParts")
+        if target then pcall(function() target:Destroy() end) end
+    end
+
+    local function startKillPartsMonitor()
+        -- Destroy anything already present
+        destroyKillParts()
+
+        -- Event: catch KillParts the moment it is added to Workspace
+        if killPartsConnection then killPartsConnection:Disconnect() end
+        killPartsConnection = workspace.ChildAdded:Connect(function(child)
+            if removeKillPartsEnabled and child.Name == "KillParts" then
+                task.defer(function()
+                    if child and child.Parent then pcall(function() child:Destroy() end) end
+                end)
+            end
+        end)
+        track(killPartsConnection)
+
+        -- Lightweight backup poll: yields properly, exits when token changes
+        local token = {}
+        killPartsPollToken = token
+        task.spawn(function()
+            while killPartsPollToken == token and removeKillPartsEnabled and screenGui.Parent do
+                destroyKillParts()
+                task.wait(0.1)
+            end
+        end)
+    end
+
+    local function stopKillPartsMonitor()
+        killPartsPollToken = nil -- invalidate running poll
+        if killPartsConnection then
+            killPartsConnection:Disconnect()
+            killPartsConnection = nil
+        end
+    end
+
+    createToggle("Remove KillParts",nextOrder(),false,function(on)
+        removeKillPartsEnabled = on
+        if on then
+            startKillPartsMonitor()
+        else
+            stopKillPartsMonitor()
+        end
+    end)
+
     track(workspace.DescendantAdded:Connect(function(object)
         if removeBananaPeels or removeLandmines or removeAllObstacles then
             task.defer(removeMatchingObstacle,object)
@@ -7663,6 +7719,7 @@ if game.PlaceId==136070094363960 then
     addCleanup(function()
         scaryWormEspEnabled=false; hazardEspEnabled.banana=false; hazardEspEnabled.mine=false
         clearScaryWormHighlights(); clearHazardHighlights(); clearHazardGhosts()
+        removeKillPartsEnabled=false; stopKillPartsMonitor()
     end)
 end
 
