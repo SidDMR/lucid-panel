@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.6.1
+--// Lucid Panel v5.6.2
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -385,7 +385,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.6.1",
+    Text                   = "LUCID PANEL  •  v5.6.2",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -5797,70 +5797,34 @@ local function findEmoteSyncPlayer(query)
     end
 end
 
-local getSyncSourceTrack
-do
-    local movementTokens={"idle","walk","run","jump","fall","climb","swim","sit","tool","land"}
-    local cachedCharacter=nil
-    local cachedMovementIds={}
-    local cacheBuiltAt=0
-    local function normalizedAnimationId(value)
-        return tostring(value or ""):match("%d+") or ""
-    end
-    local function hasMovementToken(value)
-        value=tostring(value or ""):lower():gsub("[%s_%-]","")
-        for _,token in ipairs(movementTokens) do
-            if value:find(token,1,true) then return true end
+local function getSyncSourceTrack(player)
+    local humanoid=player and player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+    local animator=humanoid and humanoid:FindFirstChildOfClass("Animator")
+    if not animator then return nil end
+    local best=nil
+    local emoteOnly=state.emoteSyncScope~="Sync All"
+    for _,playing in ipairs(animator:GetPlayingAnimationTracks()) do
+        local animation=playing.Animation
+        local animationId=animation and animation.AnimationId
+        local valid=playing.IsPlaying and playing.WeightCurrent>0.01 and animationId and animationId~=""
+        if valid and emoteOnly then
+            local trackName=((playing.Name or "").." "..(animation.Name or "")):lower():gsub("[%s_%-]","")
+            local movementName=trackName:find("idle",1,true) or trackName:find("walk",1,true)
+                or trackName:find("run",1,true) or trackName:find("jump",1,true)
+                or trackName:find("fall",1,true) or trackName:find("climb",1,true)
+                or trackName:find("swim",1,true) or trackName:find("sit",1,true)
+                or trackName:find("tool",1,true) or trackName:find("land",1,true)
+            valid=playing.Priority.Value>=Enum.AnimationPriority.Action.Value and not movementName
         end
-        return false
-    end
-    local function rebuildMovementIds(character)
-        cachedCharacter=character; cachedMovementIds={}; cacheBuiltAt=os.clock()
-        if not character then return end
-        local animate=character:FindFirstChild("Animate")
-        if not animate then return end
-        for _,object in ipairs(animate:GetDescendants()) do
-            if object:IsA("Animation") then
-                local names=object.Name
-                local ancestor=object.Parent
-                while ancestor and ancestor~=animate do names=names.." "..ancestor.Name; ancestor=ancestor.Parent end
-                if hasMovementToken(names) then
-                    local id=normalizedAnimationId(object.AnimationId)
-                    if id~="" then cachedMovementIds[id]=true end
-                end
-            end
+        if valid then
+            if animationId==emoteSyncAnimationId then return playing end
+            if not best or (emoteOnly and (playing.Priority.Value>best.Priority.Value
+                or (playing.Priority==best.Priority and playing.WeightCurrent>best.WeightCurrent)))
+                or (not emoteOnly and (playing.WeightCurrent>best.WeightCurrent
+                or (playing.WeightCurrent==best.WeightCurrent and playing.Priority.Value>best.Priority.Value))) then best=playing end
         end
     end
-    local function isMovementTrack(character,playing,animation)
-        if cachedCharacter~=character or os.clock()-cacheBuiltAt>2 then rebuildMovementIds(character) end
-        local id=normalizedAnimationId(animation and animation.AnimationId)
-        if id~="" and cachedMovementIds[id] then return true end
-        return hasMovementToken((playing and playing.Name or "").." "..(animation and animation.Name or ""))
-    end
-    getSyncSourceTrack=function(player)
-        local character=player and player.Character
-        local humanoid=character and character:FindFirstChildOfClass("Humanoid")
-        local animator=humanoid and humanoid:FindFirstChildOfClass("Animator")
-        if not animator then return nil end
-        local best=nil
-        local emoteOnly=state.emoteSyncScope~="Sync All"
-        for _,playing in ipairs(animator:GetPlayingAnimationTracks()) do
-            local animation=playing.Animation
-            local animationId=animation and animation.AnimationId
-            local valid=playing.IsPlaying and playing.WeightCurrent>0.01 and animationId and animationId~=""
-            if valid and emoteOnly then
-                valid=playing.Priority.Value>=Enum.AnimationPriority.Action.Value
-                    and not isMovementTrack(character,playing,animation)
-            end
-            if valid then
-                if animationId==emoteSyncAnimationId then return playing end
-                if not best or (emoteOnly and (playing.Priority.Value>best.Priority.Value
-                    or (playing.Priority==best.Priority and playing.WeightCurrent>best.WeightCurrent)))
-                    or (not emoteOnly and (playing.WeightCurrent>best.WeightCurrent
-                    or (playing.WeightCurrent==best.WeightCurrent and playing.Priority.Value>best.Priority.Value))) then best=playing end
-            end
-        end
-        return best
-    end
+    return best
 end
 
 local function loadSyncedTrack(sourceTrack)
@@ -8156,7 +8120,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.6.1 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.6.2 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -9279,8 +9243,8 @@ end
 
 if state.teleportQueueReady then
     state.changeNotificationsReady=true
-    print("[Lucid Panel v5.6.1] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.6.2] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
     state.changeNotificationsReady=true
-    warn("[Lucid Panel v5.6.1] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.6.2] Loaded, but this executor does not expose queue_on_teleport")
 end
