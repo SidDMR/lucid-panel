@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.4.12
+--// Lucid Panel v5.5.0
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -211,6 +211,8 @@ local state = {
     gotoOffsetY       = 1,
     gotoOffsetZ       = 0,
     loopGotoDirection = "Right",
+    emoteSyncScope    = "Emotes Only",
+    localHeadlessEnabled = false,
     favoriteNames     = {},
     emoteFavorites    = {},
 }
@@ -356,7 +358,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.4.12",
+    Text                   = "LUCID PANEL  •  v5.5.0",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -2851,7 +2853,7 @@ local loopGotoTarget = nil
 local loopGotoGeneration = 0
 local fireLoopGoto
 
-local loopGotoDirections = {"Right","Left","Up","Down","Forward","Backwards","In"}
+local loopGotoDirections = {"Right","Left","Head Sit","Down","Forward","Backwards","In"}
 local function computeLoopGotoCFrame(myRoot, targetRootPart, offset, direction)
     local targetCF = targetRootPart.CFrame
     local px = math.abs(offset.X)
@@ -2860,28 +2862,24 @@ local function computeLoopGotoCFrame(myRoot, targetRootPart, offset, direction)
         return targetCF * CFrame.new(px, 0, 0)
     elseif direction == "Left" then
         return targetCF * CFrame.new(-px, 0, 0)
-    elseif direction == "Up" then
+    elseif direction == "Head Sit" then
         local tChar = targetRootPart.Parent
         local tHead = tChar and tChar:FindFirstChild("Head")
         local headTopWorld = targetRootPart.Position.Y + 2
         if tHead then
             headTopWorld = tHead.Position.Y + tHead.Size.Y * 0.5
         end
-        local myChar = myRoot.Parent
-        local myHumanoid = myChar and myChar:FindFirstChildOfClass("Humanoid")
-        local feetToRoot = 2
-        if myHumanoid then
-            feetToRoot = myHumanoid.HipHeight + myRoot.Size.Y * 0.5
-        end
-        local rootY = headTopWorld + 0.15 + feetToRoot
+        -- A seated avatar's root is much lower than a standing avatar's root.
+        -- Keep the torso resting on the head while the legs hang down.
+        local rootY = headTopWorld + 1.05
         return CFrame.new(targetRootPart.Position.X, rootY, targetRootPart.Position.Z) *
                (targetCF - targetCF.Position)
     elseif direction == "Down" then
         return targetCF * CFrame.new(0, -px, 0)
     elseif direction == "Forward" then
-        return targetCF * CFrame.new(0, 0, -px)
+        return targetCF * CFrame.new(0, 0, -1)
     elseif direction == "Backwards" then
-        return targetCF * CFrame.new(0, 0, px)
+        return targetCF * CFrame.new(0, 0, 1)
     elseif direction == "In" then
         return targetCF
     end
@@ -2914,7 +2912,9 @@ local _, loopGotoToggle = createToggle("Loop Go To (uses player above)", nextOrd
                 local targetCharacter = loopGotoTarget and loopGotoTarget.Character
                 local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
                 if root and targetRoot then
+                    if humanoid then humanoid.Sit=state.loopGotoDirection=="Head Sit" end
                     root.CFrame = computeLoopGotoCFrame(root, targetRoot, gotoOffset, state.loopGotoDirection)
+                    root.AssemblyLinearVelocity=Vector3.zero; root.AssemblyAngularVelocity=Vector3.zero
                 end
                 RunService.Heartbeat:Wait()
             end
@@ -2923,6 +2923,8 @@ local _, loopGotoToggle = createToggle("Loop Go To (uses player above)", nextOrd
         state.loopGotoEnabled = false
         loopGotoTarget = nil
         loopGotoGeneration = loopGotoGeneration + 1
+        local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then humanoid.Sit=false end
     end
 end)
 fireLoopGoto = loopGotoToggle
@@ -2938,14 +2940,17 @@ do
         TextColor3=Color3.fromRGB(220,215,240), TextSize=11,
         Font=Enum.Font.GothamSemibold, Text=state.loopGotoDirection, Parent=lgDirRow})
     create("UICorner", {CornerRadius=UDim.new(0,6), Parent=lgDirBtn})
-    local lgDirDropdown = create("Frame", {
-        Size=UDim2.new(1,-108,0,0), Position=UDim2.new(0,108,1,2),
-        AutomaticSize=Enum.AutomaticSize.Y, BackgroundColor3=Color3.fromRGB(38,36,52),
-        BorderSizePixel=0, Visible=false, ZIndex=10, Parent=lgDirRow})
+    local lgDirDropdown = create("ScrollingFrame", {
+        Size=UDim2.new(1,-108,0,72), Position=UDim2.new(0,108,1,2),
+        CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,ScrollingDirection=Enum.ScrollingDirection.Y,
+        ScrollBarThickness=3,ScrollBarImageColor3=Color3.fromRGB(125,100,190),ElasticBehavior=Enum.ElasticBehavior.Never,
+        BackgroundColor3=Color3.fromRGB(38,36,52),BorderSizePixel=0,Visible=false,Active=true,ZIndex=10,Parent=lgDirRow})
     create("UICorner", {CornerRadius=UDim.new(0,6), Parent=lgDirDropdown})
     create("UIListLayout", {SortOrder=Enum.SortOrder.LayoutOrder, Padding=UDim.new(0,1), Parent=lgDirDropdown})
     create("UIPadding", {PaddingTop=UDim.new(0,3), PaddingBottom=UDim.new(0,3), Parent=lgDirDropdown})
     local function setLoopGotoDirection(dir)
+        if dir=="Up" then dir="Head Sit" end -- migrate v5.4.12 profiles
+        if not table.find(loopGotoDirections,dir) then dir="Right" end
         state.loopGotoDirection = dir
         lgDirBtn.Text = dir
         lgDirDropdown.Visible = false
@@ -2961,6 +2966,21 @@ do
     lgDirBtn.MouseButton1Click:Connect(function()
         lgDirDropdown.Visible = not lgDirDropdown.Visible
     end)
+    local directionDropdownHovered=false
+    lgDirDropdown.MouseEnter:Connect(function() directionDropdownHovered=true end)
+    lgDirDropdown.MouseLeave:Connect(function() directionDropdownHovered=false end)
+    local loopDirectionScrollAction="LucidLoopDirectionOneRow"
+    ContextActionService:BindActionAtPriority(loopDirectionScrollAction,function(_,inputState,input)
+        if not directionDropdownHovered or not lgDirDropdown.Visible or inputState~=Enum.UserInputState.Change then
+            return Enum.ContextActionResult.Pass
+        end
+        local wheel=input.Position.Z
+        if wheel==0 then return Enum.ContextActionResult.Sink end
+        local maximum=math.max(0,lgDirDropdown.AbsoluteCanvasSize.Y-lgDirDropdown.AbsoluteWindowSize.Y)
+        lgDirDropdown.CanvasPosition=Vector2.new(0,math.clamp(lgDirDropdown.CanvasPosition.Y-wheel*21,0,maximum))
+        return Enum.ContextActionResult.Sink
+    end,false,3100,Enum.UserInputType.MouseWheel)
+    addCleanup(function() ContextActionService:UnbindAction(loopDirectionScrollAction) end)
     gotoApi.setLoopDirection = setLoopGotoDirection
 end
 gotoApi.go=function(name) gotoApi.box.Text=tostring(name or ""); goToRequestedPlayer() end
@@ -4172,19 +4192,165 @@ local _, fireFly, setFly = createToggle("Fly", nextOrder(), false, function(on)
     if h and not on then h.PlatformStand = false end
 end)
 sectionLabel("Player Utilities", nextOrder())
+local headlessOriginals=setmetatable({},{__mode="k"})
+local headlessConnections=setmetatable({},{__mode="k"})
+local function applyLocalHeadless(character)
+    local head=character and character:FindFirstChild("Head")
+    if not head or not head:IsA("BasePart") then return end
+    if headlessOriginals[head]==nil then headlessOriginals[head]=head.LocalTransparencyModifier end
+    if not headlessConnections[head] then
+        headlessConnections[head]=track(head:GetPropertyChangedSignal("LocalTransparencyModifier"):Connect(function()
+            if state.localHeadlessEnabled and head.Parent and head.LocalTransparencyModifier~=1 then
+                head.LocalTransparencyModifier=1
+            end
+        end))
+    end
+    head.LocalTransparencyModifier=state.localHeadlessEnabled and 1 or (headlessOriginals[head] or 0)
+end
+createToggle("Local Headless",nextOrder(),false,function(on)
+    state.localHeadlessEnabled=on
+    applyLocalHeadless(LocalPlayer.Character)
+end)
+track(LocalPlayer.CharacterAdded:Connect(function(character)
+    if state.localHeadlessEnabled then task.defer(applyLocalHeadless,character) end
+end))
+addCleanup(function()
+    state.localHeadlessEnabled=false
+    for head,transparency in pairs(headlessOriginals) do
+        if head and head.Parent then pcall(function() head.LocalTransparencyModifier=transparency end) end
+    end
+end)
+
 local spectatingPlayer = nil
+local spectateWindow=create("Frame",{Name="LucidSpectatePreview",Size=UDim2.new(0,300,0,230),
+    Position=UDim2.new(0.5,180,0.5,-115),BackgroundColor3=Color3.fromRGB(18,18,24),
+    BackgroundTransparency=0.05,BorderSizePixel=0,Active=true,Draggable=true,Visible=false,ZIndex=155,Parent=screenGui})
+create("UICorner",{CornerRadius=UDim.new(0,9),Parent=spectateWindow})
+create("UIStroke",{Color=Color3.fromRGB(105,80,170),Thickness=1.2,Transparency=0.15,Parent=spectateWindow})
+local spectateTitle=create("TextLabel",{Size=UDim2.new(1,-112,0,32),Position=UDim2.new(0,10,0,0),
+    BackgroundTransparency=1,Text="Spectate Preview",TextColor3=Color3.fromRGB(225,215,245),TextSize=12,
+    Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=156,Parent=spectateWindow})
+local spectatePin=false
+local spectatePinButton=create("TextButton",{Size=UDim2.new(0,30,0,24),Position=UDim2.new(1,-100,0,4),
+    BackgroundColor3=Color3.fromRGB(52,48,67),BorderSizePixel=0,Text="Pin",TextColor3=Color3.fromRGB(220,215,230),
+    TextSize=9,Font=Enum.Font.GothamSemibold,ZIndex=157,Parent=spectateWindow})
+local spectateMinButton=create("TextButton",{Size=UDim2.new(0,26,0,24),Position=UDim2.new(1,-64,0,4),
+    BackgroundColor3=Color3.fromRGB(52,48,67),BorderSizePixel=0,Text="-",TextColor3=Color3.fromRGB(220,215,230),
+    TextSize=12,Font=Enum.Font.GothamBold,ZIndex=157,Parent=spectateWindow})
+local spectateCloseButton=create("TextButton",{Size=UDim2.new(0,26,0,24),Position=UDim2.new(1,-32,0,4),
+    BackgroundColor3=Color3.fromRGB(105,48,62),BorderSizePixel=0,Text="X",TextColor3=Color3.fromRGB(245,225,230),
+    TextSize=10,Font=Enum.Font.GothamBold,ZIndex=157,Parent=spectateWindow})
+for _,button in ipairs({spectatePinButton,spectateMinButton,spectateCloseButton}) do
+    create("UICorner",{CornerRadius=UDim.new(0,5),Parent=button})
+end
+local spectateViewport=create("ViewportFrame",{Size=UDim2.new(1,-12,1,-40),Position=UDim2.new(0,6,0,34),
+    BackgroundColor3=Color3.fromRGB(32,34,42),BackgroundTransparency=0.05,BorderSizePixel=0,
+    Ambient=Color3.fromRGB(185,185,195),LightColor=Color3.fromRGB(235,235,240),LightDirection=Vector3.new(-1,-1,-1),
+    ZIndex=156,Parent=spectateWindow})
+create("UICorner",{CornerRadius=UDim.new(0,6),Parent=spectateViewport})
+local spectateWorld=Instance.new("WorldModel"); spectateWorld.Parent=spectateViewport
+local spectateCamera=Instance.new("Camera"); spectateCamera.FieldOfView=55; spectateCamera.Parent=spectateViewport
+spectateViewport.CurrentCamera=spectateCamera
+local spectateClone=nil
+local spectateSourceCharacter=nil
+local spectatePartPairs={}
+local function descendantKey(object,root)
+    local pieces={}
+    while object and object~=root do
+        local index=0
+        for _,sibling in ipairs(object.Parent:GetChildren()) do
+            if sibling.Name==object.Name and sibling.ClassName==object.ClassName then
+                index+=1
+                if sibling==object then break end
+            end
+        end
+        table.insert(pieces,1,object.Name..":"..object.ClassName..":"..index)
+        object=object.Parent
+    end
+    return table.concat(pieces,"/")
+end
+local function rebuildSpectateClone(character)
+    if spectateClone then spectateClone:Destroy(); spectateClone=nil end
+    table.clear(spectatePartPairs); spectateSourceCharacter=character
+    if not character then return end
+    local wasArchivable=character.Archivable; character.Archivable=true
+    local ok,clone=pcall(function() return character:Clone() end)
+    character.Archivable=wasArchivable
+    if not ok or not clone then return end
+    clone.Name="SpectateClone"
+    for _,object in ipairs(clone:GetDescendants()) do
+        if object:IsA("Script") or object:IsA("LocalScript") or object:IsA("Tool") then object:Destroy()
+        elseif object:IsA("BasePart") then object.Anchored=true; object.CanCollide=false; object.CastShadow=false end
+    end
+    local cloneParts={}
+    for _,object in ipairs(clone:GetDescendants()) do
+        if object:IsA("BasePart") then cloneParts[descendantKey(object,clone)]=object end
+    end
+    for _,object in ipairs(character:GetDescendants()) do
+        if object:IsA("BasePart") then
+            local clonePart=cloneParts[descendantKey(object,character)]
+            if clonePart then table.insert(spectatePartPairs,{object,clonePart}) end
+        end
+    end
+    spectateClone=clone; clone.Parent=spectateWorld
+end
+local function stopSpectatePreview()
+    spectatingPlayer=nil; spectateWindow.Visible=false; spectateTitle.Text="Spectate Preview"
+    spectateSourceCharacter=nil; table.clear(spectatePartPairs)
+    if spectateClone then spectateClone:Destroy(); spectateClone=nil end
+end
+local function startSpectatePreview(target)
+    if not target then return false end
+    spectatingPlayer=target; spectateWindow.Visible=true; spectateViewport.Visible=true
+    spectateTitle.Text="Watching "..target.Name
+    rebuildSpectateClone(target.Character)
+    return true
+end
+local spectateExpandedSize=spectateWindow.Size
+local spectateExpanded=true
+spectateMinButton.MouseButton1Click:Connect(function()
+    spectateExpanded=not spectateExpanded
+    if spectateExpanded then spectateWindow.Size=spectateExpandedSize; spectateViewport.Visible=true; spectateMinButton.Text="-"
+    else spectateExpandedSize=spectateWindow.Size; spectateWindow.Size=UDim2.new(0,spectateWindow.AbsoluteSize.X,0,32); spectateViewport.Visible=false; spectateMinButton.Text="+" end
+end)
+local function setSpectatePinned(value)
+    spectatePin=value==true; spectatePinButton.Text=spectatePin and "ON" or "Pin"
+    spectatePinButton.BackgroundColor3=spectatePin and Color3.fromRGB(145,108,45) or Color3.fromRGB(52,48,67)
+end
+spectatePinButton.MouseButton1Click:Connect(function() setSpectatePinned(not spectatePin) end)
+spectateCloseButton.MouseButton1Click:Connect(stopSpectatePreview)
+makeResizableWindow(spectateWindow,210,140)
+registerDetachableWindow(spectateWindow,function() return spectatePin end,function() return spectatingPlayer~=nil end,
+    setSpectatePinned,function(value) if value and spectatingPlayer then spectateWindow.Visible=true elseif not value then stopSpectatePreview() end end)
+local spectatePreviewElapsed=0
+track(RunService.RenderStepped:Connect(function(dt)
+    if not spectateWindow.Visible or not spectatingPlayer then return end
+    spectatePreviewElapsed+=dt
+    if spectatePreviewElapsed<1/30 then return end
+    spectatePreviewElapsed=0
+    local character=spectatingPlayer.Character
+    if character~=spectateSourceCharacter then rebuildSpectateClone(character) end
+    local root=character and character:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    for _,pair in ipairs(spectatePartPairs) do
+        local source,clonePart=pair[1],pair[2]
+        if source.Parent and clonePart.Parent then clonePart.CFrame=source.CFrame; clonePart.Transparency=source.Transparency end
+    end
+    local focus=root.Position+Vector3.new(0,1.5,0)
+    local cameraPosition=focus-root.CFrame.LookVector*7+Vector3.new(0,2,0)
+    spectateCamera.CFrame=CFrame.lookAt(cameraPosition,focus)
+end))
 actionButton("Spectate GoTo Player", function(button)
     local target = gotoApi.find(gotoApi.box.Text)
-    local camera = workspace.CurrentCamera
-    local humanoid = target and target.Character and target.Character:FindFirstChildOfClass("Humanoid")
-    if camera and humanoid then camera.CameraSubject=humanoid; spectatingPlayer=target; button.Text="Watching "..target.Name
+    if startSpectatePreview(target) then button.Text="Previewing "..target.Name
     else button.Text="Player not found" end
 end)
 actionButton("Stop Spectating", function()
-    spectatingPlayer=nil
+    stopSpectatePreview()
     local camera=workspace.CurrentCamera; local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
     if camera and humanoid then camera.CameraSubject=humanoid; camera.CameraType=Enum.CameraType.Custom end
 end)
+addCleanup(stopSpectatePreview)
 actionButton("Copy GoTo Player ID", function(button)
     local target=gotoApi.find(gotoApi.box.Text)
     if target and setclipboard then setclipboard(tostring(target.UserId)); button.Text="Copied "..target.Name.." ID"
@@ -5480,6 +5646,19 @@ track(RunService.Heartbeat:Connect(function(dt)
 end))
 currentSection=state.emoteModuleTabs.player
 sectionLabel("Player Emote Sync",nextOrder())
+local emoteSyncScopeRow=rowFrame(nextOrder(),30)
+local emoteSyncScopeButton=create("TextButton",{Size=UDim2.new(0,150,0,26),Position=UDim2.new(0.5,-75,0,0),
+    BackgroundColor3=Color3.fromRGB(58,54,78),BorderSizePixel=0,Text="Sync: "..state.emoteSyncScope,
+    TextColor3=Color3.fromRGB(235,230,245),TextSize=10,Font=Enum.Font.GothamSemibold,Parent=emoteSyncScopeRow})
+create("UICorner",{CornerRadius=UDim.new(0,6),Parent=emoteSyncScopeButton})
+local function setEmoteSyncScope(scope)
+    state.emoteSyncScope=scope=="Sync All" and "Sync All" or "Emotes Only"
+    emoteSyncScopeButton.Text="Sync: "..state.emoteSyncScope
+    emoteSyncAnimationId=nil
+end
+emoteSyncScopeButton.MouseButton1Click:Connect(function()
+    setEmoteSyncScope(state.emoteSyncScope=="Sync All" and "Emotes Only" or "Sync All")
+end)
 local emoteSyncSettingsRow=rowFrame(nextOrder(),28)
 create("TextLabel",{Size=UDim2.new(1,-78,1,0),BackgroundTransparency=1,Text="Sync tolerance (seconds)",
     TextColor3=Color3.fromRGB(195,185,215),TextSize=11,Font=Enum.Font.Gotham,
@@ -5517,11 +5696,14 @@ local function getSyncSourceTrack(player)
     for _,playing in ipairs(animator:GetPlayingAnimationTracks()) do
         local animation=playing.Animation
         local animationId=animation and animation.AnimationId
+        local emoteOnly=state.emoteSyncScope~="Sync All"
         if playing.IsPlaying and animationId and animationId~=""
-            and playing.Priority.Value>=Enum.AnimationPriority.Action.Value then
+            and (not emoteOnly or playing.Priority.Value>=Enum.AnimationPriority.Action.Value) then
             if animationId==emoteSyncAnimationId then return playing end
-            if not best or playing.Priority.Value>best.Priority.Value
-                or (playing.Priority==best.Priority and playing.WeightCurrent>best.WeightCurrent) then best=playing end
+            if not best or (emoteOnly and (playing.Priority.Value>best.Priority.Value
+                or (playing.Priority==best.Priority and playing.WeightCurrent>best.WeightCurrent)))
+                or (not emoteOnly and (playing.WeightCurrent>best.WeightCurrent
+                or (playing.WeightCurrent==best.WeightCurrent and playing.Priority.Value>best.Priority.Value))) then best=playing end
         end
     end
     return best
@@ -5569,7 +5751,7 @@ local function beginEmoteSync()
     if humanoid and targetHumanoid and humanoid.RigType~=targetHumanoid.RigType then
         notifyLucid("Emote rig mismatch","Your rig and "..player.Name.." use different rig types; some poses may distort.",Color3.fromRGB(235,175,70))
     end
-    emoteStatus.Text="Waiting for "..player.Name.." to emote..."
+    emoteStatus.Text="Waiting for "..player.Name.." | "..state.emoteSyncScope
 end
 emoteSyncButton.MouseButton1Click:Connect(beginEmoteSync)
 emoteSyncBox.FocusLost:Connect(function(enterPressed)
@@ -5592,7 +5774,7 @@ track(RunService.Heartbeat:Connect(function(dt)
     local sourceTrack=getSyncSourceTrack(emoteSyncPlayer)
     if not sourceTrack then
         if emoteTrack and emoteTrack.IsPlaying then pcall(function() emoteTrack:Stop(0.1) end) end
-        emoteStatus.Text="Waiting for "..emoteSyncPlayer.Name.." to emote..."
+        emoteStatus.Text="Waiting for "..emoteSyncPlayer.Name.." | "..state.emoteSyncScope
         return
     end
     local sourceId=sourceTrack.Animation and sourceTrack.Animation.AnimationId
@@ -5620,7 +5802,7 @@ track(RunService.Heartbeat:Connect(function(dt)
             else emoteTrack:AdjustSpeed(math.clamp(sourceTrack.Speed+signedDrift*0.35,0.1,5)) end
         end
     end)
-    emoteStatus.Text="Synced with "..emoteSyncPlayer.Name.." | "..tostring(state.emoteSyncMode).." | "..tostring(sourceId)
+    emoteStatus.Text="Synced with "..emoteSyncPlayer.Name.." | "..state.emoteSyncScope.." | "..tostring(state.emoteSyncMode).." | "..tostring(sourceId)
 end))
 state.emoteSearch={}
 function state.emoteSearch.normalize(value)
@@ -6656,6 +6838,7 @@ state.emoteCommandApi={
         emoteStatus.Text=#(items or {})>0 and ("Showing "..#items.." emotes") or emptyText
     end,
     setSyncName=function(name) emoteSyncBox.Text=name end,beginSync=beginEmoteSync,
+    setSyncScope=setEmoteSyncScope,
     stopSync=function() stopEmoteSync(true) end,
     cancelSearch=function()
         emoteRequestGeneration=emoteRequestGeneration+1; emoteLoading=false; emoteSearchButton.Text="Search"; emoteStatus.Text="Catalog search cancelled"
@@ -6668,7 +6851,7 @@ if emotesDock then
     state.updateEmoteResultsHeight=function()
         if emotesDock.Visible then
             local active=state.emoteModuleTabs.active or "All"
-            local reserved=active=="Favs" and 147 or (active=="Player" and 307 or (active=="All" and 279 or 255))
+            local reserved=active=="Favs" and 147 or (active=="Player" and 337 or (active=="All" and 279 or 255))
             local minimum=active=="Favs" and 190 or 100
             emoteResults.Size=UDim2.new(1,-4,0,math.max(minimum,emotesDock.AbsoluteSize.Y-reserved))
         else
@@ -6934,6 +7117,7 @@ loadNamedProfile = function(button)
     updateText(emoteSyncToleranceBox,string.format("%.2f",state.emoteSyncTolerance))
     if gotoApi.setOffset then gotoApi.setOffset(state.gotoOffsetX,state.gotoOffsetY,state.gotoOffsetZ) end
     if gotoApi.setLoopDirection and state.loopGotoDirection then gotoApi.setLoopDirection(state.loopGotoDirection) end
+    if state.emoteCommandApi and state.emoteCommandApi.setSyncScope then state.emoteCommandApi.setSyncScope(state.emoteSyncScope) end
     -- Safe startup: remembered toggle states are intentionally not activated.
     -- Import favorites from older profile files once, without replacing the
     -- global collection or tying it to this profile/place.
@@ -7816,7 +8000,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.4.12 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.5.0 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -8019,7 +8203,7 @@ state.initializeCommandConsole=function()
     create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,4),Parent=commandList})
     local function normalize(value) return tostring(value or ""):lower():gsub("%b()",""):gsub("[^%w]","") end
     local toggleCommandAliases={
-        esp="ESP All",ea="ESP All",noclip="Enable Noclip",antifling="Enable Anti-Fling",airwalk="Enable Air Walk",freeze="Freeze Me",
+        esp="ESP All",ea="ESP All",headless="Local Headless",hl="Local Headless",noclip="Enable Noclip",antifling="Enable Anti-Fling",airwalk="Enable Air Walk",freeze="Freeze Me",
         infjump="Enable Inf. Jump",shiftlock="Enable Shift Lock Option",clicktp="Left Alt + Click TP",
         autoclick="Enable AutoClick",spawnpoint="Return Where I Died",recovery="Character Recovery Loop",
         camerashake="Remove Camera Shake",unlockmouse="Unlock Mouse",photomode="Photo Mode — Clean Freecam",
@@ -8085,7 +8269,7 @@ state.initializeCommandConsole=function()
             {command="!gto <player>",description="Alias for goto"},
             {command="!help",description="Show a compact command summary"},
             {command="!jumpheight <value>",description="Set and lock jump height"},
-            {command="!lgdir <direction>",description="Set loop goto direction: right/left/up/down/forward/backwards/in"},
+            {command="!lgdir <direction>",description="Set loop goto direction: right/left/headsit/down/forward/backwards/in"},
             {command="!loopgoto <player>",description="Continuously follow a player"},
             {command="!migraine",description="Apply Migraine Comfort lighting"},
             {command="!open <section>",description="Open Home, Player, World, Tools or Settings"},
@@ -8102,6 +8286,7 @@ state.initializeCommandConsole=function()
             {command="!ssh <player>",description="Add a player to Super Special highlights"},
             {command="!sshc <#RRGGBB>",description="Set the Super Special highlight color"},
             {command="!sync <player>",description="Synchronize with a player's current emote"},
+            {command="!syncscope <all|emotes>",description="Choose Sync All or Emotes Only"},
             {command="!unspec",description="Stop spectating and return the camera to your character"},
             {command="!unloopgoto",description="Disable loop goto"},
             {command="!walkspeed <value>",description="Set and lock WalkSpeed"},
@@ -8302,10 +8487,10 @@ state.initializeCommandConsole=function()
             if rest=="" then finish(false,"Use: !loopgoto <player>") else state.gotoApi.setLoop(rest,true); finish(true,"Loop goto: "..rest) end
             return
         elseif command=="lgdir" or command=="loopgotodir" then
-            if rest=="" then finish(false,"Use: !lgdir right/left/up/down/forward/backwards/in"); return end
-            local dirMap={right="Right",left="Left",up="Up",down="Down",forward="Forward",forwards="Forward",backwards="Backwards",back="Backwards",behind="Backwards",["in"]="In",inside="In",overlap="In"}
+            if rest=="" then finish(false,"Use: !lgdir right/left/headsit/down/forward/backwards/in"); return end
+            local dirMap={right="Right",left="Left",up="Head Sit",headsit="Head Sit",head="Head Sit",sit="Head Sit",down="Down",forward="Forward",forwards="Forward",backwards="Backwards",back="Backwards",behind="Backwards",["in"]="In",inside="In",overlap="In"}
             local dir=dirMap[rest:lower()]
-            if not dir then finish(false,"Unknown direction. Use: right, left, up, down, forward, backwards, in"); return end
+            if not dir then finish(false,"Unknown direction. Use: right, left, headsit, down, forward, backwards, in"); return end
             if state.gotoApi.setLoopDirection then state.gotoApi.setLoopDirection(dir) end
             finish(true,"Loop goto direction: "..dir); return
         elseif command=="unloopgoto" or command=="stopgoto" then state.gotoApi.setLoop(nil,false); finish(true,"Loop goto disabled"); return
@@ -8342,6 +8527,13 @@ state.initializeCommandConsole=function()
         elseif command=="sync" then
             if rest=="" then finish(false,"Use: !sync <player>")
             else state.emoteCommandApi.setSyncName(rest); state.emoteCommandApi.beginSync(); finish(true,"Syncing with "..rest) end
+            return
+        elseif command=="syncscope" then
+            local requested=rest:lower():gsub("[^%w]","")
+            local scope=(requested=="all" or requested=="syncall") and "Sync All"
+                or ((requested=="emote" or requested=="emotes" or requested=="emotesonly") and "Emotes Only" or nil)
+            if not scope then finish(false,"Use: !syncscope all/emotes")
+            else state.emoteCommandApi.setSyncScope(scope); finish(true,"Sync scope: "..scope) end
             return
         elseif command=="desync" then
             state.emoteCommandApi.stopSync(); finish(true,"Player emote sync stopped"); return
@@ -8921,7 +9113,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.4.12] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.5.0] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.4.12] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.5.0] Loaded, but this executor does not expose queue_on_teleport")
 end
