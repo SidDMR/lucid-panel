@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.7.2
+--// Lucid Panel v5.7.3
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -417,7 +417,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.7.2",
+    Text                   = "LUCID PANEL  •  v5.7.3",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -5852,6 +5852,7 @@ end
 
 local function stopEmoteSync(stopPlayback)
     emoteSyncActive=false; emoteSyncPlayer=nil; emoteSyncAnimationId=nil; emoteSyncElapsed=0
+    state.emoteSyncLastSpeed=nil; state.emoteSyncLastPosition=nil; state.emoteSyncSourceLooped=nil
     if stopPlayback then stopEmote() end
 end
 
@@ -5885,6 +5886,22 @@ currentSection=state.emoteModuleTabs.main
 
 track(RunService.Heartbeat:Connect(function(dt)
     if not emoteSyncActive then return end
+    -- Local Animate scripts can suppress an Action track every frame as soon as
+    -- the local character walks. Keep Emote must defend the synced track at the
+    -- same cadence; timing/drift correction remains throttled below.
+    if state.keepEmoteMoving and emoteTrack and emoteSyncAnimationId then
+        pcall(function()
+            emoteTrack.Priority=Enum.AnimationPriority.Action4
+            emoteTrack.Looped=true
+            if not emoteTrack.IsPlaying then
+                emoteTrack:Play(0.03,1,tonumber(state.emoteSyncLastSpeed) or 1)
+                if emoteTrack.Length>0 and state.emoteSyncLastPosition then
+                    emoteTrack.TimePosition=math.clamp(state.emoteSyncLastPosition,0,emoteTrack.Length)
+                end
+            end
+            if emoteTrack.WeightTarget<0.99 then emoteTrack:AdjustWeight(1,0.03) end
+        end)
+    end
     emoteSyncElapsed=emoteSyncElapsed+dt
     if emoteSyncElapsed<(state.lowPerformanceMode and 0.25 or 0.12) then return end
     emoteSyncElapsed=0
@@ -5898,6 +5915,9 @@ track(RunService.Heartbeat:Connect(function(dt)
         return
     end
     local sourceId=sourceTrack.Animation and sourceTrack.Animation.AnimationId
+    state.emoteSyncLastSpeed=sourceTrack.Speed
+    state.emoteSyncLastPosition=sourceTrack.TimePosition
+    state.emoteSyncSourceLooped=sourceTrack.Looped
     if not emoteTrack or sourceId~=emoteSyncAnimationId then
         if not loadSyncedTrack(sourceTrack) then emoteStatus.Text="Could not load target emote"; return end
     end
@@ -5907,6 +5927,7 @@ track(RunService.Heartbeat:Connect(function(dt)
         return
     end
     pcall(function()
+        emoteTrack.Looped=state.keepEmoteMoving or state.emoteSyncSourceLooped==true
         if not emoteTrack.IsPlaying then emoteTrack:Play(0.05,1,sourceTrack.Speed) end
         local syncMode=state.emoteSyncMode
         if syncMode=="Animation" then emoteTrack:AdjustSpeed(emoteSpeed) else emoteTrack:AdjustSpeed(sourceTrack.Speed) end
@@ -8120,7 +8141,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.7.2 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.7.3 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -9252,7 +9273,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.7.2] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.7.3] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.7.2] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.7.3] Loaded, but this executor does not expose queue_on_teleport")
 end
