@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.7.1
+--// Lucid Panel v5.7.2
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -218,6 +218,65 @@ local state = {
     emoteFavorites    = {},
 }
 
+-- Kept outside initializeV4Toolkit so strict sync classification does not add
+-- locals/register pressure to the executor-sensitive UI initializer.
+state.syncTrackClassificationCache=setmetatable({},{__mode="k"})
+state.isRecognizedEmoteTrack=function(character,playing)
+    local animation=playing and playing.Animation
+    local id=tostring(animation and animation.AnimationId or ""):match("%d+") or ""
+    if not character or id=="" then return false end
+    local combinedName=((playing.Name or "").." "..(animation.Name or "")):lower():gsub("[%s_%-]","")
+    for _,token in ipairs({"idle","walk","run","jump","fall","climb","swim","sit","tool","land"}) do
+        if combinedName:find(token,1,true) then return false end
+    end
+    local entry=state.syncTrackClassificationCache[character]
+    if not entry or os.clock()-entry.builtAt>4 then
+        entry={builtAt=os.clock(),emotes={},movement={}}
+        local humanoid=character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            local ok,description=pcall(function() return humanoid:GetAppliedDescription() end)
+            if ok and description then
+                local emotesOk,emotes=pcall(function() return description:GetEmotes() end)
+                if emotesOk and type(emotes)=="table" then
+                    for _,assetIds in pairs(emotes) do
+                        if type(assetIds)=="table" then
+                            for _,assetId in pairs(assetIds) do
+                                local clean=tostring(type(assetId)=="table" and (assetId.AssetId or assetId.Id) or assetId):match("%d+")
+                                if clean then entry.emotes[clean]=true end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        local animate=character:FindFirstChild("Animate")
+        if animate then
+            for _,object in ipairs(animate:GetDescendants()) do
+                if object:IsA("Animation") then
+                    local hierarchy=object.Name:lower()
+                    local ancestor=object.Parent
+                    while ancestor and ancestor~=animate do hierarchy=hierarchy.." "..ancestor.Name:lower(); ancestor=ancestor.Parent end
+                    if hierarchy:find("idle",1,true) or hierarchy:find("walk",1,true) or hierarchy:find("run",1,true)
+                        or hierarchy:find("jump",1,true) or hierarchy:find("fall",1,true) or hierarchy:find("climb",1,true)
+                        or hierarchy:find("swim",1,true) or hierarchy:find("sit",1,true) or hierarchy:find("tool",1,true) then
+                        local movementId=tostring(object.AnimationId):match("%d+")
+                        if movementId then entry.movement[movementId]=true end
+                    end
+                end
+            end
+        end
+        state.syncTrackClassificationCache[character]=entry
+    end
+    if entry.movement[id] then return false end
+    if entry.emotes[id] then return true end
+    for _,token in ipairs({"emote","dance","shuffle","pose","wave","cheer","laugh","point","salute"}) do
+        if combinedName:find(token,1,true) then return true end
+    end
+    -- Emotes Only is intentionally strict: unknown Action tracks may be game
+    -- attacks or custom locomotion, so they belong only in Sync All.
+    return false
+end
+
 -- ============================================================
 -- UTILITY: create Instance with properties
 -- ============================================================
@@ -358,7 +417,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.7.1",
+    Text                   = "LUCID PANEL  •  v5.7.2",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -5756,13 +5815,8 @@ local function getSyncSourceTrack(player)
         local animationId=animation and animation.AnimationId
         local valid=playing.IsPlaying and playing.WeightCurrent>0.01 and animationId and animationId~=""
         if valid and emoteOnly then
-            local trackName=((playing.Name or "").." "..(animation.Name or "")):lower():gsub("[%s_%-]","")
-            local movementName=trackName:find("idle",1,true) or trackName:find("walk",1,true)
-                or trackName:find("run",1,true) or trackName:find("jump",1,true)
-                or trackName:find("fall",1,true) or trackName:find("climb",1,true)
-                or trackName:find("swim",1,true) or trackName:find("sit",1,true)
-                or trackName:find("tool",1,true) or trackName:find("land",1,true)
-            valid=playing.Priority.Value>=Enum.AnimationPriority.Action.Value and not movementName
+            valid=playing.Priority.Value>=Enum.AnimationPriority.Action.Value
+                and state.isRecognizedEmoteTrack(player.Character,playing)
         end
         if valid then
             if animationId==emoteSyncAnimationId then return playing end
@@ -8066,7 +8120,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.7.1 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.7.2 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -9198,7 +9252,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.7.1] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.7.2] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.7.1] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.7.2] Loaded, but this executor does not expose queue_on_teleport")
 end
