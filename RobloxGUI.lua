@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.8.1
+--// Lucid Panel v5.8.2
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -358,7 +358,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.8.1",
+    Text                   = "LUCID PANEL  •  v5.8.2",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -2816,6 +2816,38 @@ gotoOffsetBox.FocusLost:Connect(function()
     end
     gotoOffsetBox.Text=string.format("%g, %g, %g",gotoOffset.X,gotoOffset.Y,gotoOffset.Z)
 end)
+local function computeGotoCFrame(targetRootPart,offset,direction,allowHeadSit)
+    local targetCF=targetRootPart.CFrame
+    local px=math.abs(offset.X)
+    if px<0.01 then px=3 end
+    if direction=="Right" then
+        return targetCF*CFrame.new(px,0,0)
+    elseif direction=="Left" then
+        return targetCF*CFrame.new(-px,0,0)
+    elseif direction=="Head Sit" and allowHeadSit then
+        local targetCharacter=targetRootPart.Parent
+        local targetHead=targetCharacter and targetCharacter:FindFirstChild("Head")
+        local supportPosition=targetRootPart.Position+Vector3.new(0,2,0)
+        if targetHead then
+            -- Use the animated head's full world position so idle poses and
+            -- other animation-driven head movement are followed, not only Y.
+            supportPosition=targetHead.Position+targetHead.CFrame.UpVector*(targetHead.Size.Y*0.5)
+        end
+        local rootPosition=supportPosition+Vector3.new(0,1.05,0)
+        return CFrame.new(rootPosition)*(targetCF-targetCF.Position)
+    elseif direction=="Down" then
+        return targetCF*CFrame.new(0,-px,0)
+    elseif direction=="Forward" then
+        return targetCF*CFrame.new(0,0,-1)
+    elseif direction=="Backwards" then
+        return targetCF*CFrame.new(0,0,1)
+    elseif direction=="In" then
+        return targetCF
+    end
+    -- Head Sit is loop-only. A normal Go To uses the original custom offset
+    -- when Head Sit is selected instead of leaving the player seated in midair.
+    return targetRootPart:GetPivot()+offset
+end
 local function goToRequestedPlayer()
     if gotoBusy then return end
     local target = gotoApi.find(gotoApi.box.Text)
@@ -2838,7 +2870,7 @@ local function goToRequestedPlayer()
             end
             if root.Parent and targetRoot.Parent then
                 previousTeleportCFrame=root.CFrame
-                root.CFrame = targetRoot:GetPivot() + gotoOffset
+                root.CFrame=computeGotoCFrame(targetRoot,gotoOffset,state.loopGotoDirection,false)
                 clearCharacterVelocity(character)
                 table.insert(recentGotoPlayers,1,target.Name)
                 while #recentGotoPlayers>5 do table.remove(recentGotoPlayers) end
@@ -2885,38 +2917,6 @@ local loopGotoGeneration = 0
 local fireLoopGoto
 
 local loopGotoDirections = {"Right","Left","Head Sit","Down","Forward","Backwards","In"}
-local function computeLoopGotoCFrame(myRoot, targetRootPart, offset, direction)
-    local targetCF = targetRootPart.CFrame
-    local px = math.abs(offset.X)
-    if px < 0.01 then px = 3 end
-    if direction == "Right" then
-        return targetCF * CFrame.new(px, 0, 0)
-    elseif direction == "Left" then
-        return targetCF * CFrame.new(-px, 0, 0)
-    elseif direction == "Head Sit" then
-        local tChar = targetRootPart.Parent
-        local tHead = tChar and tChar:FindFirstChild("Head")
-        local headTopWorld = targetRootPart.Position.Y + 2
-        if tHead then
-            headTopWorld = tHead.Position.Y + tHead.Size.Y * 0.5
-        end
-        -- A seated avatar's root is much lower than a standing avatar's root.
-        -- Keep the torso resting on the head while the legs hang down.
-        local rootY = headTopWorld + 1.05
-        return CFrame.new(targetRootPart.Position.X, rootY, targetRootPart.Position.Z) *
-               (targetCF - targetCF.Position)
-    elseif direction == "Down" then
-        return targetCF * CFrame.new(0, -px, 0)
-    elseif direction == "Forward" then
-        return targetCF * CFrame.new(0, 0, -1)
-    elseif direction == "Backwards" then
-        return targetCF * CFrame.new(0, 0, 1)
-    elseif direction == "In" then
-        return targetCF
-    end
-    return targetCF + offset
-end
-
 local _, loopGotoToggle = createToggle("Loop Go To (uses player above)", nextOrder(), false, function(on)
     if on then
         local target = findGotoPlayer(gotoBox.Text)
@@ -2944,10 +2944,11 @@ local _, loopGotoToggle = createToggle("Loop Go To (uses player above)", nextOrd
                 local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
                 if root and targetRoot then
                     if humanoid then humanoid.Sit=state.loopGotoDirection=="Head Sit" end
-                    root.CFrame = computeLoopGotoCFrame(root, targetRoot, gotoOffset, state.loopGotoDirection)
+                    root.CFrame=computeGotoCFrame(targetRoot,gotoOffset,state.loopGotoDirection,true)
                     root.AssemblyLinearVelocity=Vector3.zero; root.AssemblyAngularVelocity=Vector3.zero
                 end
-                RunService.Heartbeat:Wait()
+                if state.loopGotoDirection=="Head Sit" then RunService.RenderStepped:Wait()
+                else RunService.Heartbeat:Wait() end
             end
         end)
     else
@@ -2963,7 +2964,7 @@ fireLoopGoto = loopGotoToggle
 do
     local lgDirRow = rowFrame(nextOrder(), 28)
     create("TextLabel", {Size=UDim2.new(0,102,1,0), BackgroundTransparency=1,
-        Text="Loop GoTo Dir", TextColor3=Color3.fromRGB(185,175,205), TextSize=10,
+        Text="GoTo Direction", TextColor3=Color3.fromRGB(185,175,205), TextSize=10,
         Font=Enum.Font.Gotham, TextXAlignment=Enum.TextXAlignment.Left, Parent=lgDirRow})
     local lgDirBtn = create("TextButton", {
         Size=UDim2.new(1,-108,0,22), Position=UDim2.new(0,108,0.5,-11),
@@ -8256,7 +8257,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.8.1 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.8.2 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -8529,7 +8530,7 @@ state.initializeCommandConsole=function()
             {command="!gto <player>",description="Alias for goto"},
             {command="!help",description="Show a compact command summary"},
             {command="!jumpheight <value>",description="Set and lock jump height"},
-            {command="!lgdir <direction>",description="Set loop goto direction: right/left/headsit/down/forward/backwards/in"},
+            {command="!lgdir <direction>",description="Set Go To and Loop Go To direction: right/left/headsit/down/forward/backwards/in"},
             {command="!loopgoto <player>",description="Continuously follow a player"},
             {command="!migraine",description="Apply Migraine Comfort lighting"},
             {command="!open <section>",description="Open Home, Player, World, Tools or Settings"},
@@ -9390,7 +9391,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.8.1] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.8.2] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.8.1] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.8.2] Loaded, but this executor does not expose queue_on_teleport")
 end
