@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.5.0
+--// Lucid Panel v5.6.1
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -48,6 +48,7 @@ local ContextActionService = game:GetService("ContextActionService")
 local VirtualUser = game:GetService("VirtualUser")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local TeleportService = game:GetService("TeleportService")
+local TextChatService = game:GetService("TextChatService")
 local Lighting = game:GetService("Lighting")
 local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
@@ -271,6 +272,32 @@ local function notifyLucid(title,message,color)
         TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,ZIndex=202,Parent=notice})
     task.delay(3.5,function() if notice.Parent then notice:Destroy() end end)
 end
+do
+local pendingValueNotices={}
+local function readableValue(value)
+    if type(value)=="number" then return string.format("%.3f",value):gsub("0+$",""):gsub("%.$","") end
+    return tostring(value)
+end
+state.notifyValueChange=function(label,oldValue,newValue)
+    if not state.changeNotificationsReady or state.suppressChangeNotifications
+        or readableValue(oldValue)==readableValue(newValue) then return end
+    local pending=pendingValueNotices[label]
+    if pending then pending.newValue=newValue; pending.generation+=1
+    else pending={oldValue=oldValue,newValue=newValue,generation=1}; pendingValueNotices[label]=pending end
+    local generation=pending.generation
+    task.delay(0.22,function()
+        local latest=pendingValueNotices[label]
+        if not latest or latest.generation~=generation then return end
+        pendingValueNotices[label]=nil
+        notifyLucid(label.." changed",readableValue(latest.oldValue).."  →  "..readableValue(latest.newValue),Color3.fromRGB(125,105,210))
+    end)
+end
+state.notifyToggleChange=function(label,enabled)
+    if not state.changeNotificationsReady or state.suppressChangeNotifications then return end
+    notifyLucid(label,enabled and "Enabled" or "Disabled",
+        enabled and Color3.fromRGB(75,210,120) or Color3.fromRGB(220,90,105))
+end
+end
 
 -- ============================================================
 -- SCROLLING MAIN FRAME  (taller content now needs scroll)
@@ -358,7 +385,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.5.0",
+    Text                   = "LUCID PANEL  •  v5.6.1",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -910,51 +937,80 @@ collapseBtn.MouseButton1Click:Connect(function()
     for _, meta in pairs(categoryMeta) do meta.setOpen(allExpanded) end
     collapseBtn.Text = allExpanded and "Collapse all" or "Expand all"
 end)
-local function categoryMatches(name, body, query)
-    if name:lower():find(query, 1, true) then return true end
-    for _, item in ipairs(body:GetDescendants()) do
-        if item:IsA("TextLabel") or item:IsA("TextButton") or item:IsA("TextBox") then
-            local searchable = (item.Text .. " " .. (item:IsA("TextBox") and item.PlaceholderText or "")):lower()
-            if searchable:find(query, 1, true) then return true end
-        end
-    end
-    return false
+local function cleanSearchLabel(item)
+    if not (item:IsA("TextButton") or item:IsA("TextBox") or item:IsA("TextLabel")) then return nil end
+    local label=item.Text
+    if item:IsA("TextBox") and (not label or label=="") then label=item.PlaceholderText end
+    label=tostring(label or ""):gsub("<.->",""):gsub("%s+"," "):match("^%s*(.-)%s*$")
+    if label=="" or #label>90 then return nil end
+    -- Live reports/status blocks are implementation details, not useful tools.
+    if item:IsA("TextLabel") and (item.Font==Enum.Font.Code or item.Text:find("\n",1,true)
+        or item.AbsoluteSize.Y>28 or item.TextWrapped) then return nil end
+    return label
 end
 searchBox:GetPropertyChangedSignal("Text"):Connect(function()
     local query = searchBox.Text:lower():match("^%s*(.-)%s*$")
     for _,child in ipairs(searchResults:GetChildren()) do if child:IsA("GuiObject") then child:Destroy() end end
     searchResults.Visible=query~=""
-    local resultCount=0
+    local candidates={}
+    local seen={}
     for name, meta in pairs(categoryMeta) do
-        meta.wrapper.Visible = query == "" and (state.mainNavigation.groups[state.mainNavigation.active] or {})[name]==true
-            or query~="" and categoryMatches(name, meta.body, query)
-        if query ~= "" and meta.wrapper.Visible then meta.setOpen(true) end
-        if query~="" and resultCount<8 then
+        -- Search has its own compact result view. Never expand whole categories
+        -- underneath it, since that mixes diagnostics and unrelated controls in.
+        meta.wrapper.Visible = query=="" and (state.mainNavigation.groups[state.mainNavigation.active] or {})[name]==true
+        if query~="" then
+            if name:lower():find(query,1,true) then
+                table.insert(candidates,{category=name,label="Open "..name,target=meta.header,meta=meta})
+            end
             for _,item in ipairs(meta.body:GetDescendants()) do
-                if resultCount>=8 then break end
-                if item:IsA("TextLabel") or item:IsA("TextButton") or item:IsA("TextBox") then
-                    local label=(item.Text~="" and item.Text or (item:IsA("TextBox") and item.PlaceholderText or ""))
-                    if label~="" and label:lower():find(query,1,true) then
-                        resultCount=resultCount+1
-                        local resultMeta=meta
-                        local resultCategory=name
-                        local result=create("TextButton",{Size=UDim2.new(1,0,0,24),BackgroundColor3=Color3.fromRGB(46,40,64),
-                            BorderSizePixel=0,Text="["..name.."]  "..label,TextColor3=Color3.fromRGB(225,215,240),
-                            TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
-                            LayoutOrder=resultCount,Parent=searchResults})
-                        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=result})
-                        create("UIPadding",{PaddingLeft=UDim.new(0,7),Parent=result})
-                        result.MouseButton1Click:Connect(function()
-                            state.mainNavigation.select(state.mainNavigation.categoryGroup[resultCategory] or "Home")
-                            resultMeta.setOpen(true); searchBox.Text=""
-                            task.defer(function()
-                                local target=resultMeta.wrapper.AbsolutePosition.Y-content.AbsolutePosition.Y+content.CanvasPosition.Y
-                                content.CanvasPosition=Vector2.new(0,math.max(0,target))
-                            end)
-                        end)
-                    end
+                local label=cleanSearchLabel(item)
+                local key=label and (name.."\0"..label:lower()) or nil
+                if label and label:lower():find(query,1,true) and not seen[key] then
+                    seen[key]=true
+                    table.insert(candidates,{category=name,label=label,target=item,meta=meta})
                 end
             end
+        end
+    end
+    if query~="" then
+        table.sort(candidates,function(a,b)
+            local aStart=a.label:lower():sub(1,#query)==query and 0 or 1
+            local bStart=b.label:lower():sub(1,#query)==query and 0 or 1
+            if aStart~=bStart then return aStart<bStart end
+            if a.category~=b.category then return a.category<b.category end
+            return a.label:lower()<b.label:lower()
+        end)
+        local shown=math.min(#candidates,12)
+        local summary=create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
+            Text=#candidates==0 and "No matching tools" or (tostring(#candidates).." matching tool"..(#candidates==1 and "" or "s")),
+            TextColor3=Color3.fromRGB(155,145,180),TextSize=9,Font=Enum.Font.Gotham,
+            TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=0,Parent=searchResults})
+        create("UIPadding",{PaddingLeft=UDim.new(0,4),Parent=summary})
+        for index=1,shown do
+            local candidate=candidates[index]
+            local result=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(46,40,64),
+                BorderSizePixel=0,Text=candidate.label.."   ·   "..candidate.category,
+                TextColor3=Color3.fromRGB(225,215,240),TextSize=10,Font=Enum.Font.Gotham,
+                TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,
+                LayoutOrder=index,Parent=searchResults})
+            create("UICorner",{CornerRadius=UDim.new(0,5),Parent=result})
+            create("UIPadding",{PaddingLeft=UDim.new(0,8),PaddingRight=UDim.new(0,8),Parent=result})
+            result.MouseButton1Click:Connect(function()
+                local resultMeta=candidate.meta
+                local targetItem=candidate.target
+                state.mainNavigation.select(state.mainNavigation.categoryGroup[candidate.category] or "Home")
+                resultMeta.setOpen(true); searchBox.Text=""
+                task.defer(function()
+                    local target=(targetItem and targetItem.Parent and targetItem.AbsolutePosition.Y or resultMeta.wrapper.AbsolutePosition.Y)
+                        -content.AbsolutePosition.Y+content.CanvasPosition.Y-6
+                    content.CanvasPosition=Vector2.new(0,math.max(0,target))
+                end)
+            end)
+        end
+        if #candidates>shown then
+            create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
+                Text="+ "..tostring(#candidates-shown).." more — refine your search",TextColor3=Color3.fromRGB(145,130,175),
+                TextSize=9,Font=Enum.Font.Gotham,LayoutOrder=shown+1,Parent=searchResults})
         end
     end
 end)
@@ -1268,6 +1324,7 @@ local function createToggle(labelText, order, default, callback)
     })
 
     local function setToggle(value)
+        local previous=enabled
         enabled = value == true
         toggleBg.BackgroundColor3 = enabled and Color3.fromRGB(80, 200, 120) or Color3.fromRGB(60, 60, 70)
         knob.Position = enabled and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
@@ -1276,6 +1333,7 @@ local function createToggle(labelText, order, default, callback)
         if favoriteStatusRegistry[labelText] then favoriteStatusRegistry[labelText](enabled) end
         refreshFeatureStatus()
         if callback then callback(enabled) end
+        if previous~=enabled then state.notifyToggleChange(labelText,enabled) end
     end
 
     local function fireToggle()
@@ -1291,7 +1349,7 @@ local function createToggle(labelText, order, default, callback)
     return function() return enabled end, fireToggle, setToggle
 end
 
-local function createInlineToggle(parent, default)
+local function createInlineToggle(parent, default, notificationLabel)
     local toggleBg = create("Frame", {
         Size              = UDim2.new(0, 44, 0, 22),
         Position          = UDim2.new(1, -48, 0.5, -11),
@@ -1322,18 +1380,22 @@ local function createInlineToggle(parent, default)
     local function toggle(callback)
         changeCallback = callback
         btn.MouseButton1Click:Connect(function()
+            local previous=enabled
             enabled = not enabled
             toggleBg.BackgroundColor3 = enabled and Color3.fromRGB(80, 200, 120) or Color3.fromRGB(60, 60, 70)
             knob.Position = enabled and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
             if changeCallback then changeCallback(enabled) end
+            if previous~=enabled and notificationLabel then state.notifyToggleChange(notificationLabel,enabled) end
         end)
     end
 
     local function setInline(value)
+        local previous=enabled
         enabled=value==true
         toggleBg.BackgroundColor3=enabled and Color3.fromRGB(80,200,120) or Color3.fromRGB(60,60,70)
         knob.Position=enabled and UDim2.new(1,-19,0.5,-8) or UDim2.new(0,3,0.5,-8)
         if changeCallback then changeCallback(enabled) end
+        if previous~=enabled and notificationLabel then state.notifyToggleChange(notificationLabel,enabled) end
     end
     return toggle, function() return enabled end, setInline
 end
@@ -1371,12 +1433,15 @@ local opacBox = styledBox(opacRow, {
 })
 
 local function setOpacity(pct)
+    local previous=state.opacityPercent or tonumber(opacBox.Text:gsub("%%","")) or pct
     pct = math.clamp(pct, 0, 100)
+    state.opacityPercent=pct
     local transparency = 1 - (pct / 100)
     mainFrame.BackgroundTransparency = transparency
     titleBar.BackgroundTransparency  = math.clamp(transparency - 0.1, 0, 1)
     opacFill.Size = UDim2.new(pct / 100, 0, 1, 0)
     opacBox.Text  = tostring(math.floor(pct + 0.5)) .. "%"
+    state.notifyValueChange("GUI Opacity",previous,pct)
 end
 
 local draggingOpac = false
@@ -1639,9 +1704,11 @@ local hipBox = styledBox(hipRow, {
 local HIP_MIN, HIP_MAX = -100, 200
 
 local function setHipHeight(value, applyToCharacter)
+    local previous=tonumber(hipBox.Text) or value
     value = math.clamp(value, HIP_MIN, HIP_MAX)
     hipBox.Text = string.format("%.2f", value):gsub("%.?0+$", "")
     hipFill.Size = UDim2.new((value - HIP_MIN) / (HIP_MAX - HIP_MIN), 0, 1, 0)
+    state.notifyValueChange("Hip Height",previous,value)
     if applyToCharacter == false then return end
     local char = LocalPlayer.Character
     if char then
@@ -1713,6 +1780,7 @@ local walkspeedConnection = nil
 local applyingWalkspeed = false
 
 local function applyWalkSpeed(value)
+    local previous=state.walkspeedValue
     value = tonumber(value)
     if not value or value ~= value or value == math.huge or value == -math.huge then
         wsBox.Text = tostring(state.walkspeedValue)
@@ -1725,8 +1793,9 @@ local function applyWalkSpeed(value)
     if humanoid then
         applyingWalkspeed = true
         pcall(function() humanoid.WalkSpeed = value end)
-        applyingWalkspeed = false
+    applyingWalkspeed = false
     end
+    state.notifyValueChange("WalkSpeed",previous,value)
     return true
 end
 
@@ -1751,7 +1820,7 @@ addCleanup(function()
     walkspeedConnection = nil
 end)
 
-local wsToggle, wsGetLocked, wsSetLocked = createInlineToggle(wsRow, false)
+local wsToggle, wsGetLocked, wsSetLocked = createInlineToggle(wsRow, false,"Lock WalkSpeed")
 toggleRegistry["Lock WalkSpeed"]=wsSetLocked
 activeFeatures["Lock WalkSpeed"]=false
 wsToggle(function(on)
@@ -1795,7 +1864,7 @@ create("TextLabel", {
     Parent = jhRow,
 })
 
-local jhToggle, jhGetLocked, jhSetLocked = createInlineToggle(jhRow, false)
+local jhToggle, jhGetLocked, jhSetLocked = createInlineToggle(jhRow, false,"Lock Jump Height")
 toggleRegistry["Lock Jump Height"]=jhSetLocked
 activeFeatures["Lock Jump Height"]=false
 jhToggle(function(on)
@@ -1820,6 +1889,7 @@ end)
 jhBox.FocusLost:Connect(function()
     local num = tonumber(jhBox.Text)
     if num then
+        local previous=state.jumpHeightValue
         state.jumpHeightValue = num
         local char = LocalPlayer.Character
         if char then
@@ -1829,6 +1899,7 @@ jhBox.FocusLost:Connect(function()
                 h.JumpHeight = num
             end
         end
+        state.notifyValueChange("Jump Height",previous,num)
     else
         jhBox.Text = tostring(state.jumpHeightValue)
     end
@@ -2168,7 +2239,7 @@ create("TextLabel", {
     Parent = zoomRow,
 })
 
-local zoomToggle, zoomGetLocked, zoomSetLocked = createInlineToggle(zoomRow, false)
+local zoomToggle, zoomGetLocked, zoomSetLocked = createInlineToggle(zoomRow, false,"Lock Max Zoom")
 toggleRegistry["Lock Max Zoom"]=zoomSetLocked
 activeFeatures["Lock Max Zoom"]=false
 zoomToggle(function(on)
@@ -2186,10 +2257,12 @@ end)
 zoomBox.FocusLost:Connect(function()
     local num = tonumber(zoomBox.Text)
     if num then
+        local previous=state.maxZoomValue
         state.maxZoomValue = num
         if state.maxZoomLocked then
             LocalPlayer.CameraMaxZoomDistance = num
         end
+        state.notifyValueChange("Maximum Zoom",previous,num)
     else
         zoomBox.Text = tostring(state.maxZoomValue)
     end
@@ -3532,10 +3605,9 @@ local function initializePlayerESP()
     local function addYellowPlayer()
         local player=findGotoPlayer(yellowBox.Text)
         if not player then yellowBox.Text="Player not found"; return end
-        yellowNames[player.Name]=true; yellowBox.Text=""; watchYellowPlayer(player); applyYellowHighlight(player); refreshYellowStatus(); refreshESP()
-        if state.pinkHighlightApi.refresh then state.pinkHighlightApi.refresh() end
-        if state.blackHighlightApi.refresh then state.blackHighlightApi.refresh() end
-        if state.persistHighlightChange then state.persistHighlightChange(player.Name,"Special") end
+        if state.assignExclusiveHighlight then state.assignExclusiveHighlight(player.Name,"Special")
+        else yellowNames[player.Name]=true; watchYellowPlayer(player); applyYellowHighlight(player); refreshYellowStatus(); refreshESP() end
+        yellowBox.Text=""
     end
     local function removeYellowPlayer()
         local query=yellowBox.Text:match("^%s*(.-)%s*$"):lower(); local removedName=nil
@@ -3681,9 +3753,9 @@ local function initializePlayerESP()
         local function addPinkPlayer()
             local player=findGotoPlayer(pinkBox.Text)
             if not player then pinkBox.Text="Player not found"; return end
-            state.pinkHighlightNames[player.Name]=true; pinkBox.Text=""; watchPinkPlayer(player); applyPinkHighlight(player); refreshPinkStatus(); refreshESP()
-            if state.blackHighlightApi.refresh then state.blackHighlightApi.refresh() end
-            if state.persistHighlightChange then state.persistHighlightChange(player.Name,"Super Special") end
+            if state.assignExclusiveHighlight then state.assignExclusiveHighlight(player.Name,"Super Special")
+            else state.pinkHighlightNames[player.Name]=true; watchPinkPlayer(player); applyPinkHighlight(player); refreshPinkStatus(); refreshESP() end
+            pinkBox.Text=""
         end
         pinkAdd.MouseButton1Click:Connect(addPinkPlayer)
         pinkRemove.MouseButton1Click:Connect(function()
@@ -3815,8 +3887,9 @@ local function initializePlayerESP()
         local function addBlackPlayer()
             local player=findGotoPlayer(blackBox.Text)
             if not player then blackBox.Text="Player not found"; return end
-            state.blackHighlightNames[player.Name]=true; blackBox.Text=""; watchBlackPlayer(player); applyBlackHighlight(player); refreshBlackStatus(); refreshESP()
-            if state.persistHighlightChange then state.persistHighlightChange(player.Name,"Exploiter") end
+            if state.assignExclusiveHighlight then state.assignExclusiveHighlight(player.Name,"Exploiter")
+            else state.blackHighlightNames[player.Name]=true; watchBlackPlayer(player); applyBlackHighlight(player); refreshBlackStatus(); refreshESP() end
+            blackBox.Text=""
         end
         blackAdd.MouseButton1Click:Connect(addBlackPlayer)
         blackRemove.MouseButton1Click:Connect(function()
@@ -3852,6 +3925,34 @@ local function initializePlayerESP()
         create("UICorner",{CornerRadius=UDim.new(0,6),Parent=clearBlackButton})
         clearBlackButton.MouseButton1Click:Connect(function() setBlackNames({}); clearBlackButton.Text="Exploiter highlights cleared"; task.delay(1,function() if clearBlackButton.Parent then clearBlackButton.Text="Clear Exploiter Highlights" end end) end)
         addCleanup(function() for player in pairs(blackHighlights) do removeBlackHighlight(player) end end)
+    end
+
+    -- A player belongs to exactly one named-highlight list. Besides fixing the
+    -- visible priority conflict, this keeps offline/profile data consistent.
+    state.assignExclusiveHighlight=function(playerName,targetType)
+        playerName=tostring(playerName or ""):match("^%s*(.-)%s*$")
+        if playerName=="" then return false end
+        local targetKey=tostring(targetType or ""):lower()
+        local lists={
+            {key="special",label="Special",api=state.yellowHighlightApi},
+            {key="super special",label="Super Special",api=state.pinkHighlightApi},
+            {key="exploiter",label="Exploiter",api=state.blackHighlightApi},
+        }
+        local targetFound=false
+        for _,entry in ipairs(lists) do
+            local names=entry.api.getNames and entry.api.getNames() or {}
+            local nextNames={}
+            for _,savedName in ipairs(names) do
+                if savedName:lower()~=playerName:lower() then table.insert(nextNames,savedName) end
+            end
+            if entry.key==targetKey then
+                table.insert(nextNames,playerName); targetFound=true
+            end
+            if entry.api.setNames then entry.api.setNames(nextNames) end
+        end
+        if not targetFound then return false end
+        if state.persistHighlightChange then state.persistHighlightChange(playerName,targetType) end
+        return true
     end
 
     task.spawn(function()
@@ -4183,8 +4284,10 @@ create("TextLabel", { Size = UDim2.new(0.65, 0, 1, 0), BackgroundTransparency = 
     Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = flySpeedRow })
 local flySpeedBox = styledBox(flySpeedRow, { Size = UDim2.new(0,70,0,24), Position = UDim2.new(1,-70,0.5,-12), Text = "50" })
 flySpeedBox.FocusLost:Connect(function()
+    local previous=state.flySpeed
     state.flySpeed = math.clamp(tonumber(flySpeedBox.Text) or state.flySpeed, 1, 500)
     flySpeedBox.Text = tostring(state.flySpeed)
+    state.notifyValueChange("Fly Speed",previous,state.flySpeed)
 end)
 local _, fireFly, setFly = createToggle("Fly", nextOrder(), false, function(on)
     state.flyEnabled = on
@@ -4366,9 +4469,11 @@ create("TextLabel", { Size=UDim2.new(0.55,0,1,0), BackgroundTransparency=1, Text
     TextXAlignment=Enum.TextXAlignment.Left, Parent=fovRow })
 local fovBox = styledBox(fovRow, { Size=UDim2.new(0,70,0,24), Position=UDim2.new(1,-70,0.5,-12), Text="70" })
 fovBox.FocusLost:Connect(function()
+    local previous=state.fovValue
     state.fovValue = math.clamp(tonumber(fovBox.Text) or state.fovValue, 1, 120)
     fovBox.Text = tostring(state.fovValue)
     if workspace.CurrentCamera then workspace.CurrentCamera.FieldOfView = state.fovValue end
+    state.notifyValueChange("Field of View",previous,state.fovValue)
 end)
 createToggle("Lock FOV", nextOrder(), false, function(on) state.fovLocked = on end)
 local freecamSpeedRow=rowFrame(nextOrder())
@@ -4377,8 +4482,10 @@ create("TextLabel",{Size=UDim2.new(0.65,0,1,0),BackgroundTransparency=1,Text="Fr
     TextXAlignment=Enum.TextXAlignment.Left,Parent=freecamSpeedRow})
 local freecamSpeedBox=styledBox(freecamSpeedRow,{Size=UDim2.new(0,70,0,24),Position=UDim2.new(1,-70,0.5,-12),Text="50"})
 freecamSpeedBox.FocusLost:Connect(function()
+    local previous=state.freecamSpeed
     state.freecamSpeed=math.clamp(tonumber(freecamSpeedBox.Text) or state.freecamSpeed,1,500)
     freecamSpeedBox.Text=tostring(state.freecamSpeed)
+    state.notifyValueChange("Freecam Speed",previous,state.freecamSpeed)
 end)
 local function setNoCameraShake(on)
     state.noCameraShake=on
@@ -5485,11 +5592,13 @@ createToggle("Keep Emote While Moving",nextOrder(),true,function(on)
 end)
 state.emoteSpeedViews={}
 state.setEmotePlaybackSpeed=function(value)
+    local previous=emoteSpeed
     emoteSpeed=math.clamp(tonumber(value) or emoteSpeed,0,15)
     state.emoteSpeed=emoteSpeed
     emoteSpeedBox.Text=tostring(emoteSpeed)
     for _,refresh in ipairs(state.emoteSpeedViews) do refresh(emoteSpeed) end
     if emoteTrack then pcall(function() emoteTrack:AdjustSpeed(emoteSpeed) end) end
+    state.notifyValueChange("Animation Speed",previous,emoteSpeed)
 end
 emoteSpeedBox.FocusLost:Connect(function()
     state.setEmotePlaybackSpeed(emoteSpeedBox.Text)
@@ -5688,25 +5797,70 @@ local function findEmoteSyncPlayer(query)
     end
 end
 
-local function getSyncSourceTrack(player)
-    local humanoid=player and player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-    local animator=humanoid and humanoid:FindFirstChildOfClass("Animator")
-    if not animator then return nil end
-    local best=nil
-    for _,playing in ipairs(animator:GetPlayingAnimationTracks()) do
-        local animation=playing.Animation
-        local animationId=animation and animation.AnimationId
-        local emoteOnly=state.emoteSyncScope~="Sync All"
-        if playing.IsPlaying and animationId and animationId~=""
-            and (not emoteOnly or playing.Priority.Value>=Enum.AnimationPriority.Action.Value) then
-            if animationId==emoteSyncAnimationId then return playing end
-            if not best or (emoteOnly and (playing.Priority.Value>best.Priority.Value
-                or (playing.Priority==best.Priority and playing.WeightCurrent>best.WeightCurrent)))
-                or (not emoteOnly and (playing.WeightCurrent>best.WeightCurrent
-                or (playing.WeightCurrent==best.WeightCurrent and playing.Priority.Value>best.Priority.Value))) then best=playing end
+local getSyncSourceTrack
+do
+    local movementTokens={"idle","walk","run","jump","fall","climb","swim","sit","tool","land"}
+    local cachedCharacter=nil
+    local cachedMovementIds={}
+    local cacheBuiltAt=0
+    local function normalizedAnimationId(value)
+        return tostring(value or ""):match("%d+") or ""
+    end
+    local function hasMovementToken(value)
+        value=tostring(value or ""):lower():gsub("[%s_%-]","")
+        for _,token in ipairs(movementTokens) do
+            if value:find(token,1,true) then return true end
+        end
+        return false
+    end
+    local function rebuildMovementIds(character)
+        cachedCharacter=character; cachedMovementIds={}; cacheBuiltAt=os.clock()
+        if not character then return end
+        local animate=character:FindFirstChild("Animate")
+        if not animate then return end
+        for _,object in ipairs(animate:GetDescendants()) do
+            if object:IsA("Animation") then
+                local names=object.Name
+                local ancestor=object.Parent
+                while ancestor and ancestor~=animate do names=names.." "..ancestor.Name; ancestor=ancestor.Parent end
+                if hasMovementToken(names) then
+                    local id=normalizedAnimationId(object.AnimationId)
+                    if id~="" then cachedMovementIds[id]=true end
+                end
+            end
         end
     end
-    return best
+    local function isMovementTrack(character,playing,animation)
+        if cachedCharacter~=character or os.clock()-cacheBuiltAt>2 then rebuildMovementIds(character) end
+        local id=normalizedAnimationId(animation and animation.AnimationId)
+        if id~="" and cachedMovementIds[id] then return true end
+        return hasMovementToken((playing and playing.Name or "").." "..(animation and animation.Name or ""))
+    end
+    getSyncSourceTrack=function(player)
+        local character=player and player.Character
+        local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+        local animator=humanoid and humanoid:FindFirstChildOfClass("Animator")
+        if not animator then return nil end
+        local best=nil
+        local emoteOnly=state.emoteSyncScope~="Sync All"
+        for _,playing in ipairs(animator:GetPlayingAnimationTracks()) do
+            local animation=playing.Animation
+            local animationId=animation and animation.AnimationId
+            local valid=playing.IsPlaying and playing.WeightCurrent>0.01 and animationId and animationId~=""
+            if valid and emoteOnly then
+                valid=playing.Priority.Value>=Enum.AnimationPriority.Action.Value
+                    and not isMovementTrack(character,playing,animation)
+            end
+            if valid then
+                if animationId==emoteSyncAnimationId then return playing end
+                if not best or (emoteOnly and (playing.Priority.Value>best.Priority.Value
+                    or (playing.Priority==best.Priority and playing.WeightCurrent>best.WeightCurrent)))
+                    or (not emoteOnly and (playing.WeightCurrent>best.WeightCurrent
+                    or (playing.WeightCurrent==best.WeightCurrent and playing.Priority.Value>best.Priority.Value))) then best=playing end
+            end
+        end
+        return best
+    end
 end
 
 local function loadSyncedTrack(sourceTrack)
@@ -7277,8 +7431,10 @@ state.autoLoadAssignedProfile=function()
     local data=readAutoProfiles()
     local assigned=data.byPlace[tostring(game.PlaceId)] or data.fallback
     if assigned and tostring(assigned)~="" then
+        state.suppressChangeNotifications=true
         profileNameBox.Text=tostring(assigned)
         loadNamedProfile(loadProfileButton)
+        state.suppressChangeNotifications=false
     end
 end
 actionButton("Export Profile to Clipboard",function(button)
@@ -8000,7 +8156,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.5.0 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.6.1 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -8402,21 +8558,18 @@ state.initializeCommandConsole=function()
         status.TextColor3=ok and Color3.fromRGB(105,220,145) or Color3.fromRGB(235,105,115)
     end
     local function addNamedHighlight(api,query,label)
-        query=tostring(query or ""):match("^%s*(.-)%s*$")
+        query=tostring(query or ""):match("^%s*(.-)%s*$"):gsub("^@","")
         if query=="" then finish(false,"Use: !"..label.." <player>"); return end
         local player=state.gotoApi.find(query)
         if not player then finish(false,"Player not found: "..query); return end
-        local names=api.getNames and api.getNames() or {}
-        for _,name in ipairs(names) do
-            if name==player.Name then finish(true,player.Name.." is already highlighted"); return end
-        end
-        table.insert(names,player.Name)
-        if api.setNames then api.setNames(names) end
-        if state.persistHighlightChange then state.persistHighlightChange(player.Name,label:upper()) end
-        finish(true,player.Name.." added to "..label:upper().." highlights")
+        local highlightType=api==state.yellowHighlightApi and "Special"
+            or (api==state.pinkHighlightApi and "Super Special" or "Exploiter")
+        if state.assignExclusiveHighlight and state.assignExclusiveHighlight(player.Name,highlightType) then
+            finish(true,player.Name.." moved to "..highlightType.." highlights")
+        else finish(false,"Highlight lists unavailable") end
     end
     local function removeNamedHighlight(api,query,label,highlightType)
-        query=tostring(query or ""):match("^%s*(.-)%s*$"):lower()
+        query=tostring(query or ""):match("^%s*(.-)%s*$"):gsub("^@",""):lower()
         if query=="" then finish(false,"Use: !"..label.." <player>"); return end
         if not api.getNames or not api.setNames then finish(false,"Highlight list unavailable"); return end
         local names=api.getNames()
@@ -8631,12 +8784,24 @@ state.initializeCommandConsole=function()
         end
         return false
     end
-    -- LocalPlayer.Chatted supports both legacy and modern chat on the client in
-    -- the environments Lucid targets. Only the first word is treated as the
-    -- command token; ordinary messages with an unknown first word are ignored.
-    track(LocalPlayer.Chatted:Connect(function(message)
-        if isRecognizedChatCommand(message) then task.defer(runCommand,message) end
-    end))
+    -- Listen to both legacy and TextChatService outgoing chat. Some games only
+    -- fire one path; a short de-duplicator prevents commands running twice.
+    local lastChatCommand,lastChatCommandAt="",0
+    local function receiveChatCommand(message)
+        message=tostring(message or "")
+        if not isRecognizedChatCommand(message) then return end
+        local now=os.clock()
+        if message==lastChatCommand and now-lastChatCommandAt<0.8 then return end
+        lastChatCommand,lastChatCommandAt=message,now
+        task.defer(runCommand,message)
+    end
+    track(LocalPlayer.Chatted:Connect(receiveChatCommand))
+    local sendingOk,sendingSignal=pcall(function() return TextChatService.SendingMessage end)
+    if sendingOk and sendingSignal then
+        track(sendingSignal:Connect(function(message)
+            receiveChatCommand(message and message.Text or "")
+        end))
+    end
     state.runLucidCommand=runCommand
     input.FocusLost:Connect(function(enterPressed)
         if not enterPressed then return end
@@ -9113,7 +9278,9 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.5.0] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    state.changeNotificationsReady=true
+    print("[Lucid Panel v5.6.1] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.5.0] Loaded, but this executor does not expose queue_on_teleport")
+    state.changeNotificationsReady=true
+    warn("[Lucid Panel v5.6.1] Loaded, but this executor does not expose queue_on_teleport")
 end
