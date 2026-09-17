@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.8.3
+--// Lucid Panel v5.8.4
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -358,7 +358,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.8.3",
+    Text                   = "LUCID PANEL  •  v5.8.4",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -8172,6 +8172,241 @@ if game.PlaceId==136070094363960 then
     end)
 end
 
+-- General, event-driven kill-part inspector. Detection is heuristic because
+-- client scripts cannot inspect server-only damage code.
+do
+    useCategory("World")
+    sectionLabel("Kill Part Inspector",nextOrder())
+    local inspectorWindow=nil
+    local inspectorOpen=false
+    local inspectorPinned=false
+    local inspectorMinimized=false
+    local inspectorConnection=nil
+    local inspectorRemovingConnection=nil
+    local inspectorCandidates={}
+    local inspectorRemoved={}
+    local inspectorSelected=nil
+    local inspectorBroad=false
+    local inspectorScanning=false
+    local inspectorMarker=nil
+    local refreshInspector=function() end
+
+    local function inspectorCharacterPart(part)
+        local ancestor=part and part.Parent
+        while ancestor and ancestor~=workspace do
+            if ancestor:IsA("Tool") or ancestor:FindFirstChildOfClass("Humanoid") then return true end
+            ancestor=ancestor.Parent
+        end
+        return false
+    end
+    local function inspectorPath(object)
+        local ok,value=pcall(function() return object:GetFullName() end)
+        return ok and value or tostring(object and object.Name or "Unknown")
+    end
+    local function inspectorReason(part)
+        if not part or not part:IsA("BasePart") or inspectorCharacterPart(part) then return nil end
+        local ancestor=part
+        while ancestor and ancestor~=workspace do
+            local normalized=ancestor.Name:lower():gsub("[%s_%-]","")
+            for _,word in ipairs({"killpart","killbrick","killzone","deathpart","deathbrick","deathzone","lava","acid","spike","damagepart","hurtbox"}) do
+                if normalized:find(word,1,true) then return "Name/ancestor: "..ancestor.Name end
+            end
+            for key,value in pairs(ancestor:GetAttributes()) do
+                local lower=key:lower()
+                if (lower:find("damage",1,true) or lower:find("lethal",1,true) or lower:find("kill",1,true))
+                    and (value==true or (type(value)=="number" and value>0)) then
+                    return "Attribute: "..key.."="..tostring(value)
+                end
+            end
+            ancestor=ancestor.Parent
+        end
+        if inspectorBroad and part:FindFirstChildOfClass("TouchTransmitter") then
+            return "Touch trigger (low confidence)"
+        end
+    end
+    local function inspectKillPartCandidate(object)
+        if object and object:IsA("TouchTransmitter") then object=object.Parent end
+        if not object or not object:IsA("BasePart") or inspectorRemoved[object] then return end
+        local reason=inspectorReason(object)
+        if reason then inspectorCandidates[object]={reason=reason,path=inspectorPath(object)}
+        else inspectorCandidates[object]=nil end
+    end
+    local function scanKillPartCandidates()
+        if inspectorScanning then return end
+        inspectorScanning=true
+        task.spawn(function()
+            for index,object in ipairs(workspace:GetDescendants()) do
+                if not inspectorOpen or not screenGui.Parent then break end
+                inspectKillPartCandidate(object)
+                if index%250==0 then refreshInspector(); task.wait() end
+            end
+            inspectorScanning=false; refreshInspector()
+        end)
+    end
+    local function restoreInspectorPart(part)
+        local record=inspectorRemoved[part]
+        if not record then return true end
+        local ok=pcall(function()
+            if not record.parent or not record.parent:IsDescendantOf(game) then error("Original parent unavailable") end
+            part.Parent=record.parent
+        end)
+        if ok then inspectorRemoved[part]=nil; inspectKillPartCandidate(part) end
+        return ok
+    end
+    local function stopInspectorWatch()
+        if inspectorConnection then inspectorConnection:Disconnect(); inspectorConnection=nil end
+        if inspectorRemovingConnection then inspectorRemovingConnection:Disconnect(); inspectorRemovingConnection=nil end
+    end
+    local function startInspectorWatch()
+        stopInspectorWatch()
+        inspectorConnection=workspace.DescendantAdded:Connect(function(object)
+            if inspectorOpen then task.defer(function() inspectKillPartCandidate(object); refreshInspector() end) end
+        end)
+        inspectorRemovingConnection=workspace.DescendantRemoving:Connect(function(object)
+            if inspectorOpen and inspectorCandidates[object] and not inspectorRemoved[object] then
+                inspectorCandidates[object]=nil; task.defer(refreshInspector)
+            end
+        end)
+        scanKillPartCandidates()
+    end
+    local function buildInspectorWindow()
+        if inspectorWindow then return end
+        local window=create("Frame",{Name="LucidKillPartInspector",Size=UDim2.new(0,500,0,470),
+            Position=UDim2.new(0.5,-250,0.5,-235),BackgroundColor3=Color3.fromRGB(24,23,30),
+            BackgroundTransparency=0.08,BorderSizePixel=0,Active=true,Draggable=true,Visible=false,Parent=screenGui})
+        inspectorWindow=window
+        create("UICorner",{CornerRadius=UDim.new(0,9),Parent=window})
+        create("UIStroke",{Color=Color3.fromRGB(120,85,180),Thickness=1.2,Parent=window})
+        create("TextLabel",{Size=UDim2.new(1,-108,0,34),Position=UDim2.new(0,10,0,0),BackgroundTransparency=1,
+            Text="Kill Part Inspector",TextColor3=Color3.fromRGB(235,225,245),TextSize=13,Font=Enum.Font.GothamBold,
+            TextXAlignment=Enum.TextXAlignment.Left,Parent=window})
+        local pin=create("TextButton",{Size=UDim2.new(0,28,0,26),Position=UDim2.new(1,-96,0,4),
+            BackgroundColor3=Color3.fromRGB(62,55,82),BorderSizePixel=0,Text="Pin",TextColor3=Color3.new(1,1,1),
+            TextSize=9,Font=Enum.Font.GothamSemibold,Parent=window})
+        local minimize=create("TextButton",{Size=UDim2.new(0,28,0,26),Position=UDim2.new(1,-64,0,4),
+            BackgroundColor3=Color3.fromRGB(48,44,62),BorderSizePixel=0,Text="-",TextColor3=Color3.new(1,1,1),
+            TextSize=13,Font=Enum.Font.GothamBold,Parent=window})
+        local close=create("TextButton",{Size=UDim2.new(0,28,0,26),Position=UDim2.new(1,-32,0,4),
+            BackgroundColor3=Color3.fromRGB(110,48,62),BorderSizePixel=0,Text="X",TextColor3=Color3.new(1,1,1),
+            TextSize=11,Font=Enum.Font.GothamBold,Parent=window})
+        for _,button in ipairs({pin,minimize,close}) do create("UICorner",{CornerRadius=UDim.new(0,5),Parent=button}) end
+        local content=create("Frame",{Size=UDim2.new(1,-16,1,-42),Position=UDim2.new(0,8,0,36),BackgroundTransparency=1,Parent=window})
+        local status=create("TextLabel",{Size=UDim2.new(1,0,0,20),BackgroundTransparency=1,Text="Ready",
+            TextColor3=Color3.fromRGB(175,165,195),TextSize=10,Font=Enum.Font.Gotham,
+            TextXAlignment=Enum.TextXAlignment.Left,Parent=content})
+        local search=styledBox(content,{Size=UDim2.new(1,0,0,26),Position=UDim2.new(0,0,0,23),Text="",
+            PlaceholderText="Filter by path or reason...",ClearTextOnFocus=false})
+        local list=create("ScrollingFrame",{Size=UDim2.new(1,0,0,250),Position=UDim2.new(0,0,0,54),
+            CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,BackgroundColor3=Color3.fromRGB(18,18,24),
+            BackgroundTransparency=0.2,BorderSizePixel=0,ScrollBarThickness=3,Parent=content})
+        create("UICorner",{CornerRadius=UDim.new(0,6),Parent=list})
+        create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,3),Parent=list})
+        local detail=create("TextLabel",{Size=UDim2.new(1,0,0,48),Position=UDim2.new(0,0,0,309),BackgroundTransparency=1,
+            Text="Select a suspect to mark it in the map.",TextColor3=Color3.fromRGB(205,195,220),TextSize=10,
+            Font=Enum.Font.Gotham,TextWrapped=true,TextXAlignment=Enum.TextXAlignment.Left,
+            TextYAlignment=Enum.TextYAlignment.Top,Parent=content})
+        local marker=Instance.new("SelectionBox")
+        marker.Name="LucidKillPartMarker"; marker.LineThickness=0.06; marker.Color3=Color3.fromRGB(255,90,65)
+        marker.SurfaceTransparency=0.82; marker.Parent=workspace.CurrentCamera or workspace
+        inspectorMarker=marker
+        local function compactButton(text,x,width,callback,color)
+            local button=create("TextButton",{Size=UDim2.new(0,width,0,25),Position=UDim2.new(0,x,0,361),
+                BackgroundColor3=color or Color3.fromRGB(58,48,77),BorderSizePixel=0,Text=text,
+                TextColor3=Color3.new(1,1,1),TextSize=10,Font=Enum.Font.GothamSemibold,Parent=content})
+            create("UICorner",{CornerRadius=UDim.new(0,5),Parent=button}); button.MouseButton1Click:Connect(callback); return button
+        end
+        local touchButton
+        compactButton("Rescan",0,62,function() scanKillPartCandidates() end)
+        touchButton=compactButton("Touch: OFF",66,78,function()
+            inspectorBroad=not inspectorBroad; touchButton.Text="Touch: "..(inspectorBroad and "ON" or "OFF")
+            table.clear(inspectorCandidates); scanKillPartCandidates()
+        end)
+        compactButton("Remove",148,70,function()
+            local part=inspectorSelected
+            if not part or inspectorRemoved[part] or not part:IsDescendantOf(workspace) then return end
+            local record={parent=part.Parent}
+            local ok=pcall(function() part.Parent=nil end)
+            if ok then inspectorRemoved[part]=record; marker.Adornee=nil; detail.Text="Removed locally: "..inspectorPath(part) end
+            refreshInspector()
+        end,Color3.fromRGB(120,48,58))
+        compactButton("Restore",222,70,function()
+            if inspectorSelected then
+                detail.Text=restoreInspectorPart(inspectorSelected) and "Restored locally." or "Original parent is unavailable."
+                refreshInspector()
+            end
+        end,Color3.fromRGB(48,105,72))
+        compactButton("Restore All",296,86,function()
+            local failed=0
+            for part in pairs(inspectorRemoved) do if not restoreInspectorPart(part) then failed+=1 end end
+            detail.Text=failed==0 and "All removed parts restored locally." or (failed.." parts could not be restored.")
+            refreshInspector()
+        end)
+        compactButton("Copy",386,52,function()
+            local lines={"Lucid Kill Part Inspector | Place "..game.PlaceId,"Suspects are heuristic."}
+            for part,record in pairs(inspectorCandidates) do
+                if part:IsDescendantOf(workspace) or inspectorRemoved[part] then table.insert(lines,record.path.." | "..record.reason) end
+            end
+            table.sort(lines)
+            if setclipboard then setclipboard(table.concat(lines,"\n")); detail.Text="Report copied."
+            else print(table.concat(lines,"\n")); detail.Text="Clipboard unavailable; report printed." end
+        end)
+        create("TextLabel",{Size=UDim2.new(1,0,0,26),Position=UDim2.new(0,0,0,394),BackgroundTransparency=1,
+            Text="Orange marker = selected suspect. Touch mode includes harmless triggers.",TextColor3=Color3.fromRGB(150,140,170),
+            TextSize=9,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=content})
+        refreshInspector=function()
+            if not list.Parent then return end
+            for _,child in ipairs(list:GetChildren()) do if child:IsA("GuiObject") then child:Destroy() end end
+            local entries={}; local query=search.Text:lower()
+            for part,record in pairs(inspectorCandidates) do
+                if not inspectorRemoved[part] and not part:IsDescendantOf(workspace) then inspectorCandidates[part]=nil
+                elseif (record.path.." "..record.reason):lower():find(query,1,true) then table.insert(entries,{part=part,record=record}) end
+            end
+            table.sort(entries,function(a,b) return a.record.path:lower()<b.record.path:lower() end)
+            local shown=math.min(#entries,300)
+            status.Text=string.format("%d suspects%s • %s",#entries,#entries>shown and (" • showing first "..shown) or "",
+                inspectorScanning and "scanning" or "watching new parts")
+            for index=1,shown do
+                local entry=entries[index]
+                local row=create("TextButton",{Size=UDim2.new(1,-4,0,25),BackgroundColor3=Color3.fromRGB(38,34,50),
+                    BorderSizePixel=0,Text=entry.record.path,TextColor3=Color3.fromRGB(225,215,235),TextSize=10,
+                    Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,
+                    LayoutOrder=index,Parent=list})
+                create("UICorner",{CornerRadius=UDim.new(0,4),Parent=row})
+                create("UIPadding",{PaddingLeft=UDim.new(0,6),Parent=row})
+                row.MouseButton1Click:Connect(function()
+                    inspectorSelected=entry.part; marker.Adornee=entry.part:IsDescendantOf(workspace) and entry.part or nil
+                    detail.Text=entry.record.path.."\n"..entry.record.reason
+                end)
+            end
+        end
+        search:GetPropertyChangedSignal("Text"):Connect(refreshInspector)
+        pin.MouseButton1Click:Connect(function() inspectorPinned=not inspectorPinned; pin.Text=inspectorPinned and "ON" or "Pin" end)
+        minimize.MouseButton1Click:Connect(function()
+            inspectorMinimized=not inspectorMinimized; content.Visible=not inspectorMinimized
+            window.Size=inspectorMinimized and UDim2.new(0,500,0,36) or UDim2.new(0,500,0,470)
+        end)
+        close.MouseButton1Click:Connect(function()
+            inspectorOpen=false; window.Visible=false; marker.Adornee=nil; stopInspectorWatch()
+        end)
+        registerDetachableWindow(window,function() return inspectorPinned end,function() return inspectorOpen end,
+            function(value) inspectorPinned=value==true; pin.Text=inspectorPinned and "ON" or "Pin" end,
+            function(value)
+                inspectorOpen=value==true; window.Visible=inspectorOpen
+                if inspectorOpen then startInspectorWatch() else marker.Adornee=nil; stopInspectorWatch() end
+            end)
+    end
+    actionButton("Open Kill Part Inspector",function(button)
+        buildInspectorWindow(); inspectorOpen=true; inspectorWindow.Visible=true; startInspectorWatch()
+        button.Text="Inspector opened"; task.delay(1,function() if button.Parent then button.Text="Open Kill Part Inspector" end end)
+    end,Color3.fromRGB(75,52,105))
+    addCleanup(function()
+        inspectorOpen=false; stopInspectorWatch()
+        for part in pairs(inspectorRemoved) do restoreInspectorPart(part) end
+        if inspectorMarker and inspectorMarker.Parent then inspectorMarker:Destroy() end
+        if inspectorWindow and inspectorWindow.Parent then inspectorWindow:Destroy() end
+    end)
+end
+
 -- Live diagnostics and a copyable report.
 useCategory("Diagnostics")
 sectionLabel("Explorer", nextOrder())
@@ -8265,7 +8500,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.8.3 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.8.4 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -9399,7 +9634,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.8.3] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.8.4] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.8.3] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.8.4] Loaded, but this executor does not expose queue_on_teleport")
 end
