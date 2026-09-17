@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.8.2
+--// Lucid Panel v5.8.3
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -358,7 +358,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.8.2",
+    Text                   = "LUCID PANEL  •  v5.8.3",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -3775,7 +3775,11 @@ local function initializePlayerESP()
         local blackHighlights={}
         local blackConnections={}
         local highPriorityColorRow=rowFrame(nextOrder(),28)
-        local highPriorityColorBox=styledBox(highPriorityColorRow,{Size=UDim2.new(1,0,0,26),Text=state.highPriorityHighlightColor,PlaceholderText="High Priority color — #RRGGBB"})
+        create("TextLabel",{Size=UDim2.new(0,84,1,0),BackgroundTransparency=1,Text="Highlight Color",
+            TextColor3=Color3.fromRGB(190,180,205),TextSize=10,Font=Enum.Font.Gotham,
+            TextXAlignment=Enum.TextXAlignment.Left,Parent=highPriorityColorRow})
+        local highPriorityColorBox=styledBox(highPriorityColorRow,{Size=UDim2.new(1,-88,0,26),Position=UDim2.new(0,88,0,0),
+            Text=state.highPriorityHighlightColor,PlaceholderText="#RRGGBB"})
         local blackRow=rowFrame(nextOrder(),30)
         local blackBox=styledBox(blackRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="High Priority username/display name"})
         local blackAdd=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-64,0,0),
@@ -3896,7 +3900,11 @@ local function initializePlayerESP()
         local exploiterHighlights={}
         local exploiterConnections={}
         local exploiterColorRow=rowFrame(nextOrder(),28)
-        local exploiterColorBox=styledBox(exploiterColorRow,{Size=UDim2.new(1,0,0,26),Text=state.exploiterHighlightColor,PlaceholderText="Exploiter color — #RRGGBB"})
+        create("TextLabel",{Size=UDim2.new(0,84,1,0),BackgroundTransparency=1,Text="Highlight Color",
+            TextColor3=Color3.fromRGB(190,180,205),TextSize=10,Font=Enum.Font.Gotham,
+            TextXAlignment=Enum.TextXAlignment.Left,Parent=exploiterColorRow})
+        local exploiterColorBox=styledBox(exploiterColorRow,{Size=UDim2.new(1,-88,0,26),Position=UDim2.new(0,88,0,0),
+            Text=state.exploiterHighlightColor,PlaceholderText="#RRGGBB"})
         local exploiterRow=rowFrame(nextOrder(),30)
         local exploiterBox=styledBox(exploiterRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="Exploiter username/display name"})
         local exploiterAdd=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-64,0,0),
@@ -8257,7 +8265,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.8.2 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.8.3 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -9391,7 +9399,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.8.2] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.8.3] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.8.2] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.8.3] Loaded, but this executor does not expose queue_on_teleport")
 end
