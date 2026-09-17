@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.7.3
+--// Lucid Panel v5.8.1
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -172,7 +172,8 @@ local state = {
     espHighlightStyle = "Hard",
     specialHighlightColor = "#FFE12D",
     superSpecialHighlightColor = "#FF9BCD",
-    exploiterHighlightColor = "#CD234B",
+    exploiterHighlightColor = "#FF7A35",
+    highPriorityHighlightColor = "#CD234B",
     unavailableEmoteIds = {},
     namedHighlightsSuppressed = false,
     emoteSpeed        = 1,
@@ -212,70 +213,10 @@ local state = {
     gotoOffsetY       = 1,
     gotoOffsetZ       = 0,
     loopGotoDirection = "Right",
-    emoteSyncScope    = "Emotes Only",
     localHeadlessEnabled = false,
     favoriteNames     = {},
     emoteFavorites    = {},
 }
-
--- Kept outside initializeV4Toolkit so strict sync classification does not add
--- locals/register pressure to the executor-sensitive UI initializer.
-state.syncTrackClassificationCache=setmetatable({},{__mode="k"})
-state.isRecognizedEmoteTrack=function(character,playing)
-    local animation=playing and playing.Animation
-    local id=tostring(animation and animation.AnimationId or ""):match("%d+") or ""
-    if not character or id=="" then return false end
-    local combinedName=((playing.Name or "").." "..(animation.Name or "")):lower():gsub("[%s_%-]","")
-    for _,token in ipairs({"idle","walk","run","jump","fall","climb","swim","sit","tool","land"}) do
-        if combinedName:find(token,1,true) then return false end
-    end
-    local entry=state.syncTrackClassificationCache[character]
-    if not entry or os.clock()-entry.builtAt>4 then
-        entry={builtAt=os.clock(),emotes={},movement={}}
-        local humanoid=character:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            local ok,description=pcall(function() return humanoid:GetAppliedDescription() end)
-            if ok and description then
-                local emotesOk,emotes=pcall(function() return description:GetEmotes() end)
-                if emotesOk and type(emotes)=="table" then
-                    for _,assetIds in pairs(emotes) do
-                        if type(assetIds)=="table" then
-                            for _,assetId in pairs(assetIds) do
-                                local clean=tostring(type(assetId)=="table" and (assetId.AssetId or assetId.Id) or assetId):match("%d+")
-                                if clean then entry.emotes[clean]=true end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-        local animate=character:FindFirstChild("Animate")
-        if animate then
-            for _,object in ipairs(animate:GetDescendants()) do
-                if object:IsA("Animation") then
-                    local hierarchy=object.Name:lower()
-                    local ancestor=object.Parent
-                    while ancestor and ancestor~=animate do hierarchy=hierarchy.." "..ancestor.Name:lower(); ancestor=ancestor.Parent end
-                    if hierarchy:find("idle",1,true) or hierarchy:find("walk",1,true) or hierarchy:find("run",1,true)
-                        or hierarchy:find("jump",1,true) or hierarchy:find("fall",1,true) or hierarchy:find("climb",1,true)
-                        or hierarchy:find("swim",1,true) or hierarchy:find("sit",1,true) or hierarchy:find("tool",1,true) then
-                        local movementId=tostring(object.AnimationId):match("%d+")
-                        if movementId then entry.movement[movementId]=true end
-                    end
-                end
-            end
-        end
-        state.syncTrackClassificationCache[character]=entry
-    end
-    if entry.movement[id] then return false end
-    if entry.emotes[id] then return true end
-    for _,token in ipairs({"emote","dance","shuffle","pose","wave","cheer","laugh","point","salute"}) do
-        if combinedName:find(token,1,true) then return true end
-    end
-    -- Emotes Only is intentionally strict: unknown Action tracks may be game
-    -- attacks or custom locomotion, so they belong only in Sync All.
-    return false
-end
 
 -- ============================================================
 -- UTILITY: create Instance with properties
@@ -417,7 +358,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.7.3",
+    Text                   = "LUCID PANEL  •  v5.8.1",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -2801,6 +2742,8 @@ state.pinkHighlightApi={}
 state.pinkHighlightNames={}
 state.blackHighlightApi={}
 state.blackHighlightNames={}
+state.orangeHighlightApi={}
+state.orangeHighlightNames={}
 local function initializeTeleportAndESP()
 useCategory("Teleport & Coordinates")
 local teleportCategory=categories["Teleport & Coordinates"]
@@ -3260,9 +3203,11 @@ local function initializePlayerESP()
         local priorityYellow=yellowNames[player.Name]==true
         local priorityPink=not priorityYellow and state.pinkHighlightNames[player.Name]==true
         local priorityBlack=not priorityYellow and not priorityPink and state.blackHighlightNames[player.Name]==true
+        local priorityOrange=not priorityYellow and not priorityPink and not priorityBlack and state.orangeHighlightNames[player.Name]==true
         local priorityColor=priorityYellow and highlightColor(state.specialHighlightColor,Color3.fromRGB(255,225,45))
             or (priorityPink and highlightColor(state.superSpecialHighlightColor,Color3.fromRGB(255,155,205))
-            or (priorityBlack and highlightColor(state.exploiterHighlightColor,Color3.fromRGB(205,35,75)) or player.TeamColor.Color))
+            or (priorityBlack and highlightColor(state.highPriorityHighlightColor,Color3.fromRGB(205,35,75))
+            or (priorityOrange and highlightColor(state.exploiterHighlightColor,Color3.fromRGB(255,122,53)) or player.TeamColor.Color)))
         if espUseHighlight then
             local highlight=Instance.new("Highlight"); highlight.Name=player.Name
             highlight.Adornee=character; highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
@@ -3385,6 +3330,7 @@ local function initializePlayerESP()
             if state.yellowHighlightApi.refresh then state.yellowHighlightApi.refresh() end
             if state.pinkHighlightApi.refresh then state.pinkHighlightApi.refresh() end
             if state.blackHighlightApi.refresh then state.blackHighlightApi.refresh() end
+            if state.orangeHighlightApi.refresh then state.orangeHighlightApi.refresh() end
         elseif mode == "all" then
             mode = "off"
             if not switchingEspMode then
@@ -3394,6 +3340,7 @@ local function initializePlayerESP()
                 if state.yellowHighlightApi.refresh then state.yellowHighlightApi.refresh() end
                 if state.pinkHighlightApi.refresh then state.pinkHighlightApi.refresh() end
                 if state.blackHighlightApi.refresh then state.blackHighlightApi.refresh() end
+                if state.orangeHighlightApi.refresh then state.orangeHighlightApi.refresh() end
             end
         end
         refreshESP()
@@ -3446,6 +3393,7 @@ local function initializePlayerESP()
         if state.yellowHighlightApi.refresh then state.yellowHighlightApi.refresh() end
         if state.pinkHighlightApi.refresh then state.pinkHighlightApi.refresh() end
         if state.blackHighlightApi.refresh then state.blackHighlightApi.refresh() end
+        if state.orangeHighlightApi.refresh then state.orangeHighlightApi.refresh() end
     end)
 
     sectionLabel("Special Player Highlights",nextOrder())
@@ -3821,14 +3769,14 @@ local function initializePlayerESP()
         addCleanup(function() for player in pairs(pinkHighlights) do removePinkHighlight(player) end end)
     end
 
-    sectionLabel("Exploiter Player Highlights",nextOrder())
+    sectionLabel("High Priority Player Highlights",nextOrder())
     do
         local blackHighlights={}
         local blackConnections={}
-        local exploiterColorRow=rowFrame(nextOrder(),28)
-        local exploiterColorBox=styledBox(exploiterColorRow,{Size=UDim2.new(1,0,0,26),Text=state.exploiterHighlightColor,PlaceholderText="Exploiter color — #RRGGBB"})
+        local highPriorityColorRow=rowFrame(nextOrder(),28)
+        local highPriorityColorBox=styledBox(highPriorityColorRow,{Size=UDim2.new(1,0,0,26),Text=state.highPriorityHighlightColor,PlaceholderText="High Priority color — #RRGGBB"})
         local blackRow=rowFrame(nextOrder(),30)
-        local blackBox=styledBox(blackRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="Exploiter username/display name"})
+        local blackBox=styledBox(blackRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="High Priority username/display name"})
         local blackAdd=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-64,0,0),
             BackgroundColor3=Color3.fromRGB(145,38,62),BorderSizePixel=0,Text="+",TextColor3=Color3.new(1,1,1),TextSize=18,Font=Enum.Font.GothamBold,Parent=blackRow})
         local blackRemove=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-30,0,0),
@@ -3879,7 +3827,7 @@ local function initializePlayerESP()
                 highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; highlight.Parent=screenGui
                 blackHighlights[player]=highlight
             end
-            local color=highlightColor(state.exploiterHighlightColor,Color3.fromRGB(205,35,75))
+            local color=highlightColor(state.highPriorityHighlightColor,Color3.fromRGB(205,35,75))
             local fillTransparency=state.espHighlightStyle=="Hard" and 1 or math.clamp(espTransparency,0,0.9)
             local outlineColor=color:Lerp(Color3.new(1,1,1),0.35)
             local outlineTransparency=state.espHighlightStyle=="Hard" and math.clamp(espTransparency-0.7,0,0.3) or 0.5
@@ -3902,7 +3850,7 @@ local function initializePlayerESP()
         local function addBlackPlayer()
             local player=findGotoPlayer(blackBox.Text)
             if not player then blackBox.Text="Player not found"; return end
-            if state.assignExclusiveHighlight then state.assignExclusiveHighlight(player.Name,"Exploiter")
+            if state.assignExclusiveHighlight then state.assignExclusiveHighlight(player.Name,"High Priority")
             else state.blackHighlightNames[player.Name]=true; watchBlackPlayer(player); applyBlackHighlight(player); refreshBlackStatus(); refreshESP() end
             blackBox.Text=""
         end
@@ -3927,19 +3875,155 @@ local function initializePlayerESP()
         state.blackHighlightApi.setColor=function(value)
             local clean=tostring(value or ""):gsub("#",""):upper()
             if #clean~=6 or not tonumber(clean,16) then return false end
-            state.exploiterHighlightColor="#"..clean; exploiterColorBox.Text=state.exploiterHighlightColor
+            state.highPriorityHighlightColor="#"..clean; highPriorityColorBox.Text=state.highPriorityHighlightColor
             clearESP(); refreshESP(); state.blackHighlightApi.refresh(); return true
         end
-        exploiterColorBox.FocusLost:Connect(function()
-            if not state.blackHighlightApi.setColor(exploiterColorBox.Text) then exploiterColorBox.Text=state.exploiterHighlightColor end
+        highPriorityColorBox.FocusLost:Connect(function()
+            if not state.blackHighlightApi.setColor(highPriorityColorBox.Text) then highPriorityColorBox.Text=state.highPriorityHighlightColor end
         end)
-        state.blackHighlightApi.refreshColor=function() exploiterColorBox.Text=state.exploiterHighlightColor end
-        registerHighlightListWindow(state.blackHighlightApi,blackList,"Exploiter Highlights","EH",function() return blackListOpen end,refreshBlackStatus)
+        state.blackHighlightApi.refreshColor=function() highPriorityColorBox.Text=state.highPriorityHighlightColor end
+        registerHighlightListWindow(state.blackHighlightApi,blackList,"High Priority Highlights","HPH",function() return blackListOpen end,refreshBlackStatus)
         local clearBlackButton=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(105,35,52),BorderSizePixel=0,
-            Text="Clear Exploiter Highlights",TextColor3=Color3.fromRGB(240,220,225),TextSize=11,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
+            Text="Clear High Priority Highlights",TextColor3=Color3.fromRGB(240,220,225),TextSize=11,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
         create("UICorner",{CornerRadius=UDim.new(0,6),Parent=clearBlackButton})
-        clearBlackButton.MouseButton1Click:Connect(function() setBlackNames({}); clearBlackButton.Text="Exploiter highlights cleared"; task.delay(1,function() if clearBlackButton.Parent then clearBlackButton.Text="Clear Exploiter Highlights" end end) end)
+        clearBlackButton.MouseButton1Click:Connect(function() setBlackNames({}); clearBlackButton.Text="High Priority highlights cleared"; task.delay(1,function() if clearBlackButton.Parent then clearBlackButton.Text="Clear High Priority Highlights" end end) end)
         addCleanup(function() for player in pairs(blackHighlights) do removeBlackHighlight(player) end end)
+    end
+
+    sectionLabel("Exploiter Player Highlights",nextOrder())
+    do
+        local exploiterHighlights={}
+        local exploiterConnections={}
+        local exploiterColorRow=rowFrame(nextOrder(),28)
+        local exploiterColorBox=styledBox(exploiterColorRow,{Size=UDim2.new(1,0,0,26),Text=state.exploiterHighlightColor,PlaceholderText="Exploiter color — #RRGGBB"})
+        local exploiterRow=rowFrame(nextOrder(),30)
+        local exploiterBox=styledBox(exploiterRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="Exploiter username/display name"})
+        local exploiterAdd=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-64,0,0),
+            BackgroundColor3=Color3.fromRGB(190,85,35),BorderSizePixel=0,Text="+",TextColor3=Color3.new(1,1,1),TextSize=18,Font=Enum.Font.GothamBold,Parent=exploiterRow})
+        local exploiterRemove=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-30,0,0),
+            BackgroundColor3=Color3.fromRGB(100,62,45),BorderSizePixel=0,Text="-",TextColor3=Color3.new(1,1,1),TextSize=18,Font=Enum.Font.GothamBold,Parent=exploiterRow})
+        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=exploiterAdd}); create("UICorner",{CornerRadius=UDim.new(0,5),Parent=exploiterRemove})
+        local exploiterStatus=create("TextButton",{Size=UDim2.new(1,0,0,24),BackgroundColor3=Color3.fromRGB(48,36,32),
+            BorderSizePixel=0,Text=">  Highlighted Players (0)",TextColor3=Color3.fromRGB(255,145,85),TextSize=10,
+            Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=nextOrder(),Parent=currentSection})
+        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=exploiterStatus})
+        create("UIPadding",{PaddingLeft=UDim.new(0,8),Parent=exploiterStatus})
+        local exploiterList=create("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
+            BackgroundTransparency=1,Visible=false,LayoutOrder=nextOrder(),Parent=currentSection})
+        create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,3),Parent=exploiterList})
+        local exploiterListOpen=false
+        local removeExploiterHighlight
+        local function refreshExploiterStatus()
+            local online,offline={},{ }
+            for name in pairs(state.orangeHighlightNames) do table.insert(Players:FindFirstChild(name) and online or offline,name) end
+            table.sort(online,function(a,b) return a:lower()<b:lower() end)
+            table.sort(offline,function(a,b) return a:lower()<b:lower() end)
+            renderHighlightRoster(exploiterList,online,offline,Color3.fromRGB(255,145,85),function(name)
+                state.orangeHighlightNames[name]=nil
+                for playerKey in pairs(exploiterHighlights) do if playerKey.Name==name then removeExploiterHighlight(playerKey) end end
+                refreshExploiterStatus(); refreshESP()
+            end,exploiterListOpen or state.orangeHighlightApi.listDetached)
+            exploiterStatus.Text=(exploiterListOpen and "v  " or ">  ").."Highlighted Players ("..(#online+#offline)..")"
+        end
+        exploiterStatus.MouseButton1Click:Connect(function()
+            if state.orangeHighlightApi.listDetached then state.orangeHighlightApi.openList(); return end
+            exploiterListOpen=not exploiterListOpen; exploiterList.Visible=exploiterListOpen; refreshExploiterStatus()
+        end)
+        removeExploiterHighlight=function(player)
+            local highlight=exploiterHighlights[player]
+            if highlight and highlight.Parent then highlight:Destroy() end
+            exploiterHighlights[player]=nil
+        end
+        local function applyExploiterHighlight(player)
+            local character=player and player.Character
+            if state.namedHighlightsSuppressed or not player or not state.orangeHighlightNames[player.Name]
+                or yellowNames[player.Name] or state.pinkHighlightNames[player.Name] or state.blackHighlightNames[player.Name]
+                or not character then
+                if player then removeExploiterHighlight(player) end
+                return
+            end
+            local highlight=exploiterHighlights[player]
+            if not highlight or not highlight.Parent or highlight.Adornee~=character then
+                removeExploiterHighlight(player)
+                highlight=Instance.new("Highlight")
+                highlight.Name="LucidExploiterPlayerHighlight"; highlight.Adornee=character
+                highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; highlight.Parent=screenGui
+                exploiterHighlights[player]=highlight
+            end
+            local color=highlightColor(state.exploiterHighlightColor,Color3.fromRGB(255,122,53))
+            local fillTransparency=state.espHighlightStyle=="Hard" and 1 or math.clamp(espTransparency,0,0.9)
+            local outlineColor=color:Lerp(Color3.new(1,1,1),0.35)
+            local outlineTransparency=state.espHighlightStyle=="Hard" and math.clamp(espTransparency-0.7,0,0.3) or 0.5
+            if highlight.FillColor~=color then highlight.FillColor=color end
+            if highlight.FillTransparency~=fillTransparency then highlight.FillTransparency=fillTransparency end
+            if highlight.OutlineColor~=outlineColor then highlight.OutlineColor=outlineColor end
+            if highlight.OutlineTransparency~=outlineTransparency then highlight.OutlineTransparency=outlineTransparency end
+        end
+        local function watchExploiterPlayer(player)
+            if player==LocalPlayer or exploiterConnections[player] then return end
+            exploiterConnections[player]=track(player.CharacterAdded:Connect(function()
+                task.defer(function() applyExploiterHighlight(player) end)
+            end))
+            applyExploiterHighlight(player)
+        end
+        local function setExploiterNames(names)
+            table.clear(state.orangeHighlightNames)
+            if type(names)=="table" then
+                for _,name in ipairs(names) do if type(name)=="string" then state.orangeHighlightNames[name]=true end end
+            end
+            for player in pairs(exploiterHighlights) do removeExploiterHighlight(player) end
+            for _,player in ipairs(Players:GetPlayers()) do watchExploiterPlayer(player); applyExploiterHighlight(player) end
+            refreshExploiterStatus(); refreshESP()
+        end
+        local function addExploiterPlayer()
+            local player=findGotoPlayer(exploiterBox.Text)
+            if not player then exploiterBox.Text="Player not found"; return end
+            if state.assignExclusiveHighlight then state.assignExclusiveHighlight(player.Name,"Exploiter")
+            else state.orangeHighlightNames[player.Name]=true; watchExploiterPlayer(player); applyExploiterHighlight(player); refreshExploiterStatus(); refreshESP() end
+            exploiterBox.Text=""
+        end
+        exploiterAdd.MouseButton1Click:Connect(addExploiterPlayer)
+        exploiterRemove.MouseButton1Click:Connect(function()
+            local query=exploiterBox.Text:match("^%s*(.-)%s*$"):lower(); local removedName=nil
+            if query=="" then exploiterBox.Text="Enter a player name"; return end
+            local player=findGotoPlayer(query); if player and state.orangeHighlightNames[player.Name] then removedName=player.Name end
+            if not removedName then
+                for name in pairs(state.orangeHighlightNames) do if name:lower():sub(1,#query)==query then removedName=name; break end end
+            end
+            if removedName then
+                state.orangeHighlightNames[removedName]=nil
+                for playerKey in pairs(exploiterHighlights) do if playerKey.Name==removedName then removeExploiterHighlight(playerKey) end end
+            end
+            exploiterBox.Text=""; refreshExploiterStatus(); refreshESP()
+        end)
+        exploiterBox.FocusLost:Connect(function(enterPressed) if enterPressed then addExploiterPlayer() end end)
+        track(Players.PlayerAdded:Connect(function(player) watchExploiterPlayer(player); refreshExploiterStatus() end))
+        track(Players.PlayerRemoving:Connect(function(player) removeExploiterHighlight(player); task.defer(refreshExploiterStatus) end))
+        for _,player in ipairs(Players:GetPlayers()) do watchExploiterPlayer(player) end
+        state.orangeHighlightApi.getNames=function()
+            local names={}; for name in pairs(state.orangeHighlightNames) do table.insert(names,name) end; return names
+        end
+        state.orangeHighlightApi.setNames=setExploiterNames
+        state.orangeHighlightApi.refresh=function() for _,player in ipairs(Players:GetPlayers()) do applyExploiterHighlight(player) end end
+        state.orangeHighlightApi.setColor=function(value)
+            local clean=tostring(value or ""):gsub("#",""):upper()
+            if #clean~=6 or not tonumber(clean,16) then return false end
+            state.exploiterHighlightColor="#"..clean; exploiterColorBox.Text=state.exploiterHighlightColor
+            clearESP(); refreshESP(); state.orangeHighlightApi.refresh(); return true
+        end
+        exploiterColorBox.FocusLost:Connect(function()
+            if not state.orangeHighlightApi.setColor(exploiterColorBox.Text) then exploiterColorBox.Text=state.exploiterHighlightColor end
+        end)
+        state.orangeHighlightApi.refreshColor=function() exploiterColorBox.Text=state.exploiterHighlightColor end
+        registerHighlightListWindow(state.orangeHighlightApi,exploiterList,"Exploiter Highlights","EH",function() return exploiterListOpen end,refreshExploiterStatus)
+        local clearExploiterButton=create("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=Color3.fromRGB(120,58,32),BorderSizePixel=0,
+            Text="Clear Exploiter Highlights",TextColor3=Color3.fromRGB(245,225,215),TextSize=11,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
+        create("UICorner",{CornerRadius=UDim.new(0,6),Parent=clearExploiterButton})
+        clearExploiterButton.MouseButton1Click:Connect(function()
+            setExploiterNames({}); clearExploiterButton.Text="Exploiter highlights cleared"
+            task.delay(1,function() if clearExploiterButton.Parent then clearExploiterButton.Text="Clear Exploiter Highlights" end end)
+        end)
+        addCleanup(function() for player in pairs(exploiterHighlights) do removeExploiterHighlight(player) end end)
     end
 
     -- A player belongs to exactly one named-highlight list. Besides fixing the
@@ -3951,7 +4035,8 @@ local function initializePlayerESP()
         local lists={
             {key="special",label="Special",api=state.yellowHighlightApi},
             {key="super special",label="Super Special",api=state.pinkHighlightApi},
-            {key="exploiter",label="Exploiter",api=state.blackHighlightApi},
+            {key="high priority",label="High Priority",api=state.blackHighlightApi},
+            {key="exploiter",label="Exploiter",api=state.orangeHighlightApi},
         }
         local targetFound=false
         for _,entry in ipairs(lists) do
@@ -5762,19 +5847,6 @@ track(RunService.Heartbeat:Connect(function(dt)
 end))
 currentSection=state.emoteModuleTabs.player
 sectionLabel("Player Emote Sync",nextOrder())
-local emoteSyncScopeRow=rowFrame(nextOrder(),30)
-local emoteSyncScopeButton=create("TextButton",{Size=UDim2.new(0,150,0,26),Position=UDim2.new(0.5,-75,0,0),
-    BackgroundColor3=Color3.fromRGB(58,54,78),BorderSizePixel=0,Text="Sync: "..state.emoteSyncScope,
-    TextColor3=Color3.fromRGB(235,230,245),TextSize=10,Font=Enum.Font.GothamSemibold,Parent=emoteSyncScopeRow})
-create("UICorner",{CornerRadius=UDim.new(0,6),Parent=emoteSyncScopeButton})
-local function setEmoteSyncScope(scope)
-    state.emoteSyncScope=scope=="Sync All" and "Sync All" or "Emotes Only"
-    emoteSyncScopeButton.Text="Sync: "..state.emoteSyncScope
-    emoteSyncAnimationId=nil
-end
-emoteSyncScopeButton.MouseButton1Click:Connect(function()
-    setEmoteSyncScope(state.emoteSyncScope=="Sync All" and "Emotes Only" or "Sync All")
-end)
 local emoteSyncSettingsRow=rowFrame(nextOrder(),28)
 create("TextLabel",{Size=UDim2.new(1,-78,1,0),BackgroundTransparency=1,Text="Sync tolerance (seconds)",
     TextColor3=Color3.fromRGB(195,185,215),TextSize=11,Font=Enum.Font.Gotham,
@@ -5809,21 +5881,14 @@ local function getSyncSourceTrack(player)
     local animator=humanoid and humanoid:FindFirstChildOfClass("Animator")
     if not animator then return nil end
     local best=nil
-    local emoteOnly=state.emoteSyncScope~="Sync All"
     for _,playing in ipairs(animator:GetPlayingAnimationTracks()) do
         local animation=playing.Animation
         local animationId=animation and animation.AnimationId
         local valid=playing.IsPlaying and playing.WeightCurrent>0.01 and animationId and animationId~=""
-        if valid and emoteOnly then
-            valid=playing.Priority.Value>=Enum.AnimationPriority.Action.Value
-                and state.isRecognizedEmoteTrack(player.Character,playing)
-        end
         if valid then
             if animationId==emoteSyncAnimationId then return playing end
-            if not best or (emoteOnly and (playing.Priority.Value>best.Priority.Value
-                or (playing.Priority==best.Priority and playing.WeightCurrent>best.WeightCurrent)))
-                or (not emoteOnly and (playing.WeightCurrent>best.WeightCurrent
-                or (playing.WeightCurrent==best.WeightCurrent and playing.Priority.Value>best.Priority.Value))) then best=playing end
+            if not best or playing.WeightCurrent>best.WeightCurrent
+                or (playing.WeightCurrent==best.WeightCurrent and playing.Priority.Value>best.Priority.Value) then best=playing end
         end
     end
     return best
@@ -5842,7 +5907,21 @@ local function loadSyncedTrack(sourceTrack)
     local ok,loaded=pcall(function() return animator:LoadAnimation(animation) end)
     if not ok or not loaded then animation:Destroy(); return false end
     emoteAnimation=animation; emoteTrack=loaded; emoteSyncAnimationId=animationId
-    currentEmoteName="Synced with "..emoteSyncPlayer.Name
+    local assetId=tonumber(tostring(animationId):match("%d+")) or animationId
+    local sourceName=sourceTrack.Animation and sourceTrack.Animation.Name or ""
+    if sourceName=="" or sourceName:lower()=="animation" then sourceName="Emote "..tostring(assetId) end
+    currentEmoteName=sourceName
+    state.emoteCurrent={id=assetId,name=sourceName}
+    if state.updateCurrentSyncEmote then state.updateCurrentSyncEmote(assetId,sourceName) end
+    task.spawn(function()
+        local ok,info=pcall(function()
+            return game:GetService("MarketplaceService"):GetProductInfo(tonumber(assetId),Enum.InfoType.Asset)
+        end)
+        if ok and info and info.Name and emoteSyncAnimationId==animationId then
+            currentEmoteName=tostring(info.Name); state.emoteCurrent={id=assetId,name=currentEmoteName}
+            if state.updateCurrentSyncEmote then state.updateCurrentSyncEmote(assetId,currentEmoteName) end
+        end
+    end)
     loaded.Priority=Enum.AnimationPriority.Action4; loaded.Looped=sourceTrack.Looped
     loaded:Play(0.05,1,sourceTrack.Speed)
     loaded:AdjustWeight(1,0.05)
@@ -5853,6 +5932,8 @@ end
 local function stopEmoteSync(stopPlayback)
     emoteSyncActive=false; emoteSyncPlayer=nil; emoteSyncAnimationId=nil; emoteSyncElapsed=0
     state.emoteSyncLastSpeed=nil; state.emoteSyncLastPosition=nil; state.emoteSyncSourceLooped=nil
+    state.emoteCurrent=nil
+    if state.updateCurrentSyncEmote then state.updateCurrentSyncEmote(nil,nil) end
     if stopPlayback then stopEmote() end
 end
 
@@ -5872,7 +5953,7 @@ local function beginEmoteSync()
     if humanoid and targetHumanoid and humanoid.RigType~=targetHumanoid.RigType then
         notifyLucid("Emote rig mismatch","Your rig and "..player.Name.." use different rig types; some poses may distort.",Color3.fromRGB(235,175,70))
     end
-    emoteStatus.Text="Waiting for "..player.Name.." | "..state.emoteSyncScope
+    emoteStatus.Text="Waiting for "..player.Name
 end
 emoteSyncButton.MouseButton1Click:Connect(beginEmoteSync)
 emoteSyncBox.FocusLost:Connect(function(enterPressed)
@@ -5882,6 +5963,33 @@ local stopSyncButton=actionButton("Stop Sync",function(button)
     stopEmoteSync(true); button.Text="Emote sync stopped"
     task.delay(1,function() if button.Parent then button.Text="Stop Sync" end end)
 end,Color3.fromRGB(85,48,62))
+local currentSyncEmoteRow=rowFrame(nextOrder(),30)
+create("TextLabel",{Size=UDim2.new(0,82,1,0),BackgroundTransparency=1,Text="Current Emote",
+    TextColor3=Color3.fromRGB(190,180,205),TextSize=10,Font=Enum.Font.Gotham,
+    TextXAlignment=Enum.TextXAlignment.Left,Parent=currentSyncEmoteRow})
+local currentSyncEmoteName=create("TextLabel",{Size=UDim2.new(1,-116,1,0),Position=UDim2.new(0,84,0,0),
+    BackgroundTransparency=1,Text="None",TextColor3=Color3.fromRGB(225,220,235),TextSize=10,
+    Font=Enum.Font.GothamSemibold,TextXAlignment=Enum.TextXAlignment.Left,
+    TextTruncate=Enum.TextTruncate.AtEnd,Parent=currentSyncEmoteRow})
+local currentSyncFavorite=create("TextButton",{Size=UDim2.new(0,28,0,26),Position=UDim2.new(1,-28,0.5,-13),
+    BackgroundColor3=Color3.fromRGB(50,45,65),BorderSizePixel=0,Text="☆",
+    TextColor3=Color3.fromRGB(155,145,175),TextSize=17,Font=Enum.Font.GothamBold,Parent=currentSyncEmoteRow})
+create("UICorner",{CornerRadius=UDim.new(0,5),Parent=currentSyncFavorite})
+state.updateCurrentSyncEmote=function(id,name)
+    state.currentSyncEmote=id and {id=id,name=tostring(name or ("Emote "..tostring(id)))} or nil
+    currentSyncEmoteName.Text=state.currentSyncEmote and state.currentSyncEmote.name or "None"
+    local favorite=state.currentSyncEmote and state.emoteFavorites[tostring(state.currentSyncEmote.id)]~=nil
+    currentSyncFavorite.Text=favorite and "★" or "☆"
+    currentSyncFavorite.TextColor3=favorite and Color3.fromRGB(255,215,55) or Color3.fromRGB(155,145,175)
+end
+currentSyncFavorite.MouseButton1Click:Connect(function()
+    local item=state.currentSyncEmote
+    if not item then return end
+    local key=tostring(item.id)
+    if state.emoteFavorites[key] then state.emoteFavorites[key]=nil
+    else state.emoteFavorites[key]={id=item.id,name=item.name} end
+    saveGlobalEmoteFavorites(); state.updateCurrentSyncEmote(item.id,item.name)
+end)
 currentSection=state.emoteModuleTabs.main
 
 track(RunService.Heartbeat:Connect(function(dt)
@@ -5911,7 +6019,7 @@ track(RunService.Heartbeat:Connect(function(dt)
     local sourceTrack=getSyncSourceTrack(emoteSyncPlayer)
     if not sourceTrack then
         if emoteTrack and emoteTrack.IsPlaying then pcall(function() emoteTrack:Stop(0.1) end) end
-        emoteStatus.Text="Waiting for "..emoteSyncPlayer.Name.." | "..state.emoteSyncScope
+        emoteStatus.Text="Waiting for "..emoteSyncPlayer.Name
         return
     end
     local sourceId=sourceTrack.Animation and sourceTrack.Animation.AnimationId
@@ -5943,7 +6051,7 @@ track(RunService.Heartbeat:Connect(function(dt)
             else emoteTrack:AdjustSpeed(math.clamp(sourceTrack.Speed+signedDrift*0.35,0.1,5)) end
         end
     end)
-    emoteStatus.Text="Synced with "..emoteSyncPlayer.Name.." | "..state.emoteSyncScope.." | "..tostring(state.emoteSyncMode).." | "..tostring(sourceId)
+    emoteStatus.Text="Synced with "..emoteSyncPlayer.Name.." | "..tostring(state.emoteSyncMode).." | "..tostring(sourceId)
 end))
 state.emoteSearch={}
 function state.emoteSearch.normalize(value)
@@ -6407,7 +6515,7 @@ state.initializeEmoteStudio=function(api)
     end
     emoteSpeedRow.Visible=false
     speedControl(state.emoteModuleTabs.main,true,loadMoreEmotesButton.Parent)
-    speedControl(state.emoteModuleTabs.player,true,stopSyncButton.Parent)
+    speedControl(state.emoteModuleTabs.player,true,currentSyncEmoteRow)
 
     -- CUSTOM
     currentSection=state.emoteModuleTabs.custom
@@ -6979,7 +7087,6 @@ state.emoteCommandApi={
         emoteStatus.Text=#(items or {})>0 and ("Showing "..#items.." emotes") or emptyText
     end,
     setSyncName=function(name) emoteSyncBox.Text=name end,beginSync=beginEmoteSync,
-    setSyncScope=setEmoteSyncScope,
     stopSync=function() stopEmoteSync(true) end,
     cancelSearch=function()
         emoteRequestGeneration=emoteRequestGeneration+1; emoteLoading=false; emoteSearchButton.Text="Search"; emoteStatus.Text="Catalog search cancelled"
@@ -7131,7 +7238,7 @@ local function saveNamedProfile(button,profileOverride,silent)
         pcall(function() payload=HttpService:JSONDecode(readfile(profilePath)) end)
     end
     if type(payload)~="table" then payload={} end
-    payload.version=5
+    payload.version=6
     payload.savedAt=os.time()
     payload.values={}
     for key,value in pairs(state) do
@@ -7143,6 +7250,7 @@ local function saveNamedProfile(button,profileOverride,silent)
     payload.yellowHighlights=state.yellowHighlightApi.getNames and state.yellowHighlightApi.getNames() or {}
     payload.pinkHighlights=state.pinkHighlightApi.getNames and state.pinkHighlightApi.getNames() or {}
     payload.blackHighlights=state.blackHighlightApi.getNames and state.blackHighlightApi.getNames() or {}
+    payload.exploiterHighlights=state.orangeHighlightApi.getNames and state.orangeHighlightApi.getNames() or {}
     payload.hiddenNamedPlayers=state.namedPlayerHiderApi and state.namedPlayerHiderApi.getNames and state.namedPlayerHiderApi.getNames() or {}
     -- Emote favorites are global and saved independently of named profiles.
     payload.keybinds={}
@@ -7218,13 +7326,20 @@ loadNamedProfile = function(button)
         ok,payload=decodeProfile(profilePath:gsub("%.json$","_backup.json")); recovered=ok and type(payload)=="table"
     end
     if not ok or type(payload)~="table" then button.Text="Profile invalid/missing"; notifyLucid("Profile load failed",profileNameBox.Text,Color3.fromRGB(230,90,105)); return end
+    local profileVersion=tonumber(payload.version or 0)
     for key,value in pairs(payload.values or {}) do
-        if state[key]~=nil and not (key=="accentTheme" and tonumber(payload.version or 0)<5) then state[key]=value end
+        local legacyExploiterColor=profileVersion<6 and key=="exploiterHighlightColor"
+        if legacyExploiterColor then
+            state.highPriorityHighlightColor=value
+        elseif state[key]~=nil and not (key=="accentTheme" and profileVersion<5) then
+            state[key]=value
+        end
     end
     if state.applyAccentTheme then state.applyAccentTheme(state.accentTheme) end
     if state.yellowHighlightApi.refreshColor then state.yellowHighlightApi.refreshColor() end
     if state.pinkHighlightApi.refreshColor then state.pinkHighlightApi.refreshColor() end
     if state.blackHighlightApi.refreshColor then state.blackHighlightApi.refreshColor() end
+    if state.orangeHighlightApi.refreshColor then state.orangeHighlightApi.refreshColor() end
     if type(payload.lighting)=="table" and type(payload.lighting.playerLightEnabled)=="boolean" then
         state.playerLightEnabled=payload.lighting.playerLightEnabled
     end
@@ -7258,7 +7373,6 @@ loadNamedProfile = function(button)
     updateText(emoteSyncToleranceBox,string.format("%.2f",state.emoteSyncTolerance))
     if gotoApi.setOffset then gotoApi.setOffset(state.gotoOffsetX,state.gotoOffsetY,state.gotoOffsetZ) end
     if gotoApi.setLoopDirection and state.loopGotoDirection then gotoApi.setLoopDirection(state.loopGotoDirection) end
-    if state.emoteCommandApi and state.emoteCommandApi.setSyncScope then state.emoteCommandApi.setSyncScope(state.emoteSyncScope) end
     -- Safe startup: remembered toggle states are intentionally not activated.
     -- Import favorites from older profile files once, without replacing the
     -- global collection or tying it to this profile/place.
@@ -7266,6 +7380,7 @@ loadNamedProfile = function(button)
     if state.yellowHighlightApi.setNames then state.yellowHighlightApi.setNames(payload.yellowHighlights or {}) end
     if state.pinkHighlightApi.setNames then state.pinkHighlightApi.setNames(payload.pinkHighlights or {}) end
     if state.blackHighlightApi.setNames then state.blackHighlightApi.setNames(payload.blackHighlights or {}) end
+    if state.orangeHighlightApi.setNames then state.orangeHighlightApi.setNames(payload.exploiterHighlights or {}) end
     if state.namedPlayerHiderApi and state.namedPlayerHiderApi.setNames then state.namedPlayerHiderApi.setNames(payload.hiddenNamedPlayers or {}) end
     for name,setter in pairs(favoriteRegistry or {}) do setter((payload.favorites or {})[name]==true) end
     for name,value in pairs(payload.keybinds or {}) do
@@ -8141,7 +8256,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.7.3 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.8.1 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -8392,13 +8507,17 @@ state.initializeCommandConsole=function()
             {command="!dex",description="Launch Dex++ Explorer"},
             {command="!dex unload",description="Unload Dex++ Explorer"},
             {command="!undex",description="Unload Dex++ Explorer"},
+            {command="!hph <player>",description="Add a player to High Priority highlights"},
             {command="!eh <player>",description="Add a player to Exploiter highlights"},
             {command="!lsh",description="Detach the Special highlight list into a window"},
             {command="!lssh",description="Detach the Super Special highlight list into a window"},
+            {command="!lhph",description="Detach the High Priority highlight list into a window"},
             {command="!leh",description="Detach the Exploiter highlight list into a window"},
+            {command="!rhph <player>",description="Remove a saved player from High Priority highlights (online or offline)"},
             {command="!reh <player>",description="Remove a saved player from Exploiter highlights (online or offline)"},
             {command="!rsh <player>",description="Remove a saved player from Special highlights (online or offline)"},
             {command="!rssh <player>",description="Remove a saved player from Super Special highlights (online or offline)"},
+            {command="!hphc <#RRGGBB>",description="Set the High Priority highlight color"},
             {command="!ehc <#RRGGBB>",description="Set the Exploiter highlight color"},
             {command="!emote <animationId> [name]",description="Play an animation by asset ID"},
             {command="!fb [on|off]",description="Toggle Fullbright, or explicitly enable/disable it"},
@@ -8427,7 +8546,6 @@ state.initializeCommandConsole=function()
             {command="!ssh <player>",description="Add a player to Super Special highlights"},
             {command="!sshc <#RRGGBB>",description="Set the Super Special highlight color"},
             {command="!sync <player>",description="Synchronize with a player's current emote"},
-            {command="!syncscope <all|emotes>",description="Choose Sync All or Emotes Only"},
             {command="!unspec",description="Stop spectating and return the camera to your character"},
             {command="!unloopgoto",description="Disable loop goto"},
             {command="!walkspeed <value>",description="Set and lock WalkSpeed"},
@@ -8548,7 +8666,8 @@ state.initializeCommandConsole=function()
         local player=state.gotoApi.find(query)
         if not player then finish(false,"Player not found: "..query); return end
         local highlightType=api==state.yellowHighlightApi and "Special"
-            or (api==state.pinkHighlightApi and "Super Special" or "Exploiter")
+            or (api==state.pinkHighlightApi and "Super Special"
+            or (api==state.blackHighlightApi and "High Priority" or "Exploiter"))
         if state.assignExclusiveHighlight and state.assignExclusiveHighlight(player.Name,highlightType) then
             finish(true,player.Name.." moved to "..highlightType.." highlights")
         else finish(false,"Highlight lists unavailable") end
@@ -8581,6 +8700,7 @@ state.initializeCommandConsole=function()
         if state.yellowHighlightApi.refresh then state.yellowHighlightApi.refresh() end
         if state.pinkHighlightApi.refresh then state.pinkHighlightApi.refresh() end
         if state.blackHighlightApi.refresh then state.blackHighlightApi.refresh() end
+        if state.orangeHighlightApi.refresh then state.orangeHighlightApi.refresh() end
         if state.persistHighlightChange then state.persistHighlightChange(removedName,highlightType,true) end
         finish(true,removedName.." removed from "..highlightType.." highlights")
     end
@@ -8648,30 +8768,27 @@ state.initializeCommandConsole=function()
                 finish(succeeded,state.customReanimationStatus or ("Local Reanimation: "..(desired and "ON" or "OFF")))
             else finish(false,"Local Reanimation unavailable") end
             return
-        elseif command=="lsh" or command=="lssh" or command=="leh" then
-            local api=command=="lsh" and state.yellowHighlightApi or (command=="lssh" and state.pinkHighlightApi or state.blackHighlightApi)
+        elseif command=="lsh" or command=="lssh" or command=="lhph" or command=="leh" then
+            local api=command=="lsh" and state.yellowHighlightApi or (command=="lssh" and state.pinkHighlightApi
+                or (command=="lhph" and state.blackHighlightApi or state.orangeHighlightApi))
             if api.openList then api.openList(); finish(true,"Highlight list opened")
             else finish(false,"Highlight list unavailable") end
             return
         elseif command=="rsh" then removeNamedHighlight(state.yellowHighlightApi,rest,"rsh","Special"); return
         elseif command=="rssh" then removeNamedHighlight(state.pinkHighlightApi,rest,"rssh","Super Special"); return
-        elseif command=="reh" then removeNamedHighlight(state.blackHighlightApi,rest,"reh","Exploiter"); return
+        elseif command=="rhph" then removeNamedHighlight(state.blackHighlightApi,rest,"rhph","High Priority"); return
+        elseif command=="reh" then removeNamedHighlight(state.orangeHighlightApi,rest,"reh","Exploiter"); return
         elseif command=="sh" then addNamedHighlight(state.yellowHighlightApi,rest,"sh"); return
         elseif command=="ssh" then addNamedHighlight(state.pinkHighlightApi,rest,"ssh"); return
-        elseif command=="eh" then addNamedHighlight(state.blackHighlightApi,rest,"eh"); return
+        elseif command=="hph" then addNamedHighlight(state.blackHighlightApi,rest,"hph"); return
+        elseif command=="eh" then addNamedHighlight(state.orangeHighlightApi,rest,"eh"); return
         elseif command=="shc" then setNamedHighlightColor(state.yellowHighlightApi,rest,"SHC"); return
         elseif command=="sshc" then setNamedHighlightColor(state.pinkHighlightApi,rest,"SSHC"); return
-        elseif command=="ehc" then setNamedHighlightColor(state.blackHighlightApi,rest,"EHC"); return
+        elseif command=="hphc" then setNamedHighlightColor(state.blackHighlightApi,rest,"HPHC"); return
+        elseif command=="ehc" then setNamedHighlightColor(state.orangeHighlightApi,rest,"EHC"); return
         elseif command=="sync" then
             if rest=="" then finish(false,"Use: !sync <player>")
             else state.emoteCommandApi.setSyncName(rest); state.emoteCommandApi.beginSync(); finish(true,"Syncing with "..rest) end
-            return
-        elseif command=="syncscope" then
-            local requested=rest:lower():gsub("[^%w]","")
-            local scope=(requested=="all" or requested=="syncall") and "Sync All"
-                or ((requested=="emote" or requested=="emotes" or requested=="emotesonly") and "Emotes Only" or nil)
-            if not scope then finish(false,"Use: !syncscope all/emotes")
-            else state.emoteCommandApi.setSyncScope(scope); finish(true,"Sync scope: "..scope) end
             return
         elseif command=="desync" then
             state.emoteCommandApi.stopSync(); finish(true,"Player emote sync stopped"); return
@@ -9273,7 +9390,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.7.3] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.8.1] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.7.3] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.8.1] Loaded, but this executor does not expose queue_on_teleport")
 end
