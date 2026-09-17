@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.7.0
+--// Lucid Panel v5.6.3
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -358,7 +358,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.7.0",
+    Text                   = "LUCID PANEL  •  v5.6.3",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -1298,9 +1298,6 @@ local function createToggle(labelText, order, default, callback)
 
     local function setToggle(value)
         enabled = value == true
-        if activeFeatures[labelText]~=enabled and state.emitToggleChange then
-            state.emitToggleChange(labelText,enabled)
-        end
         toggleBg.BackgroundColor3 = enabled and Color3.fromRGB(80, 200, 120) or Color3.fromRGB(60, 60, 70)
         knob.Position = enabled and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
         activeFeatures[labelText] = enabled
@@ -1323,7 +1320,7 @@ local function createToggle(labelText, order, default, callback)
     return function() return enabled end, fireToggle, setToggle
 end
 
-local function createInlineToggle(parent, default, notificationLabel)
+local function createInlineToggle(parent, default)
     local toggleBg = create("Frame", {
         Size              = UDim2.new(0, 44, 0, 22),
         Position          = UDim2.new(1, -48, 0.5, -11),
@@ -1355,7 +1352,6 @@ local function createInlineToggle(parent, default, notificationLabel)
         changeCallback = callback
         btn.MouseButton1Click:Connect(function()
             enabled = not enabled
-            if notificationLabel and state.emitToggleChange then state.emitToggleChange(notificationLabel,enabled) end
             toggleBg.BackgroundColor3 = enabled and Color3.fromRGB(80, 200, 120) or Color3.fromRGB(60, 60, 70)
             knob.Position = enabled and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
             if changeCallback then changeCallback(enabled) end
@@ -1364,7 +1360,6 @@ local function createInlineToggle(parent, default, notificationLabel)
 
     local function setInline(value)
         enabled=value==true
-        if notificationLabel and state.emitToggleChange then state.emitToggleChange(notificationLabel,enabled) end
         toggleBg.BackgroundColor3=enabled and Color3.fromRGB(80,200,120) or Color3.fromRGB(60,60,70)
         knob.Position=enabled and UDim2.new(1,-19,0.5,-8) or UDim2.new(0,3,0.5,-8)
         if changeCallback then changeCallback(enabled) end
@@ -1405,14 +1400,12 @@ local opacBox = styledBox(opacRow, {
 })
 
 local function setOpacity(pct)
-    local previous=tonumber(opacBox.Text:gsub("%%","")) or pct
     pct = math.clamp(pct, 0, 100)
     local transparency = 1 - (pct / 100)
     mainFrame.BackgroundTransparency = transparency
     titleBar.BackgroundTransparency  = math.clamp(transparency - 0.1, 0, 1)
     opacFill.Size = UDim2.new(pct / 100, 0, 1, 0)
     opacBox.Text  = tostring(math.floor(pct + 0.5)) .. "%"
-    if state.emitValueChange then state.emitValueChange("GUI Opacity",previous,pct,"%") end
 end
 
 local draggingOpac = false
@@ -1675,11 +1668,9 @@ local hipBox = styledBox(hipRow, {
 local HIP_MIN, HIP_MAX = -100, 200
 
 local function setHipHeight(value, applyToCharacter)
-    local previous=tonumber(hipBox.Text) or value
     value = math.clamp(value, HIP_MIN, HIP_MAX)
     hipBox.Text = string.format("%.2f", value):gsub("%.?0+$", "")
     hipFill.Size = UDim2.new((value - HIP_MIN) / (HIP_MAX - HIP_MIN), 0, 1, 0)
-    if state.emitValueChange then state.emitValueChange("Hip Height",previous,value) end
     if applyToCharacter == false then return end
     local char = LocalPlayer.Character
     if char then
@@ -1751,7 +1742,6 @@ local walkspeedConnection = nil
 local applyingWalkspeed = false
 
 local function applyWalkSpeed(value)
-    local previous=state.walkspeedValue
     value = tonumber(value)
     if not value or value ~= value or value == math.huge or value == -math.huge then
         wsBox.Text = tostring(state.walkspeedValue)
@@ -1766,7 +1756,6 @@ local function applyWalkSpeed(value)
         pcall(function() humanoid.WalkSpeed = value end)
     applyingWalkspeed = false
     end
-    if state.emitValueChange then state.emitValueChange("WalkSpeed",previous,value) end
     return true
 end
 
@@ -1791,7 +1780,7 @@ addCleanup(function()
     walkspeedConnection = nil
 end)
 
-local wsToggle, wsGetLocked, wsSetLocked = createInlineToggle(wsRow, false,"Lock WalkSpeed")
+local wsToggle, wsGetLocked, wsSetLocked = createInlineToggle(wsRow, false)
 toggleRegistry["Lock WalkSpeed"]=wsSetLocked
 activeFeatures["Lock WalkSpeed"]=false
 wsToggle(function(on)
@@ -1835,7 +1824,7 @@ create("TextLabel", {
     Parent = jhRow,
 })
 
-local jhToggle, jhGetLocked, jhSetLocked = createInlineToggle(jhRow, false,"Lock Jump Height")
+local jhToggle, jhGetLocked, jhSetLocked = createInlineToggle(jhRow, false)
 toggleRegistry["Lock Jump Height"]=jhSetLocked
 activeFeatures["Lock Jump Height"]=false
 jhToggle(function(on)
@@ -1860,7 +1849,6 @@ end)
 jhBox.FocusLost:Connect(function()
     local num = tonumber(jhBox.Text)
     if num then
-        local previous=state.jumpHeightValue
         state.jumpHeightValue = num
         local char = LocalPlayer.Character
         if char then
@@ -1870,7 +1858,6 @@ jhBox.FocusLost:Connect(function()
                 h.JumpHeight = num
             end
         end
-        if state.emitValueChange then state.emitValueChange("Jump Height",previous,num) end
     else
         jhBox.Text = tostring(state.jumpHeightValue)
     end
@@ -2210,7 +2197,7 @@ create("TextLabel", {
     Parent = zoomRow,
 })
 
-local zoomToggle, zoomGetLocked, zoomSetLocked = createInlineToggle(zoomRow, false,"Lock Max Zoom")
+local zoomToggle, zoomGetLocked, zoomSetLocked = createInlineToggle(zoomRow, false)
 toggleRegistry["Lock Max Zoom"]=zoomSetLocked
 activeFeatures["Lock Max Zoom"]=false
 zoomToggle(function(on)
@@ -2228,12 +2215,10 @@ end)
 zoomBox.FocusLost:Connect(function()
     local num = tonumber(zoomBox.Text)
     if num then
-        local previous=state.maxZoomValue
         state.maxZoomValue = num
         if state.maxZoomLocked then
             LocalPlayer.CameraMaxZoomDistance = num
         end
-        if state.emitValueChange then state.emitValueChange("Maximum Zoom",previous,num) end
     else
         zoomBox.Text = tostring(state.maxZoomValue)
     end
@@ -4255,10 +4240,8 @@ create("TextLabel", { Size = UDim2.new(0.65, 0, 1, 0), BackgroundTransparency = 
     Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = flySpeedRow })
 local flySpeedBox = styledBox(flySpeedRow, { Size = UDim2.new(0,70,0,24), Position = UDim2.new(1,-70,0.5,-12), Text = "50" })
 flySpeedBox.FocusLost:Connect(function()
-    local previous=state.flySpeed
     state.flySpeed = math.clamp(tonumber(flySpeedBox.Text) or state.flySpeed, 1, 500)
     flySpeedBox.Text = tostring(state.flySpeed)
-    if state.emitValueChange then state.emitValueChange("Fly Speed",previous,state.flySpeed) end
 end)
 local _, fireFly, setFly = createToggle("Fly", nextOrder(), false, function(on)
     state.flyEnabled = on
@@ -4440,11 +4423,9 @@ create("TextLabel", { Size=UDim2.new(0.55,0,1,0), BackgroundTransparency=1, Text
     TextXAlignment=Enum.TextXAlignment.Left, Parent=fovRow })
 local fovBox = styledBox(fovRow, { Size=UDim2.new(0,70,0,24), Position=UDim2.new(1,-70,0.5,-12), Text="70" })
 fovBox.FocusLost:Connect(function()
-    local previous=state.fovValue
     state.fovValue = math.clamp(tonumber(fovBox.Text) or state.fovValue, 1, 120)
     fovBox.Text = tostring(state.fovValue)
     if workspace.CurrentCamera then workspace.CurrentCamera.FieldOfView = state.fovValue end
-    if state.emitValueChange then state.emitValueChange("Field of View",previous,state.fovValue) end
 end)
 createToggle("Lock FOV", nextOrder(), false, function(on) state.fovLocked = on end)
 local freecamSpeedRow=rowFrame(nextOrder())
@@ -4453,10 +4434,8 @@ create("TextLabel",{Size=UDim2.new(0.65,0,1,0),BackgroundTransparency=1,Text="Fr
     TextXAlignment=Enum.TextXAlignment.Left,Parent=freecamSpeedRow})
 local freecamSpeedBox=styledBox(freecamSpeedRow,{Size=UDim2.new(0,70,0,24),Position=UDim2.new(1,-70,0.5,-12),Text="50"})
 freecamSpeedBox.FocusLost:Connect(function()
-    local previous=state.freecamSpeed
     state.freecamSpeed=math.clamp(tonumber(freecamSpeedBox.Text) or state.freecamSpeed,1,500)
     freecamSpeedBox.Text=tostring(state.freecamSpeed)
-    if state.emitValueChange then state.emitValueChange("Freecam Speed",previous,state.freecamSpeed) end
 end)
 local function setNoCameraShake(on)
     state.noCameraShake=on
@@ -5563,13 +5542,11 @@ createToggle("Keep Emote While Moving",nextOrder(),true,function(on)
 end)
 state.emoteSpeedViews={}
 state.setEmotePlaybackSpeed=function(value)
-    local previous=emoteSpeed
     emoteSpeed=math.clamp(tonumber(value) or emoteSpeed,0,15)
     state.emoteSpeed=emoteSpeed
     emoteSpeedBox.Text=tostring(emoteSpeed)
     for _,refresh in ipairs(state.emoteSpeedViews) do refresh(emoteSpeed) end
     if emoteTrack then pcall(function() emoteTrack:AdjustSpeed(emoteSpeed) end) end
-    if state.emitValueChange then state.emitValueChange("Animation Speed",previous,emoteSpeed,"x") end
 end
 emoteSpeedBox.FocusLost:Connect(function()
     state.setEmotePlaybackSpeed(emoteSpeedBox.Text)
@@ -7166,7 +7143,6 @@ loadNamedProfile = function(button)
         ok,payload=decodeProfile(profilePath:gsub("%.json$","_backup.json")); recovered=ok and type(payload)=="table"
     end
     if not ok or type(payload)~="table" then button.Text="Profile invalid/missing"; notifyLucid("Profile load failed",profileNameBox.Text,Color3.fromRGB(230,90,105)); return end
-    state.suppressChangeNotices=true
     for key,value in pairs(payload.values or {}) do
         if state[key]~=nil and not (key=="accentTheme" and tonumber(payload.version or 0)<5) then state[key]=value end
     end
@@ -7303,7 +7279,6 @@ loadNamedProfile = function(button)
     if state.playerLightEnabled then applyPlayerLight() else removePlayerLight() end
     button.Text="Profile loaded — settings restored"
     activeProfileName=profileNameBox.Text
-    state.suppressChangeNotices=false
     notifyLucid(recovered and "Profile recovered from backup" or "Profile loaded",profileNameBox.Text,
         recovered and Color3.fromRGB(235,175,70) or Color3.fromRGB(75,210,120))
     task.delay(1.5,function()
@@ -8091,7 +8066,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.7.0 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.6.3 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -8838,37 +8813,6 @@ if not state.toolkitInitializationOk then
         TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,
         LayoutOrder=nextOrder(),Parent=currentSection})
     notifyLucid("Toolkit failed",tostring(state.toolkitInitializationError),Color3.fromRGB(230,80,100))
-else
-    -- Installed only after the large toolkit has completed successfully. UI
-    -- callbacks above resolve these state hooks at interaction time, keeping
-    -- notification bookkeeping out of the register-sensitive initializer.
-    state.changeNoticePending={}
-    state.emitToggleChange=function(label,enabled)
-        if state.suppressChangeNotices or activeFeatures[label]==enabled then return end
-        notifyLucid(label,enabled and "Enabled" or "Disabled",
-            enabled and Color3.fromRGB(75,210,120) or Color3.fromRGB(220,90,105))
-    end
-    state.emitValueChange=function(label,oldValue,newValue,suffix)
-        if state.suppressChangeNotices or tonumber(oldValue)==tonumber(newValue) then return end
-        local pending=state.changeNoticePending[label]
-        if not pending then
-            pending={oldValue=oldValue,newValue=newValue,suffix=suffix or "",revision=0}
-            state.changeNoticePending[label]=pending
-        else pending.newValue=newValue; pending.suffix=suffix or pending.suffix end
-        pending.revision+=1
-        local revision=pending.revision
-        task.delay(0.22,function()
-            local latest=state.changeNoticePending and state.changeNoticePending[label]
-            if not latest or latest.revision~=revision then return end
-            state.changeNoticePending[label]=nil
-            local function format(value)
-                if type(value)=="number" then return string.format("%.3f",value):gsub("0+$",""):gsub("%.$","") end
-                return tostring(value)
-            end
-            notifyLucid(label.." changed",format(latest.oldValue)..latest.suffix.."  →  "..
-                format(latest.newValue)..latest.suffix,Color3.fromRGB(125,105,210))
-        end)
-    end
 end
 
 -- Re-apply settings on respawn
@@ -9254,7 +9198,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.7.0] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.6.3] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.7.0] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.6.3] Loaded, but this executor does not expose queue_on_teleport")
 end
