@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.8.5
+--// Lucid Panel v5.8.6
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -358,7 +358,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.8.5",
+    Text                   = "LUCID PANEL  •  v5.8.6",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -5694,12 +5694,18 @@ createToggle("Keep Emote While Moving",nextOrder(),true,function(on)
     state.keepEmoteMoving=on
 end)
 state.emoteSpeedViews={}
+state.emoteReverseViews={}
 state.setEmotePlaybackSpeed=function(value)
     emoteSpeed=math.clamp(tonumber(value) or emoteSpeed,0,15)
     state.emoteSpeed=emoteSpeed
     emoteSpeedBox.Text=tostring(emoteSpeed)
     for _,refresh in ipairs(state.emoteSpeedViews) do refresh(emoteSpeed) end
-    if emoteTrack then pcall(function() emoteTrack:AdjustSpeed(emoteSpeed) end) end
+    if emoteTrack then pcall(function()
+        local customDirection=tonumber(state.customPlaybackDirection)
+        local direction=customDirection or tonumber(state.normalEmoteDirection) or 1
+        local speed=customDirection and (tonumber(state.customEmoteSpeed) or emoteSpeed) or emoteSpeed
+        emoteTrack:AdjustSpeed(direction<0 and -speed or speed)
+    end) end
 end
 emoteSpeedBox.FocusLost:Connect(function()
     state.setEmotePlaybackSpeed(emoteSpeedBox.Text)
@@ -5754,6 +5760,7 @@ local emoteRequestGeneration=0
 stopEmote=function()
     emoteSyncActive=false; emoteSyncPlayer=nil; emoteSyncAnimationId=nil; emoteSyncElapsed=0
     state.customPlaybackDirection=nil
+    state.normalEmoteDirection=nil
     if state.customKeyframeApi then state.customKeyframeApi.stop() end
     if state.customPlaybackApi and state.customPlaybackApi.onStopped then state.customPlaybackApi.onStopped() end
     if emoteTrack then pcall(function() emoteTrack:Stop(0.15) end) end
@@ -5762,6 +5769,7 @@ stopEmote=function()
     state.emotePlaybackPaused=false
     emoteResumeBusy=false
     emoteStatus.Text="Emote stopped"
+    if state.refreshNormalEmoteReverseAccents then state.refreshNormalEmoteReverseAccents() end
 end
 state.emoteModuleTabs.favoriteStopRow=create("Frame",{Size=UDim2.new(1,0,0,32),BackgroundTransparency=1,
     LayoutOrder=nextOrder(),Parent=state.emoteModuleTabs.favorites})
@@ -5772,7 +5780,8 @@ state.emoteModuleTabs.favoriteStopButton=create("TextButton",{Size=UDim2.new(0,7
 create("UICorner",{CornerRadius=UDim.new(0,6),Parent=state.emoteModuleTabs.favoriteStopButton})
 state.emoteModuleTabs.favoriteStopButton.MouseButton1Click:Connect(stopEmote)
 emoteResults.LayoutOrder=nextOrder()
-local function playEmote(assetId,name)
+local function playEmote(assetId,name,direction)
+    direction=direction==-1 and -1 or 1
     emoteSyncActive=false; emoteSyncPlayer=nil; emoteSyncAnimationId=nil
     stopEmote()
     state.emotePlaybackPaused=false
@@ -5813,11 +5822,40 @@ local function playEmote(assetId,name)
         end
         emoteAnimation=animation; track=loaded; track:Play(0.15,1,emoteSpeed)
     end
-    emoteTrack=track; currentEmoteName=name
+    emoteTrack=track; currentEmoteName=name; state.normalEmoteDirection=direction
     state.emoteCurrent={id=tonumber(assetId) or assetId,name=name}; state.emoteLast=state.emoteCurrent
-    track.Priority=Enum.AnimationPriority.Action4; track.Looped=state.emoteLoopMode~="Once"; track:AdjustSpeed(emoteSpeed)
-    emoteStatus.Text="Playing: "..name.."  |  "..string.format("%.1fx",emoteSpeed)
+    track.Priority=Enum.AnimationPriority.Action4; track.Looped=state.emoteLoopMode~="Once"; track:AdjustSpeed(direction*emoteSpeed)
+    if direction<0 then
+        task.spawn(function()
+            local deadline=os.clock()+1.5
+            while emoteTrack==track and track.Length<=0 and os.clock()<deadline do RunService.Heartbeat:Wait() end
+            if emoteTrack==track and state.normalEmoteDirection==-1 then
+                pcall(function()
+                    if track.TimePosition<=0.03 and track.Length>0 then track.TimePosition=math.max(track.Length-0.001,0) end
+                    track:AdjustSpeed(-emoteSpeed)
+                end)
+            end
+        end)
+    end
+    emoteStatus.Text=(direction<0 and "Reversed: " or "Playing: ")..name.."  |  "..string.format("%.1fx",emoteSpeed)
+    if state.refreshNormalEmoteReverseAccents then state.refreshNormalEmoteReverseAccents() end
     if state.emoteAdvancedOnPlayed then task.defer(state.emoteAdvancedOnPlayed,state.emoteCurrent,track) end
+    return true
+end
+local function reverseNormalEmote(assetId,name)
+    if emoteSyncActive then emoteStatus.Text="Reverse is unavailable during Player Sync"; return false end
+    local same=emoteTrack and state.emoteCurrent and tostring(state.emoteCurrent.id)==tostring(assetId)
+    if not same then return playEmote(assetId,name,-1) end
+    local direction=state.normalEmoteDirection==-1 and 1 or -1
+    state.normalEmoteDirection=direction
+    pcall(function()
+        if direction<0 and emoteTrack.TimePosition<=0.03 and emoteTrack.Length>0 then
+            emoteTrack.TimePosition=math.max(emoteTrack.Length-0.001,0)
+        end
+        emoteTrack:AdjustSpeed(direction*emoteSpeed)
+    end)
+    emoteStatus.Text=(direction<0 and "Reversed: " or "Playing forward: ")..tostring(name).."  |  "..string.format("%.1fx",emoteSpeed)
+    if state.refreshNormalEmoteReverseAccents then state.refreshNormalEmoteReverseAccents() end
     return true
 end
 track(RunService.Heartbeat:Connect(function(dt)
@@ -5829,7 +5867,8 @@ track(RunService.Heartbeat:Connect(function(dt)
         if state.emoteSpeedEnforceElapsed>=(state.lowPerformanceMode and 0.3 or 0.15) then
             state.emoteSpeedEnforceElapsed=0
             pcall(function()
-                if math.abs(emoteTrack.Speed-emoteSpeed)>0.001 then emoteTrack:AdjustSpeed(emoteSpeed) end
+                local desired=(state.normalEmoteDirection==-1 and -1 or 1)*emoteSpeed
+                if math.abs(emoteTrack.Speed-desired)>0.001 then emoteTrack:AdjustSpeed(desired) end
             end)
         end
     end
@@ -5843,11 +5882,14 @@ track(RunService.Heartbeat:Connect(function(dt)
             if state.keepEmoteMoving and currentEmoteName and emoteTrack then
                 pcall(function()
                     local customDirection=tonumber(state.customPlaybackDirection) or 1
+                    local normalDirection=tonumber(state.normalEmoteDirection) or 1
                     emoteTrack.Priority=Enum.AnimationPriority.Action4
                     emoteTrack.Looped=true
                     emoteTrack:Play(0.05,1,emoteSpeed)
-                    if customDirection<0 and emoteTrack.Length>0 then emoteTrack.TimePosition=math.max(emoteTrack.Length-0.001,0) end
-                    emoteTrack:AdjustSpeed(customDirection<0 and -state.customEmoteSpeed or emoteSpeed)
+                    if (customDirection<0 or normalDirection<0) and emoteTrack.Length>0 then emoteTrack.TimePosition=math.max(emoteTrack.Length-0.001,0) end
+                    local desired=customDirection<0 and -(tonumber(state.customEmoteSpeed) or emoteSpeed)
+                        or (normalDirection<0 and -emoteSpeed or emoteSpeed)
+                    emoteTrack:AdjustSpeed(desired)
                 end)
             end
             emoteResumeBusy=false
@@ -6117,25 +6159,41 @@ function state.emoteSearch.addClear(box)
     button.MouseButton1Click:Connect(function() box.Text="" end)
 end
 local function clearEmoteResults()
+    table.clear(state.emoteReverseViews)
     for _,child in ipairs(emoteResults:GetChildren()) do if child:IsA("GuiObject") then child:Destroy() end end
+end
+state.refreshNormalEmoteReverseAccents=function()
+    for _,refresh in ipairs(state.emoteReverseViews) do refresh() end
 end
 local loadEmoteResults
 local function createEmoteResult(id,name,badge)
     local row=create("Frame",{Size=UDim2.new(1,-4,0,30),BackgroundTransparency=1,Parent=emoteResults})
     local unavailable=state.unavailableEmoteIds[tostring(id)]==true
-    local button=create("TextButton",{Size=UDim2.new(1,-36,0,28),BackgroundColor3=Color3.fromRGB(45,40,62),
+    local button=create("TextButton",{Size=UDim2.new(1,-66,0,28),BackgroundColor3=Color3.fromRGB(45,40,62),
         BorderSizePixel=0,Text=unavailable and ("Unavailable — "..name)
             or ((badge and (badge.."  ") or "")..(state.emoteAliases[tostring(id)] or name)),
         TextColor3=unavailable and Color3.fromRGB(220,120,135) or Color3.fromRGB(230,225,240),TextSize=11,
         Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=row})
     create("UIPadding",{PaddingLeft=UDim.new(0,8),Parent=button})
     create("UICorner",{CornerRadius=UDim.new(0,5),Parent=button})
+    local reverse=create("TextButton",{Size=UDim2.new(0,28,0,28),Position=UDim2.new(1,-62,0,0),
+        BackgroundColor3=Color3.fromRGB(40,36,52),BorderSizePixel=0,Text="↶",
+        TextColor3=Color3.fromRGB(180,175,195),TextSize=17,Font=Enum.Font.GothamBold,Parent=row})
+    create("UICorner",{CornerRadius=UDim.new(0,5),Parent=reverse})
     local star=create("TextButton",{Size=UDim2.new(0,30,0,28),Position=UDim2.new(1,-30,0,0),
         BackgroundColor3=Color3.fromRGB(55,48,70),BorderSizePixel=0,
         Text=state.emoteFavorites[tostring(id)] and "★" or "☆",
         TextColor3=state.emoteFavorites[tostring(id)] and Color3.fromRGB(255,215,55) or Color3.fromRGB(155,145,175),
         TextSize=17,Font=Enum.Font.GothamBold,Parent=row})
     create("UICorner",{CornerRadius=UDim.new(0,5),Parent=star})
+    local function refreshReverse()
+        if not reverse.Parent then return end
+        local reversing=not emoteSyncActive and state.normalEmoteDirection==-1 and state.emoteCurrent
+            and tostring(state.emoteCurrent.id)==tostring(id)
+        reverse.BackgroundColor3=reversing and Color3.fromRGB(125,42,55) or Color3.fromRGB(40,36,52)
+        reverse.TextColor3=reversing and Color3.fromRGB(255,225,230) or Color3.fromRGB(180,175,195)
+    end
+    table.insert(state.emoteReverseViews,refreshReverse); refreshReverse()
     button.MouseButton1Click:Connect(function()
         if state.unavailableEmoteIds[tostring(id)] then
             button.Text="Unavailable — "..name; button.TextColor3=Color3.fromRGB(220,120,135); return
@@ -6144,6 +6202,7 @@ local function createEmoteResult(id,name,badge)
             button.Text="Unavailable — "..name; button.TextColor3=Color3.fromRGB(220,120,135)
         end
     end)
+    reverse.MouseButton1Click:Connect(function() reverseNormalEmote(id,name) end)
     star.MouseButton1Click:Connect(function()
         local key=tostring(id)
         if state.emoteFavorites[key] then state.emoteFavorites[key]=nil else state.emoteFavorites[key]={id=id,name=name} end
@@ -8506,7 +8565,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.8.5 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.8.6 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -9648,7 +9707,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.8.5] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.8.6] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.8.5] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.8.6] Loaded, but this executor does not expose queue_on_teleport")
 end
