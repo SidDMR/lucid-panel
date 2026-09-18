@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.8.6
+--// Lucid Panel v5.8.7
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -358,7 +358,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.8.6",
+    Text                   = "LUCID PANEL  •  v5.8.7",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -5831,6 +5831,7 @@ local function playEmote(assetId,name,direction)
             while emoteTrack==track and track.Length<=0 and os.clock()<deadline do RunService.Heartbeat:Wait() end
             if emoteTrack==track and state.normalEmoteDirection==-1 then
                 pcall(function()
+                    if not track.IsPlaying then track:Play(0.03,1,emoteSpeed) end
                     if track.TimePosition<=0.03 and track.Length>0 then track.TimePosition=math.max(track.Length-0.001,0) end
                     track:AdjustSpeed(-emoteSpeed)
                 end)
@@ -5849,6 +5850,7 @@ local function reverseNormalEmote(assetId,name)
     local direction=state.normalEmoteDirection==-1 and 1 or -1
     state.normalEmoteDirection=direction
     pcall(function()
+        if not emoteTrack.IsPlaying then emoteTrack:Play(0.03,1,emoteSpeed) end
         if direction<0 and emoteTrack.TimePosition<=0.03 and emoteTrack.Length>0 then
             emoteTrack.TimePosition=math.max(emoteTrack.Length-0.001,0)
         end
@@ -6177,8 +6179,8 @@ local function createEmoteResult(id,name,badge)
     create("UIPadding",{PaddingLeft=UDim.new(0,8),Parent=button})
     create("UICorner",{CornerRadius=UDim.new(0,5),Parent=button})
     local reverse=create("TextButton",{Size=UDim2.new(0,28,0,28),Position=UDim2.new(1,-62,0,0),
-        BackgroundColor3=Color3.fromRGB(40,36,52),BorderSizePixel=0,Text="↶",
-        TextColor3=Color3.fromRGB(180,175,195),TextSize=17,Font=Enum.Font.GothamBold,Parent=row})
+        BackgroundColor3=Color3.fromRGB(40,36,52),BorderSizePixel=0,Text="<<",
+        TextColor3=Color3.fromRGB(180,175,195),TextSize=10,Font=Enum.Font.GothamBold,Parent=row})
     create("UICorner",{CornerRadius=UDim.new(0,5),Parent=reverse})
     local star=create("TextButton",{Size=UDim2.new(0,30,0,28),Position=UDim2.new(1,-30,0,0),
         BackgroundColor3=Color3.fromRGB(55,48,70),BorderSizePixel=0,
@@ -6746,7 +6748,7 @@ state.initializeEmoteStudio=function(api)
             local reversing=isActive and activeCustomDirection==-1
             local reverse=create("TextButton",{Size=UDim2.new(0,26,0,26),Position=UDim2.new(1,-112,0,1),
                 BackgroundColor3=reversing and Color3.fromRGB(125,42,55) or Color3.fromRGB(35,32,45),BackgroundTransparency=reversing and 0.15 or 0.55,
-                BorderSizePixel=0,Text="↶",TextColor3=reversing and Color3.fromRGB(255,225,230) or Color3.fromRGB(180,175,195),TextSize=17,Font=Enum.Font.GothamBold,Parent=row})
+                BorderSizePixel=0,Text="<<",TextColor3=reversing and Color3.fromRGB(255,225,230) or Color3.fromRGB(180,175,195),TextSize=10,Font=Enum.Font.GothamBold,Parent=row})
             local favorite=create("TextButton",{Size=UDim2.new(0,26,0,28),Position=UDim2.new(1,-84,0,0),BackgroundTransparency=1,
                 BorderSizePixel=0,Text=item.favorite and "★" or "☆",TextColor3=item.favorite and Color3.fromRGB(255,215,55) or Color3.fromRGB(180,175,195),TextSize=17,Font=Enum.Font.GothamBold,Parent=row})
             local bind=create("TextButton",{Size=UDim2.new(0,26,0,28),Position=UDim2.new(1,-56,0,0),BackgroundTransparency=1,
@@ -8565,7 +8567,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.8.6 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.8.7 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -9707,7 +9709,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.8.6] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.8.7] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.8.6] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.8.7] Loaded, but this executor does not expose queue_on_teleport")
 end
