@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.8.8
+--// Lucid Panel v5.8.10
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -358,7 +358,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.8.8",
+    Text                   = "LUCID PANEL  •  v5.8.10",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -5701,6 +5701,7 @@ local emoteSyncPlayer=nil
 local emoteSyncActive=false
 local emoteSyncAnimationId=nil
 local emoteSyncElapsed=0
+local emoteSyncMissingSince=nil
 createToggle("Keep Emote While Moving",nextOrder(),true,function(on)
     state.keepEmoteMoving=on
 end)
@@ -5945,14 +5946,17 @@ local function getSyncSourceTrack(player)
     local animator=humanoid and humanoid:FindFirstChildOfClass("Animator")
     if not animator then return nil end
     local best=nil
+    local bestWeight=-1
     for _,playing in ipairs(animator:GetPlayingAnimationTracks()) do
         local animation=playing.Animation
         local animationId=animation and animation.AnimationId
-        local valid=playing.IsPlaying and playing.WeightCurrent>0.01 and animationId and animationId~=""
+        local effectiveWeight=math.max(playing.WeightCurrent,playing.WeightTarget)
+        local valid=playing.IsPlaying and effectiveWeight>0.001 and animationId and animationId~=""
         if valid then
-            if animationId==emoteSyncAnimationId then return playing end
-            if not best or playing.WeightCurrent>best.WeightCurrent
-                or (playing.WeightCurrent==best.WeightCurrent and playing.Priority.Value>best.Priority.Value) then best=playing end
+            if not best or effectiveWeight>bestWeight
+                or (effectiveWeight==bestWeight and playing.Priority.Value>best.Priority.Value) then
+                best=playing; bestWeight=effectiveWeight
+            end
         end
     end
     return best
@@ -5994,8 +5998,7 @@ local function loadSyncedTrack(sourceTrack)
 end
 
 local function stopEmoteSync(stopPlayback)
-    emoteSyncActive=false; emoteSyncPlayer=nil; emoteSyncAnimationId=nil; emoteSyncElapsed=0
-    state.emoteSyncLastSpeed=nil; state.emoteSyncLastPosition=nil; state.emoteSyncSourceLooped=nil
+    emoteSyncActive=false; emoteSyncPlayer=nil; emoteSyncAnimationId=nil; emoteSyncElapsed=0; emoteSyncMissingSince=nil
     state.emoteCurrent=nil
     if state.updateCurrentSyncEmote then state.updateCurrentSyncEmote(nil,nil) end
     if stopPlayback then stopEmote() end
@@ -6005,7 +6008,7 @@ local function beginEmoteSync()
     local player=findEmoteSyncPlayer(emoteSyncBox.Text)
     if not player then emoteStatus.Text="Sync player not found"; return end
     stopEmote()
-    emoteSyncPlayer=player; emoteSyncActive=true; emoteSyncElapsed=1
+    emoteSyncPlayer=player; emoteSyncActive=true; emoteSyncElapsed=1; emoteSyncMissingSince=nil
     table.insert(state.emoteRecentSyncPlayers,1,player.Name)
     for index=#state.emoteRecentSyncPlayers,2,-1 do
         if state.emoteRecentSyncPlayers[index]==player.Name then table.remove(state.emoteRecentSyncPlayers,index) end
@@ -6058,22 +6061,6 @@ currentSection=state.emoteModuleTabs.main
 
 track(RunService.Heartbeat:Connect(function(dt)
     if not emoteSyncActive then return end
-    -- Local Animate scripts can suppress an Action track every frame as soon as
-    -- the local character walks. Keep Emote must defend the synced track at the
-    -- same cadence; timing/drift correction remains throttled below.
-    if state.keepEmoteMoving and emoteTrack and emoteSyncAnimationId then
-        pcall(function()
-            emoteTrack.Priority=Enum.AnimationPriority.Action4
-            emoteTrack.Looped=true
-            if not emoteTrack.IsPlaying then
-                emoteTrack:Play(0.03,1,tonumber(state.emoteSyncLastSpeed) or 1)
-                if emoteTrack.Length>0 and state.emoteSyncLastPosition then
-                    emoteTrack.TimePosition=math.clamp(state.emoteSyncLastPosition,0,emoteTrack.Length)
-                end
-            end
-            if emoteTrack.WeightTarget<0.99 then emoteTrack:AdjustWeight(1,0.03) end
-        end)
-    end
     emoteSyncElapsed=emoteSyncElapsed+dt
     if emoteSyncElapsed<(state.lowPerformanceMode and 0.25 or 0.12) then return end
     emoteSyncElapsed=0
@@ -6082,14 +6069,18 @@ track(RunService.Heartbeat:Connect(function(dt)
     end
     local sourceTrack=getSyncSourceTrack(emoteSyncPlayer)
     if not sourceTrack then
-        if emoteTrack and emoteTrack.IsPlaying then pcall(function() emoteTrack:Stop(0.1) end) end
-        emoteStatus.Text="Waiting for "..emoteSyncPlayer.Name
+        emoteSyncMissingSince=emoteSyncMissingSince or os.clock()
+        -- Animation blending can briefly expose no weighted track when an
+        -- emote hands off to idle/walk/run/jump/fall. Keep Sync active and
+        -- preserve the last pose long enough for the incoming track to appear.
+        if os.clock()-emoteSyncMissingSince>0.45 and emoteTrack and emoteTrack.IsPlaying then
+            pcall(function() emoteTrack:Stop(0.1) end)
+        end
+        emoteStatus.Text="Tracking "..emoteSyncPlayer.Name.."..."
         return
     end
+    emoteSyncMissingSince=nil
     local sourceId=sourceTrack.Animation and sourceTrack.Animation.AnimationId
-    state.emoteSyncLastSpeed=sourceTrack.Speed
-    state.emoteSyncLastPosition=sourceTrack.TimePosition
-    state.emoteSyncSourceLooped=sourceTrack.Looped
     if not emoteTrack or sourceId~=emoteSyncAnimationId then
         if not loadSyncedTrack(sourceTrack) then emoteStatus.Text="Could not load target emote"; return end
     end
@@ -6099,7 +6090,7 @@ track(RunService.Heartbeat:Connect(function(dt)
         return
     end
     pcall(function()
-        emoteTrack.Looped=state.keepEmoteMoving or state.emoteSyncSourceLooped==true
+        emoteTrack.Looped=sourceTrack.Looped
         if not emoteTrack.IsPlaying then emoteTrack:Play(0.05,1,sourceTrack.Speed) end
         local syncMode=state.emoteSyncMode
         if syncMode=="Animation" then emoteTrack:AdjustSpeed(emoteSpeed) else emoteTrack:AdjustSpeed(sourceTrack.Speed) end
@@ -8578,7 +8569,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.8.8 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.8.10 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -9720,7 +9711,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.8.8] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.8.10] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.8.8] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.8.10] Loaded, but this executor does not expose queue_on_teleport")
 end
