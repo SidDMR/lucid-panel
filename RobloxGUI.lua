@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.8.10
+--// Lucid Panel v5.8.11
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -358,7 +358,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.8.10",
+    Text                   = "LUCID PANEL  •  v5.8.11",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -4557,6 +4557,7 @@ actionButton("Spectate GoTo Player", function(button)
 end)
 actionButton("Stop Spectating", function()
     stopSpectatePreview()
+    if state.cameraFollowApi and state.cameraFollowApi.stop then state.cameraFollowApi.stop() end
     local camera=workspace.CurrentCamera; local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
     if camera and humanoid then camera.CameraSubject=humanoid; camera.CameraType=Enum.CameraType.Custom end
 end)
@@ -4737,12 +4738,73 @@ state.initializeMouseUnlock()
 actionButton("First Person", function() LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson end)
 actionButton("Third Person / Restore", function()
     LocalPlayer.CameraMode = Enum.CameraMode.Classic
+    if state.cameraFollowApi and state.cameraFollowApi.stop then state.cameraFollowApi.stop() end
     if state.freecamEnabled then setFreecam(false) end
     local camera = workspace.CurrentCamera
     local h = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
     if camera and h then camera.CameraType = Enum.CameraType.Custom; camera.CameraSubject = h end
     releaseFreecamMouse()
 end)
+
+-- Full main-camera following, separate from the detachable Spectate Preview.
+do
+    local followedPlayer=nil
+    local followedHumanoid=nil
+    local followedCharacterConnection=nil
+    local followedSubjectConnection=nil
+    local function disconnectFollowCharacter()
+        if followedCharacterConnection then followedCharacterConnection:Disconnect(); followedCharacterConnection=nil end
+        if followedSubjectConnection then followedSubjectConnection:Disconnect(); followedSubjectConnection=nil end
+    end
+    local function restoreLocalCamera()
+        local camera=workspace.CurrentCamera
+        local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if camera and humanoid then camera.CameraType=Enum.CameraType.Custom; camera.CameraSubject=humanoid end
+    end
+    local function applyFollowCharacter(character,target)
+        task.spawn(function()
+            local humanoid=character and (character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid",5))
+            if followedPlayer~=target or not humanoid or not humanoid.Parent then return end
+            if state.freecamEnabled then setFreecam(false) end
+            local camera=workspace.CurrentCamera
+            if camera then
+                followedHumanoid=humanoid
+                camera.CameraType=Enum.CameraType.Custom; camera.CameraSubject=humanoid
+                if followedSubjectConnection then followedSubjectConnection:Disconnect() end
+                followedSubjectConnection=camera:GetPropertyChangedSignal("CameraSubject"):Connect(function()
+                    if followedPlayer==target and followedHumanoid==humanoid and humanoid.Parent
+                        and camera.CameraSubject~=humanoid then camera.CameraSubject=humanoid end
+                end)
+            end
+        end)
+    end
+    local function stopCameraFollow(restoreCamera)
+        followedPlayer=nil; followedHumanoid=nil; disconnectFollowCharacter()
+        if restoreCamera~=false then restoreLocalCamera() end
+    end
+    local function startCameraFollow(query)
+        local target=gotoApi.find(query)
+        if not target or target==LocalPlayer then return false,"Player not found" end
+        stopCameraFollow(false)
+        followedPlayer=target
+        followedCharacterConnection=target.CharacterAdded:Connect(function(character)
+            applyFollowCharacter(character,target)
+        end)
+        applyFollowCharacter(target.Character,target)
+        return true,target.Name
+    end
+    state.cameraFollowApi={start=startCameraFollow,stop=stopCameraFollow,getPlayer=function() return followedPlayer end}
+    track(Players.PlayerRemoving:Connect(function(player)
+        if player==followedPlayer then
+            stopCameraFollow(true)
+            notifyLucid("Camera follow stopped",player.Name.." left the server",Color3.fromRGB(235,175,70))
+        end
+    end))
+    track(workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+        if followedPlayer then applyFollowCharacter(followedPlayer.Character,followedPlayer) end
+    end))
+    addCleanup(function() stopCameraFollow(true); state.cameraFollowApi=nil end)
+end
 
 sectionLabel("Clean Photo Mode",nextOrder())
 do
@@ -8569,7 +8631,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.8.10 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.8.11 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -8813,6 +8875,7 @@ state.initializeCommandConsole=function()
         hlp="help",op="open",pnl="panel",gt="goto",lg="loopgoto",ulg="unloopgoto",rt="return",
         sy="sync",dsy="desync",sem="stopemote",ssy="stopsync",us="unspec",em="emote",
         ra="reanim",fe="fogend",dx="dex",udx="undex",res="restore",ld="lgdir",gl="getlink",
+        cf="camerafollow",ucf="unfixcamera",
     }
     local function buildCommandCatalog()
         local catalog={
@@ -8838,6 +8901,8 @@ state.initializeCommandConsole=function()
             {command="!fov <20-120>",description="Set and lock the camera field of view"},
             {command="!fps <30-1000>",description="Set the client FPS cap"},
             {command="!fullbright <on|off>",description="Use balanced daylight without blown-out whites"},
+            {command="!fixcamera <player>",description="Lock the main camera onto a player"},
+            {command="!camerafollow <player>",description="Alias for fixcamera"},
             {command="!goto <player>",description="Teleport to an in-game player"},
             {command="!gto <player>",description="Alias for goto"},
             {command="!getlink",description="Copy a link to the current game server"},
@@ -8862,6 +8927,7 @@ state.initializeCommandConsole=function()
             {command="!sync <player>",description="Synchronize with a player's current emote"},
             {command="!unspec",description="Stop spectating and return the camera to your character"},
             {command="!unloopgoto",description="Disable loop goto"},
+            {command="!unfixcamera",description="Stop main-camera player following"},
             {command="!walkspeed <value>",description="Set and lock WalkSpeed"},
             {command="!waypoint delete <name>",description="Delete a named waypoint"},
             {command="!waypoint goto <name>",description="Teleport to a named waypoint"},
@@ -9117,6 +9183,23 @@ state.initializeCommandConsole=function()
             local stopSpectating=state.commandActions and state.commandActions["Stop Spectating"]
             if stopSpectating then stopSpectating(); finish(true,"Spectating stopped")
             else finish(false,"Stop Spectating action unavailable") end
+            return
+        elseif command=="fixcamera" or command=="camerafollow" then
+            if rest=="" then finish(false,"Use: !"..command.." <player>"); return end
+            local ok,name=state.cameraFollowApi and state.cameraFollowApi.start(rest)
+            finish(ok==true,ok and ("Camera following "..tostring(name)) or tostring(name or "Camera follow unavailable"))
+            return
+        elseif command=="fix" or command=="camera" then
+            local operation,query=rest:match("^(%S+)%s+(.+)$")
+            local valid=(command=="fix" and normalize(operation)=="camera")
+                or (command=="camera" and normalize(operation)=="follow")
+            if not valid then finish(false,command=="fix" and "Use: fix camera <player>" or "Use: camera follow <player>"); return end
+            local ok,name=state.cameraFollowApi and state.cameraFollowApi.start(query)
+            finish(ok==true,ok and ("Camera following "..tostring(name)) or tostring(name or "Camera follow unavailable"))
+            return
+        elseif command=="unfixcamera" or command=="stopcamera" then
+            if state.cameraFollowApi then state.cameraFollowApi.stop(); finish(true,"Camera follow stopped")
+            else finish(false,"Camera follow unavailable") end
             return
         elseif command=="spec" or command=="spectate" then
             if rest~="" then state.gotoApi.box.Text=rest end
@@ -9711,7 +9794,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.8.10] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.8.11] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.8.10] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.8.11] Loaded, but this executor does not expose queue_on_teleport")
 end
