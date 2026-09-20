@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.8.12
+--// Lucid Panel v5.8.13
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -358,7 +358,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.8.12",
+    Text                   = "LUCID PANEL  •  v5.8.13",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -2799,6 +2799,7 @@ local gotoBusy = false
 local gotoOffset=Vector3.new(state.gotoOffsetX,state.gotoOffsetY,state.gotoOffsetZ)
 local previousTeleportCFrame=nil
 local recentGotoPlayers={}
+local refreshRecentGoto
 local gotoOffsetRow=rowFrame(nextOrder(),28)
 create("TextLabel",{Size=UDim2.new(0,78,1,0),BackgroundTransparency=1,Text="Offset X,Y,Z",
     TextColor3=Color3.fromRGB(185,175,205),TextSize=10,Font=Enum.Font.Gotham,
@@ -2872,8 +2873,12 @@ local function goToRequestedPlayer()
                 previousTeleportCFrame=root.CFrame
                 root.CFrame=computeGotoCFrame(targetRoot,gotoOffset,state.loopGotoDirection,false)
                 clearCharacterVelocity(character)
+                for index=#recentGotoPlayers,1,-1 do
+                    if recentGotoPlayers[index]==target.Name then table.remove(recentGotoPlayers,index) end
+                end
                 table.insert(recentGotoPlayers,1,target.Name)
                 while #recentGotoPlayers>5 do table.remove(recentGotoPlayers) end
+                if refreshRecentGoto then refreshRecentGoto() end
                 gotoBtn.Text = "Done"
             end
         end
@@ -2905,12 +2910,41 @@ local function returnPreviousPosition()
 end
 returnButton.MouseButton1Click:Connect(returnPreviousPosition)
 registerFavorite("Return Position",returnPreviousPosition,returnRow,returnButton,"Return to Previous Position")
-local recentGotoLabel=create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Recent players appear after Go To",TextColor3=Color3.fromRGB(145,135,165),TextSize=10,
-    Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=nextOrder(),Parent=currentSection})
-gotoBox:GetPropertyChangedSignal("Text"):Connect(function()
-    if gotoBox.Text=="" and #recentGotoPlayers>0 then recentGotoLabel.Text="Recent: "..table.concat(recentGotoPlayers,", ") end
+local recentGotoRow=create("Frame",{Size=UDim2.new(1,0,0,22),BackgroundTransparency=1,
+    LayoutOrder=nextOrder(),Parent=currentSection})
+local recentGotoTitle=create("TextLabel",{Size=UDim2.new(0,43,1,0),BackgroundTransparency=1,
+    Text="Recent:",TextColor3=Color3.fromRGB(145,135,165),TextSize=10,Font=Enum.Font.Gotham,
+    TextXAlignment=Enum.TextXAlignment.Left,Parent=recentGotoRow})
+local recentGotoScroll=create("ScrollingFrame",{Size=UDim2.new(1,-43,1,0),Position=UDim2.new(0,43,0,0),
+    BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=2,ScrollingDirection=Enum.ScrollingDirection.X,
+    CanvasSize=UDim2.new(),Parent=recentGotoRow})
+local recentGotoLayout=create("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,
+    SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,4),Parent=recentGotoScroll})
+refreshRecentGoto=function()
+    for _,child in ipairs(recentGotoScroll:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
+    recentGotoTitle.Text=#recentGotoPlayers>0 and "Recent:" or "Recent: none"
+    recentGotoTitle.Size=#recentGotoPlayers>0 and UDim2.new(0,43,1,0) or UDim2.new(1,0,1,0)
+    recentGotoScroll.Visible=#recentGotoPlayers>0
+    for index,name in ipairs(recentGotoPlayers) do
+        local playerName=name
+        local width=math.clamp(16+#playerName*6,44,96)
+        local button=create("TextButton",{Size=UDim2.new(0,width,0,20),BackgroundColor3=Color3.fromRGB(34,31,44),
+            BorderSizePixel=0,Text=playerName,TextColor3=Color3.fromRGB(205,198,220),TextSize=9,
+            Font=Enum.Font.Gotham,LayoutOrder=index,Parent=recentGotoScroll})
+        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=button})
+        button.MouseButton1Click:Connect(function()
+            gotoBox.Text=playerName
+            goToRequestedPlayer()
+        end)
+    end
+    recentGotoScroll.CanvasSize=UDim2.new(0,recentGotoLayout.AbsoluteContentSize.X,0,0)
+end
+recentGotoLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    recentGotoScroll.CanvasSize=UDim2.new(0,recentGotoLayout.AbsoluteContentSize.X,0,0)
 end)
+refreshRecentGoto()
 
 local loopGotoTarget = nil
 local loopGotoGeneration = 0
@@ -4772,8 +4806,27 @@ do
         local lookAt=targetPosition(target)
         if not camera or not lookAt then return end
         local cameraPosition=camera.CFrame.Position
-        if (lookAt-cameraPosition).Magnitude<0.05 then return end
-        camera.CFrame=CFrame.lookAt(cameraPosition,lookAt,Vector3.yAxis)
+        local flatTarget=Vector3.new(lookAt.X,cameraPosition.Y,lookAt.Z)-cameraPosition
+        if flatTarget.Magnitude<0.05 then return end
+
+        -- Preserve the player's current vertical camera angle. Only steering
+        -- yaw keeps Roblox Shift Lock's zoom, shoulder offset, and pitch intact.
+        local currentLook=camera.CFrame.LookVector
+        local horizontalScale=math.sqrt(math.max(0,1-currentLook.Y*currentLook.Y))
+        local aimedLook=flatTarget.Unit*horizontalScale+Vector3.new(0,currentLook.Y,0)
+        camera.CFrame=CFrame.lookAt(cameraPosition,cameraPosition+aimedLook,Vector3.yAxis)
+
+        -- Roblox normally performs this rotation for Shift Lock before our
+        -- post-camera correction. Apply the corrected yaw to the character too.
+        local character=LocalPlayer.Character
+        local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+        local root=character and character:FindFirstChild("HumanoidRootPart")
+        if humanoid and root and humanoid.Health>0 and not humanoid.SeatPart then
+            local rootTarget=Vector3.new(lookAt.X,root.Position.Y,lookAt.Z)
+            if (rootTarget-root.Position).Magnitude>0.05 then
+                root.CFrame=CFrame.lookAt(root.Position,rootTarget,Vector3.yAxis)
+            end
+        end
     end
     local function stopCameraFollow(restoreCamera)
         followedPlayer=nil
@@ -8628,7 +8681,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.8.12 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.8.13 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -9791,7 +9844,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.8.12] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.8.13] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.8.12] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.8.13] Loaded, but this executor does not expose queue_on_teleport")
 end
