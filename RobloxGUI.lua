@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.2
+--// Lucid Panel v5.9.3
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -387,7 +387,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.2",
+    Text                   = "LUCID PANEL  •  v5.9.3",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -3098,12 +3098,31 @@ do
     create("UICorner", {CornerRadius=UDim.new(0,6), Parent=lgDirDropdown})
     create("UIListLayout", {SortOrder=Enum.SortOrder.LayoutOrder, Padding=UDim.new(0,1), Parent=lgDirDropdown})
     create("UIPadding", {PaddingTop=UDim.new(0,3), PaddingBottom=UDim.new(0,3), Parent=lgDirDropdown})
+    local lockedAncestorScroll={}
+    local function unlockAncestorScrolling()
+        for scrolling,wasEnabled in pairs(lockedAncestorScroll) do
+            if scrolling.Parent then scrolling.ScrollingEnabled=wasEnabled end
+        end
+        table.clear(lockedAncestorScroll)
+    end
+    local function lockAncestorScrolling()
+        unlockAncestorScrolling()
+        local ancestor=lgDirDropdown.Parent
+        while ancestor and ancestor~=screenGui do
+            if ancestor:IsA("ScrollingFrame") then
+                lockedAncestorScroll[ancestor]=ancestor.ScrollingEnabled
+                ancestor.ScrollingEnabled=false
+            end
+            ancestor=ancestor.Parent
+        end
+    end
     local function setLoopGotoDirection(dir)
         if dir=="Up" then dir="Head Sit" end -- migrate v5.4.12 profiles
         if not table.find(loopGotoDirections,dir) then dir="Right" end
         state.loopGotoDirection = dir
         lgDirBtn.Text = dir
         lgDirDropdown.Visible = false
+        unlockAncestorScrolling()
     end
     for i, dir in ipairs(loopGotoDirections) do
         local optBtn = create("TextButton", {
@@ -3115,10 +3134,17 @@ do
     end
     lgDirBtn.MouseButton1Click:Connect(function()
         lgDirDropdown.Visible = not lgDirDropdown.Visible
+        if not lgDirDropdown.Visible then unlockAncestorScrolling() end
     end)
     local directionDropdownHovered=false
-    lgDirDropdown.MouseEnter:Connect(function() directionDropdownHovered=true end)
-    lgDirDropdown.MouseLeave:Connect(function() directionDropdownHovered=false end)
+    lgDirDropdown.MouseEnter:Connect(function()
+        directionDropdownHovered=true
+        if lgDirDropdown.Visible then lockAncestorScrolling() end
+    end)
+    lgDirDropdown.MouseLeave:Connect(function()
+        directionDropdownHovered=false
+        unlockAncestorScrolling()
+    end)
     track(UserInputService.InputChanged:Connect(function(input)
         if not directionDropdownHovered or not lgDirDropdown.Visible
             or input.UserInputType~=Enum.UserInputType.MouseWheel then return end
@@ -3130,6 +3156,7 @@ do
         lgDirDropdown.CanvasPosition=Vector2.new(0,math.clamp(
             lgDirDropdown.CanvasPosition.Y-math.sign(wheel)*42,0,maximum))
     end))
+    addCleanup(unlockAncestorScrolling)
     gotoApi.setLoopDirection = setLoopGotoDirection
 end
 gotoApi.go=function(name) gotoApi.box.Text=tostring(name or ""); goToRequestedPlayer() end
@@ -8786,7 +8813,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.2 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.3 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -10022,7 +10049,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.2] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.3] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.2] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.3] Loaded, but this executor does not expose queue_on_teleport")
 end
