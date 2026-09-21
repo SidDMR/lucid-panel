@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.1
+--// Lucid Panel v5.9.2
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -387,7 +387,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.1",
+    Text                   = "LUCID PANEL  •  v5.9.2",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -3092,6 +3092,7 @@ do
     local lgDirDropdown = create("ScrollingFrame", {
         Size=UDim2.new(1,-108,0,72), Position=UDim2.new(0,108,1,2),
         CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,ScrollingDirection=Enum.ScrollingDirection.Y,
+        ScrollingEnabled=false,
         ScrollBarThickness=3,ScrollBarImageColor3=Color3.fromRGB(125,100,190),ElasticBehavior=Enum.ElasticBehavior.Never,
         BackgroundColor3=Color3.fromRGB(38,36,52),BorderSizePixel=0,Visible=false,Active=true,ZIndex=10,Parent=lgDirRow})
     create("UICorner", {CornerRadius=UDim.new(0,6), Parent=lgDirDropdown})
@@ -3118,21 +3119,17 @@ do
     local directionDropdownHovered=false
     lgDirDropdown.MouseEnter:Connect(function() directionDropdownHovered=true end)
     lgDirDropdown.MouseLeave:Connect(function() directionDropdownHovered=false end)
-    local loopDirectionScrollAction="LucidLoopDirectionOneRow"
-    ContextActionService:BindActionAtPriority(loopDirectionScrollAction,function(_,inputState,input)
-        if not directionDropdownHovered or not lgDirDropdown.Visible or inputState~=Enum.UserInputState.Change then
-            return Enum.ContextActionResult.Pass
-        end
+    track(UserInputService.InputChanged:Connect(function(input)
+        if not directionDropdownHovered or not lgDirDropdown.Visible
+            or input.UserInputType~=Enum.UserInputType.MouseWheel then return end
         local wheel=input.Position.Z
-        if wheel==0 then return Enum.ContextActionResult.Sink end
+        if wheel==0 then return end
         local maximum=math.max(0,lgDirDropdown.AbsoluteCanvasSize.Y-lgDirDropdown.AbsoluteWindowSize.Y)
         -- Roblox commonly reports a wheel notch as +/-3. Normalize it so one
         -- notch always advances exactly two 21 px options instead of 3-4.
         lgDirDropdown.CanvasPosition=Vector2.new(0,math.clamp(
             lgDirDropdown.CanvasPosition.Y-math.sign(wheel)*42,0,maximum))
-        return Enum.ContextActionResult.Sink
-    end,false,3100,Enum.UserInputType.MouseWheel)
-    addCleanup(function() ContextActionService:UnbindAction(loopDirectionScrollAction) end)
+    end))
     gotoApi.setLoopDirection = setLoopGotoDirection
 end
 gotoApi.go=function(name) gotoApi.box.Text=tostring(name or ""); goToRequestedPlayer() end
@@ -8789,7 +8786,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.1 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.2 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -10025,7 +10022,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.1] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.2] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.1] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.2] Loaded, but this executor does not expose queue_on_teleport")
 end
