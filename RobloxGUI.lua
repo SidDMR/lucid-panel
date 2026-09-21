@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.8.15
+--// Lucid Panel v5.9.1
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -216,7 +216,27 @@ local state = {
     localHeadlessEnabled = false,
     favoriteNames     = {},
     emoteFavorites    = {},
+    favoriteCommands = {},
+    notificationHistory = {},
+    notificationLevel = "All",
+    undoStack = {},
+    undoBusy = false,
+    targetPlayerName = nil,
 }
+
+function state.pushUndo(label,callback)
+    if state.undoBusy or type(callback)~="function" then return end
+    table.insert(state.undoStack,1,{label=tostring(label or "Change"),callback=callback})
+    while #state.undoStack>20 do table.remove(state.undoStack) end
+end
+function state.undoLast()
+    local entry=table.remove(state.undoStack,1)
+    if not entry then return false,"Nothing to undo" end
+    state.undoBusy=true
+    local ok,err=pcall(entry.callback)
+    state.undoBusy=false
+    return ok,ok and ("Undid: "..entry.label) or tostring(err)
+end
 
 -- ============================================================
 -- UTILITY: create Instance with properties
@@ -258,7 +278,16 @@ local notificationHost=create("Frame",{Name="LucidNotifications",Size=UDim2.new(
 create("UIListLayout",{VerticalAlignment=Enum.VerticalAlignment.Bottom,HorizontalAlignment=Enum.HorizontalAlignment.Right,
     SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6),Parent=notificationHost})
 local notificationOrder=0
-local function notifyLucid(title,message,color)
+local function notifyLucid(title,message,color,importance)
+    local historyEntry={time=os.date and os.date("%H:%M:%S") or "",title=tostring(title),message=tostring(message),
+        color=color,importance=importance or "normal"}
+    table.insert(state.notificationHistory,1,historyEntry)
+    while #state.notificationHistory>60 do table.remove(state.notificationHistory) end
+    if state.refreshNotificationHistory then task.defer(state.refreshNotificationHistory) end
+    local level=state.notificationLevel or "All"
+    if level=="Off" then return end
+    if level=="Errors" and historyEntry.importance~="error" then return end
+    if level=="Important" and historyEntry.importance=="normal" then return end
     notificationOrder=notificationOrder+1
     local notice=create("Frame",{Size=UDim2.new(1,0,0,54),BackgroundColor3=Color3.fromRGB(30,27,42),
         BackgroundTransparency=0.08,BorderSizePixel=0,LayoutOrder=notificationOrder,ZIndex=201,Parent=notificationHost})
@@ -358,7 +387,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.8.15",
+    Text                   = "LUCID PANEL  •  v5.9.1",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -1307,6 +1336,7 @@ local function createToggle(labelText, order, default, callback)
         refreshFeatureStatus()
         if callback then callback(enabled) end
         if previous~=enabled and not silent then
+            state.pushUndo(labelText,function() setToggle(previous,true) end)
             notifyLucid(labelText,enabled and "Enabled" or "Disabled",
                 enabled and Color3.fromRGB(75,210,120) or Color3.fromRGB(215,105,115))
         end
@@ -2052,7 +2082,7 @@ local function restoreNoclipCollisions()
     table.clear(noclipCollisionState)
 end
 
-local _, fireNoclip = createToggle("Enable Noclip", nextOrder(), false, function(on)
+local _, fireNoclip = createToggle("Noclip", nextOrder(), false, function(on)
     state.noclipEnabled = on
     if not on then restoreNoclipCollisions() end
 end)
@@ -2778,8 +2808,8 @@ local gotoBtn = create("TextButton", {
 create("UICorner", { CornerRadius = UDim.new(0, 5), Parent = gotoBtn })
 
 local function findGotoPlayer(query)
-    query = query:match("^%s*(.-)%s*$"):lower()
-    if query == "" then return nil end
+    query = tostring(query or ""):match("^%s*(.-)%s*$"):lower()
+    if query == "" then return state.targetPlayerName and Players:FindFirstChild(state.targetPlayerName) or nil end
     local candidates = {}
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then table.insert(candidates, player) end
@@ -2955,6 +2985,44 @@ recentGotoLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(functio
 end)
 refreshRecentGoto()
 
+local targetLockRow=rowFrame(nextOrder(),28)
+local targetLockStatus=create("TextLabel",{Size=UDim2.new(1,-116,1,0),BackgroundTransparency=1,
+    Text="Target: none",TextColor3=Color3.fromRGB(165,155,185),TextSize=10,Font=Enum.Font.Gotham,
+    TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,Parent=targetLockRow})
+local lockTargetButton=create("TextButton",{Size=UDim2.new(0,55,0,22),Position=UDim2.new(1,-112,0.5,-11),
+    BackgroundColor3=Color3.fromRGB(55,48,78),BorderSizePixel=0,Text="Target",TextColor3=Color3.fromRGB(225,220,235),
+    TextSize=9,Font=Enum.Font.GothamSemibold,Parent=targetLockRow})
+local clearTargetButton=create("TextButton",{Size=UDim2.new(0,53,0,22),Position=UDim2.new(1,-53,0.5,-11),
+    BackgroundColor3=Color3.fromRGB(75,42,52),BorderSizePixel=0,Text="Clear",TextColor3=Color3.fromRGB(235,215,220),
+    TextSize=9,Font=Enum.Font.GothamSemibold,Parent=targetLockRow})
+create("UICorner",{CornerRadius=UDim.new(0,5),Parent=lockTargetButton}); create("UICorner",{CornerRadius=UDim.new(0,5),Parent=clearTargetButton})
+local function refreshTargetLock()
+    local player=state.targetPlayerName and Players:FindFirstChild(state.targetPlayerName)
+    targetLockStatus.Text=player and ("Target: "..player.Name.." ("..player.DisplayName..")") or "Target: none"
+    if not player then state.targetPlayerName=nil end
+end
+local function setTargetLock(query)
+    local player=findGotoPlayer(query)
+    if not player or player==LocalPlayer then return false,"Player not found" end
+    local previous=state.targetPlayerName
+    state.targetPlayerName=player.Name; gotoBox.Text=player.Name; refreshTargetLock()
+    state.pushUndo("Target lock",function() state.targetPlayerName=previous; refreshTargetLock() end)
+    notifyLucid("Target locked",player.Name,Color3.fromRGB(75,210,120))
+    return true,player.Name
+end
+local function clearTargetLock()
+    local previous=state.targetPlayerName
+    state.targetPlayerName=nil; refreshTargetLock()
+    if previous then
+        state.pushUndo("Clear target",function() state.targetPlayerName=previous; refreshTargetLock() end)
+        notifyLucid("Target cleared",previous,Color3.fromRGB(215,105,115))
+    end
+end
+lockTargetButton.MouseButton1Click:Connect(function() setTargetLock(gotoBox.Text) end)
+clearTargetButton.MouseButton1Click:Connect(clearTargetLock)
+gotoApi.setTarget=setTargetLock; gotoApi.clearTarget=clearTargetLock
+track(Players.PlayerRemoving:Connect(function(player) if player.Name==state.targetPlayerName then clearTargetLock() end end))
+
 local loopGotoTarget = nil
 local loopGotoGeneration = 0
 local fireLoopGoto
@@ -3058,7 +3126,10 @@ do
         local wheel=input.Position.Z
         if wheel==0 then return Enum.ContextActionResult.Sink end
         local maximum=math.max(0,lgDirDropdown.AbsoluteCanvasSize.Y-lgDirDropdown.AbsoluteWindowSize.Y)
-        lgDirDropdown.CanvasPosition=Vector2.new(0,math.clamp(lgDirDropdown.CanvasPosition.Y-wheel*21,0,maximum))
+        -- Roblox commonly reports a wheel notch as +/-3. Normalize it so one
+        -- notch always advances exactly two 21 px options instead of 3-4.
+        lgDirDropdown.CanvasPosition=Vector2.new(0,math.clamp(
+            lgDirDropdown.CanvasPosition.Y-math.sign(wheel)*42,0,maximum))
         return Enum.ContextActionResult.Sink
     end,false,3100,Enum.UserInputType.MouseWheel)
     addCleanup(function() ContextActionService:UnbindAction(loopDirectionScrollAction) end)
@@ -7664,6 +7735,9 @@ loadNamedProfile = function(button)
     table.sort(toggleNames)
     for _,name in ipairs(toggleNames) do
         local savedToggle=(payload.toggles or {})[name]
+        if savedToggle==nil and name=="Noclip" then
+            savedToggle=(payload.toggles or {})["Enable Noclip"]
+        end
         if savedToggle~=nil then
             local desired=savedToggle==true
             if activeFeatures[name]~=desired then pcall(toggleRegistry[name],desired,true) end
@@ -7852,6 +7926,12 @@ end
 actionButton("PANIC / Reset Features [End]", function(button)
     panicReset(); button.Text="Reset complete"; task.delay(1,function() if button.Parent then button.Text="PANIC / Reset Features [End]" end end)
 end, Color3.fromRGB(145,50,65))
+actionButton("Undo Last Change",function(button)
+    local ok,message=state.undoLast()
+    notifyLucid(ok and "Undo complete" or "Undo unavailable",message,
+        ok and Color3.fromRGB(75,210,120) or Color3.fromRGB(235,175,70))
+    button.Text=message; task.delay(1.2,function() if button.Parent then button.Text="Undo Last Change" end end)
+end)
 sectionLabel("Quick Keybinds", nextOrder())
 local function findShortcutKey(text)
     local requested=tostring(text or ""):match("^%s*(.-)%s*$"):lower():gsub("[%s_%-]","")
@@ -8709,7 +8789,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.8.15 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.1 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -8719,6 +8799,39 @@ create("UICorner", { CornerRadius=UDim.new(0,6), Parent=diagnosticsLabel })
 actionButton("Copy Diagnostic Report", function(button)
     if setclipboard then setclipboard(diagnosticsLabel.Text); button.Text="Report copied" else button.Text="Clipboard unavailable" end
 end)
+sectionLabel("Notification Center",nextOrder())
+local notificationHistoryLabel=create("TextLabel",{Size=UDim2.new(1,0,0,112),BackgroundColor3=Color3.fromRGB(28,26,38),
+    BorderSizePixel=0,Text="No notifications yet",TextColor3=Color3.fromRGB(205,200,218),TextSize=10,Font=Enum.Font.Code,
+    TextWrapped=true,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,
+    LayoutOrder=nextOrder(),Parent=currentSection})
+create("UICorner",{CornerRadius=UDim.new(0,6),Parent=notificationHistoryLabel})
+state.refreshNotificationHistory=function()
+    if not notificationHistoryLabel.Parent then return end
+    local lines={}
+    for index=1,math.min(6,#state.notificationHistory) do
+        local entry=state.notificationHistory[index]
+        table.insert(lines,string.format("%s  %s — %s",entry.time,entry.title,entry.message))
+    end
+    notificationHistoryLabel.Text=#lines>0 and table.concat(lines,"\n") or "No notifications yet"
+end
+local notificationLevelButton=actionButton("Notifications: "..state.notificationLevel,function(button)
+    local levels={"All","Important","Errors","Off"}
+    local index=table.find(levels,state.notificationLevel) or 1
+    state.notificationLevel=levels[index%#levels+1]
+    button.Text="Notifications: "..state.notificationLevel
+end)
+actionButton("Copy Notification History",function(button)
+    local lines={}
+    for index=#state.notificationHistory,1,-1 do
+        local entry=state.notificationHistory[index]
+        table.insert(lines,string.format("[%s] %s — %s",entry.time,entry.title,entry.message))
+    end
+    if setclipboard then setclipboard(table.concat(lines,"\n")); button.Text="History copied" else button.Text="Clipboard unavailable" end
+end)
+actionButton("Clear Notification History",function(button)
+    table.clear(state.notificationHistory); state.refreshNotificationHistory(); button.Text="History cleared"
+end,Color3.fromRGB(85,48,62))
+state.refreshNotificationHistory()
 actionButton("Emergency Cleanup Only",function(button)
     ContextActionService:UnbindAction("LucidFreecamSink")
     state.freecamEnabled=false; releaseFreecamMouse()
@@ -8867,6 +8980,8 @@ state.initializeCommandConsole=function()
         Thickness=1,Transparency=0.2,Parent=console})
     local input=styledBox(console,{Size=UDim2.new(1,-84,0,28),Position=UDim2.new(0,7,0,7),
         Text="",PlaceholderText="> type a command...",ClearTextOnFocus=false,ZIndex=171})
+    local commandHistory={}
+    local commandHistoryIndex=0
     local collapseButton=create("TextButton",{Size=UDim2.new(0,22,0,22),Position=UDim2.new(1,-76,0,10),
         BackgroundColor3=Color3.fromRGB(30,30,36),BorderSizePixel=0,Text="▼",
         TextColor3=Color3.fromRGB(190,190,200),TextSize=9,Font=Enum.Font.GothamBold,
@@ -8912,7 +9027,7 @@ state.initializeCommandConsole=function()
     create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,4),Parent=commandList})
     local function normalize(value) return tostring(value or ""):lower():gsub("%b()",""):gsub("[^%w]","") end
     local toggleCommandAliases={
-        esp="ESP All",ea="ESP All",headless="Local Headless",hl="Local Headless",noclip="Enable Noclip",antifling="Enable Anti-Fling",airwalk="Enable Air Walk",freeze="Freeze Me",
+        esp="ESP All",ea="ESP All",headless="Local Headless",hl="Local Headless",noclip="Noclip",antifling="Enable Anti-Fling",airwalk="Enable Air Walk",freeze="Freeze Me",
         infjump="Enable Inf. Jump",shiftlock="Enable Shift Lock Option",clicktp="Left Alt + Click TP",
         autoclick="Enable AutoClick",spawnpoint="Return Where I Died",recovery="Character Recovery Loop",
         camerashake="Remove Camera Shake",unlockmouse="Unlock Mouse",photomode="Photo Mode — Clean Freecam",
@@ -8923,7 +9038,7 @@ state.initializeCommandConsole=function()
         compact="Compact Panel",lowperf="Low Performance Mode",render3d="Disable 3D Rendering",
         backpackorder="Auto-arrange Saved Backpack Order",bananas="Remove Banana Peels",landmines="Remove Landmines",
         bananaesp="Banana Peel ESP (Yellow)",landmineesp="Landmine ESP (Red)",wormesp="Scary Worm ESP (Red 90% Transparent)",
-        nc="Enable Noclip",af="Enable Anti-Fling",aw="Enable Air Walk",frz="Freeze Me",ij="Enable Inf. Jump",
+        nc="Noclip",af="Enable Anti-Fling",aw="Enable Air Walk",frz="Freeze Me",ij="Enable Inf. Jump",
         sl="Enable Shift Lock Option",ctp="Left Alt + Click TP",ac="Enable AutoClick",sp="Return Where I Died",
         cr="Character Recovery Loop",rcs="Remove Camera Shake",um="Unlock Mouse",pm="Photo Mode — Clean Freecam",
         iso="Photo Isolation — Hide Other Players",hp="Hide Named Players",cl="Lock Comfort Preset",
@@ -8939,13 +9054,13 @@ state.initializeCommandConsole=function()
         exportprofile="Export Profile to Clipboard",importprofile="Import Profile from Text Box",
         deleteprofile="Delete Selected Profile",showwindows="Show All Detached Windows",
         resetwindows="Reset Off-screen Windows",snapwindows="Snap Detached Windows to Edges",
-        panic="PANIC / Reset Features [End]",refreshbackpack="Refresh Detected Backpack Tools",
+        panic="PANIC / Reset Features [End]",stopall="PANIC / Reset Features [End]",undo="Undo Last Change",refreshbackpack="Refresh Detected Backpack Tools",
         clearbackpack="Clear Backpack Auto-Remove List",savebackpackorder="Save Current Backpack Order",
         copydiagnostics="Copy Diagnostic Report",cleanup="Emergency Cleanup Only",
         fp="First Person",tp="Third Person / Restore",rl="Restore Lighting",cji="Copy Job ID",jji="Join Job ID",
         shp="Server Hop",svp="Save Named Profile",exp="Export Profile to Clipboard",imp="Import Profile from Text Box",
         dp="Delete Selected Profile",saw="Show All Detached Windows",row="Reset Off-screen Windows",
-        snw="Snap Detached Windows to Edges",pn="PANIC / Reset Features [End]",
+        snw="Snap Detached Windows to Edges",pn="PANIC / Reset Features [End]",sa="PANIC / Reset Features [End]",un="Undo Last Change",
         rbt="Refresh Detected Backpack Tools",cbt="Clear Backpack Auto-Remove List",
         sbo="Save Current Backpack Order",cdr="Copy Diagnostic Report",ecu="Emergency Cleanup Only",
     }
@@ -8953,10 +9068,14 @@ state.initializeCommandConsole=function()
         hlp="help",op="open",pnl="panel",gt="goto",lg="loopgoto",ulg="unloopgoto",rt="return",
         sy="sync",dsy="desync",sem="stopemote",ssy="stopsync",us="unspec",em="emote",
         ra="reanim",fe="fogend",dx="dex",udx="undex",res="restore",ld="lgdir",gl="getlink",
-        cf="camerafollow",ucf="unfixcamera",
+        cf="camerafollow",ucf="unfixcamera",tgt="target",ut="untarget",
     }
     local function buildCommandCatalog()
         local catalog={
+            {command="!target <player>",description="Lock one player for commands that omit a name"},
+            {command="!untarget",description="Clear the reusable player target"},
+            {command="!undo",description="Undo the latest reversible Lucid change"},
+            {command="!stopall",description="Emergency-stop continuous features and repair the character"},
             {command="!desync",description="Stop player emote synchronization"},
             {command="!dex",description="Launch Dex++ Explorer"},
             {command="!dex unload",description="Unload Dex++ Explorer"},
@@ -9175,7 +9294,12 @@ state.initializeCommandConsole=function()
         command=normalize(command)
         command=shortCommandAliases[command] or command
         if command=="" then return end
-        if command=="getlink" then
+        if command=="target" then
+            if rest=="" then finish(false,"Use: target <player>"); return end
+            local ok,name=state.gotoApi.setTarget(rest); finish(ok,ok and ("Target locked: "..name) or name); return
+        elseif command=="untarget" then
+            state.gotoApi.clearTarget(); finish(true,"Target cleared"); return
+        elseif command=="getlink" then
             local link=currentServerJoinLink()
             if not link then finish(false,"Current server link is unavailable"); return end
             if not setclipboard then finish(false,"Clipboard unavailable • Job ID: "..tostring(game.JobId)); return end
@@ -9387,10 +9511,39 @@ state.initializeCommandConsole=function()
         end))
     end
     state.runLucidCommand=runCommand
+    input.InputBegan:Connect(function(event)
+        if event.KeyCode==Enum.KeyCode.Up then
+            if #commandHistory>0 then
+                commandHistoryIndex=math.clamp(commandHistoryIndex+1,1,#commandHistory)
+                input.Text=commandHistory[commandHistoryIndex]; input.CursorPosition=#input.Text+1
+            end
+        elseif event.KeyCode==Enum.KeyCode.Down then
+            commandHistoryIndex=math.max(0,commandHistoryIndex-1)
+            input.Text=commandHistoryIndex==0 and "" or commandHistory[commandHistoryIndex]
+            input.CursorPosition=#input.Text+1
+        elseif event.KeyCode==Enum.KeyCode.Tab then
+            local prefix=input.Text:match("(%S+)$") or ""
+            local before=input.Text:sub(1,#input.Text-#prefix)
+            if before:find("%s") and prefix~="" then
+                local matches={}
+                for _,player in ipairs(Players:GetPlayers()) do
+                    if player~=LocalPlayer and (player.Name:lower():sub(1,#prefix)==prefix:lower()
+                        or player.DisplayName:lower():sub(1,#prefix)==prefix:lower()) then table.insert(matches,player) end
+                end
+                table.sort(matches,function(a,b) return a.Name:lower()<b.Name:lower() end)
+                if matches[1] then input.Text=before..matches[1].Name; input.CursorPosition=#input.Text+1 end
+            end
+        end
+    end)
     input.FocusLost:Connect(function(enterPressed)
         if not enterPressed then return end
         local text=input.Text
         input.Text=""
+        if text:match("%S") then
+            if commandHistory[1]~=text then table.insert(commandHistory,1,text) end
+            while #commandHistory>30 do table.remove(commandHistory) end
+            commandHistoryIndex=0
+        end
         -- Enter has already released focus; do not recapture movement keys.
         runCommand(text)
     end)
@@ -9872,7 +10025,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.8.15] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.1] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.8.15] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.1] Loaded, but this executor does not expose queue_on_teleport")
 end
