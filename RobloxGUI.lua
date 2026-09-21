@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.4
+--// Lucid Panel v5.9.5
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -387,7 +387,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.4",
+    Text                   = "LUCID PANEL  •  v5.9.5",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -3080,29 +3080,33 @@ fireLoopGoto = loopGotoToggle
 
 do
     local lgDirRow = rowFrame(nextOrder(), 28)
-    create("TextLabel", {Size=UDim2.new(0,102,1,0), BackgroundTransparency=1,
+    create("TextLabel", {Size=UDim2.new(0,102,0,28), BackgroundTransparency=1,
         Text="GoTo Direction", TextColor3=Color3.fromRGB(185,175,205), TextSize=10,
         Font=Enum.Font.Gotham, TextXAlignment=Enum.TextXAlignment.Left, Parent=lgDirRow})
     local lgDirBtn = create("TextButton", {
-        Size=UDim2.new(1,-108,0,22), Position=UDim2.new(0,108,0.5,-11),
+        Size=UDim2.new(1,-108,0,22), Position=UDim2.new(0,108,0,3),
         BackgroundColor3=Color3.fromRGB(50,48,65), BorderSizePixel=0,
         TextColor3=Color3.fromRGB(220,215,240), TextSize=11,
         Font=Enum.Font.GothamSemibold, Text=state.loopGotoDirection, Parent=lgDirRow})
     create("UICorner", {CornerRadius=UDim.new(0,6), Parent=lgDirBtn})
     local lgDirDropdown = create("Frame", {
-        Size=UDim2.new(1,-108,0,88), Position=UDim2.new(0,108,1,2),
+        Size=UDim2.new(1,-108,0,88), Position=UDim2.new(0,108,0,30),
         BackgroundColor3=Color3.fromRGB(38,36,52),BorderSizePixel=0,Visible=false,Active=true,ZIndex=10,Parent=lgDirRow})
     create("UICorner", {CornerRadius=UDim.new(0,6), Parent=lgDirDropdown})
     create("UIGridLayout",{CellSize=UDim2.new(0.5,-3,0,20),CellPadding=UDim2.new(0,3,0,1),
         SortOrder=Enum.SortOrder.LayoutOrder,FillDirection=Enum.FillDirection.Horizontal,
         FillDirectionMaxCells=2,HorizontalAlignment=Enum.HorizontalAlignment.Center,
         VerticalAlignment=Enum.VerticalAlignment.Center,Parent=lgDirDropdown})
+    local function setDirectionMenuOpen(open)
+        lgDirDropdown.Visible=open==true
+        lgDirRow.Size=open and UDim2.new(1,0,0,120) or UDim2.new(1,0,0,28)
+    end
     local function setLoopGotoDirection(dir)
         if dir=="Up" then dir="Head Sit" end -- migrate v5.4.12 profiles
         if not table.find(loopGotoDirections,dir) then dir="Right" end
         state.loopGotoDirection = dir
         lgDirBtn.Text = dir
-        lgDirDropdown.Visible = false
+        setDirectionMenuOpen(false)
     end
     for i, dir in ipairs(loopGotoDirections) do
         local optBtn = create("TextButton", {
@@ -3113,7 +3117,7 @@ do
         optBtn.MouseButton1Click:Connect(function() setLoopGotoDirection(dir) end)
     end
     lgDirBtn.MouseButton1Click:Connect(function()
-        lgDirDropdown.Visible = not lgDirDropdown.Visible
+        setDirectionMenuOpen(not lgDirDropdown.Visible)
     end)
     gotoApi.setLoopDirection = setLoopGotoDirection
 end
@@ -8771,7 +8775,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.4 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.5 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -10007,7 +10011,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.4] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.5] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.4] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.5] Loaded, but this executor does not expose queue_on_teleport")
 end
