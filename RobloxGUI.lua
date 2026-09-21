@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.8.13
+--// Lucid Panel v5.8.14
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -358,7 +358,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.8.13",
+    Text                   = "LUCID PANEL  •  v5.8.14",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -2836,6 +2836,10 @@ local function computeGotoCFrame(targetRootPart,offset,direction,allowHeadSit)
         end
         local rootPosition=supportPosition+Vector3.new(0,1.05,0)
         return CFrame.new(rootPosition)*(targetCF-targetCF.Position)
+    elseif direction=="Snowboard" and allowHeadSit then
+        -- Stay flat below the target's feet and inherit their horizontal
+        -- facing, making the local avatar act like a moving snowboard.
+        return targetCF*CFrame.new(0,-3.1,0)*CFrame.Angles(math.rad(90),0,0)
     elseif direction=="Down" then
         return targetCF*CFrame.new(0,-px,0)
     elseif direction=="Forward" then
@@ -2950,7 +2954,7 @@ local loopGotoTarget = nil
 local loopGotoGeneration = 0
 local fireLoopGoto
 
-local loopGotoDirections = {"Right","Left","Head Sit","Down","Forward","Backwards","In"}
+local loopGotoDirections = {"Right","Left","Head Sit","Snowboard","Down","Forward","Backwards","In"}
 local _, loopGotoToggle = createToggle("Loop Go To (uses player above)", nextOrder(), false, function(on)
     if on then
         local target = findGotoPlayer(gotoBox.Text)
@@ -2974,23 +2978,29 @@ local _, loopGotoToggle = createToggle("Loop Go To (uses player above)", nextOrd
             while state.loopGotoEnabled and generation == loopGotoGeneration and screenGui.Parent do
                 character = LocalPlayer.Character
                 local root = character and character:FindFirstChild("HumanoidRootPart")
+                humanoid = character and character:FindFirstChildOfClass("Humanoid")
                 local targetCharacter = loopGotoTarget and loopGotoTarget.Character
                 local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
                 if root and targetRoot then
-                    if humanoid then humanoid.Sit=state.loopGotoDirection=="Head Sit" end
+                    if humanoid then
+                        humanoid.Sit=state.loopGotoDirection=="Head Sit"
+                        humanoid.PlatformStand=state.loopGotoDirection=="Snowboard"
+                    end
                     root.CFrame=computeGotoCFrame(targetRoot,gotoOffset,state.loopGotoDirection,true)
                     root.AssemblyLinearVelocity=Vector3.zero; root.AssemblyAngularVelocity=Vector3.zero
                 end
-                if state.loopGotoDirection=="Head Sit" then RunService.RenderStepped:Wait()
+                if state.loopGotoDirection=="Head Sit" or state.loopGotoDirection=="Snowboard" then RunService.RenderStepped:Wait()
                 else RunService.Heartbeat:Wait() end
             end
+            humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if humanoid then humanoid.Sit=false; humanoid.PlatformStand=false end
         end)
     else
         state.loopGotoEnabled = false
         loopGotoTarget = nil
         loopGotoGeneration = loopGotoGeneration + 1
         local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if humanoid then humanoid.Sit=false end
+        if humanoid then humanoid.Sit=false; humanoid.PlatformStand=false end
     end
 end)
 fireLoopGoto = loopGotoToggle
@@ -3061,6 +3071,8 @@ addCleanup(function()
     state.loopGotoEnabled = false
     loopGotoGeneration = loopGotoGeneration + 1
     loopGotoTarget = nil
+    local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if humanoid then humanoid.Sit=false; humanoid.PlatformStand=false end
 end)
 
 -- IY-style player ESP: BoxHandleAdornment per body part plus an always-on-top
@@ -8681,7 +8693,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.8.13 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.8.14 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -8958,7 +8970,7 @@ state.initializeCommandConsole=function()
             {command="!getlink",description="Copy a link to the current game server"},
             {command="!help",description="Show a compact command summary"},
             {command="!jumpheight <value>",description="Set and lock jump height"},
-            {command="!lgdir <direction>",description="Set Go To and Loop Go To direction: right/left/headsit/down/forward/backwards/in"},
+            {command="!lgdir <direction>",description="Set Go To/Loop Go To direction, including headsit and snowboard"},
             {command="!loopgoto <player>",description="Continuously follow a player"},
             {command="!migraine",description="Apply Migraine Comfort lighting"},
             {command="!open <section>",description="Open Home, Player, World, Tools or Settings"},
@@ -9182,10 +9194,10 @@ state.initializeCommandConsole=function()
             if rest=="" then finish(false,"Use: !loopgoto <player>") else state.gotoApi.setLoop(rest,true); finish(true,"Loop goto: "..rest) end
             return
         elseif command=="lgdir" or command=="loopgotodir" then
-            if rest=="" then finish(false,"Use: !lgdir right/left/headsit/down/forward/backwards/in"); return end
-            local dirMap={right="Right",left="Left",up="Head Sit",headsit="Head Sit",head="Head Sit",sit="Head Sit",down="Down",forward="Forward",forwards="Forward",backwards="Backwards",back="Backwards",behind="Backwards",["in"]="In",inside="In",overlap="In"}
+            if rest=="" then finish(false,"Use: !lgdir right/left/headsit/snowboard/down/forward/backwards/in"); return end
+            local dirMap={right="Right",left="Left",up="Head Sit",headsit="Head Sit",head="Head Sit",sit="Head Sit",snowboard="Snowboard",board="Snowboard",under="Snowboard",down="Down",forward="Forward",forwards="Forward",backwards="Backwards",back="Backwards",behind="Backwards",["in"]="In",inside="In",overlap="In"}
             local dir=dirMap[rest:lower()]
-            if not dir then finish(false,"Unknown direction. Use: right, left, headsit, down, forward, backwards, in"); return end
+            if not dir then finish(false,"Unknown direction. Use: right, left, headsit, snowboard, down, forward, backwards, in"); return end
             if state.gotoApi.setLoopDirection then state.gotoApi.setLoopDirection(dir) end
             finish(true,"Loop goto direction: "..dir); return
         elseif command=="unloopgoto" or command=="stopgoto" then state.gotoApi.setLoop(nil,false); finish(true,"Loop goto disabled"); return
@@ -9844,7 +9856,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.8.13] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.8.14] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.8.13] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.8.14] Loaded, but this executor does not expose queue_on_teleport")
 end
