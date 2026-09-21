@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.5
+--// Lucid Panel v5.9.6
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -387,7 +387,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.5",
+    Text                   = "LUCID PANEL  •  v5.9.6",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -8775,7 +8775,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.5 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.6 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -9015,7 +9015,7 @@ state.initializeCommandConsole=function()
     local toggleCommandAliases={
         esp="ESP All",ea="ESP All",headless="Local Headless",hl="Local Headless",noclip="Noclip",antifling="Enable Anti-Fling",airwalk="Enable Air Walk",freeze="Freeze Me",
         infjump="Enable Inf. Jump",shiftlock="Enable Shift Lock Option",clicktp="Left Alt + Click TP",
-        autoclick="Enable AutoClick",spawnpoint="Return Where I Died",recovery="Character Recovery Loop",
+        autoclick="Enable AutoClick",spawnpoint="Return Where I Died",respawnondeath="Return Where I Died",rod="Return Where I Died",recovery="Character Recovery Loop",
         camerashake="Remove Camera Shake",unlockmouse="Unlock Mouse",photomode="Photo Mode — Clean Freecam",
         isolate="Photo Isolation — Hide Other Players",hideplayers="Hide Named Players",
         comfortlock="Lock Comfort Preset",brighteffects="Disable Bright Effects",
@@ -9054,7 +9054,7 @@ state.initializeCommandConsole=function()
         hlp="help",op="open",pnl="panel",gt="goto",lg="loopgoto",ulg="unloopgoto",rt="return",
         sy="sync",dsy="desync",sem="stopemote",ssy="stopsync",us="unspec",em="emote",
         ra="reanim",fe="fogend",dx="dex",udx="undex",res="restore",ld="lgdir",gl="getlink",
-        cf="camerafollow",ucf="unfixcamera",tgt="target",ut="untarget",
+        cf="camerafollow",ucf="unfixcamera",tgt="target",ut="untarget",rd="respawndelay",
     }
     local function buildCommandCatalog()
         local catalog={
@@ -9062,6 +9062,8 @@ state.initializeCommandConsole=function()
             {command="!untarget",description="Clear the reusable player target"},
             {command="!undo",description="Undo the latest reversible Lucid change"},
             {command="!stopall",description="Emergency-stop continuous features and repair the character"},
+            {command="!respawnondeath [on|off]",description="Return to the exact death position after respawning"},
+            {command="!respawndelay <seconds>",description="Set the delay before returning to the death position"},
             {command="!desync",description="Stop player emote synchronization"},
             {command="!dex",description="Launch Dex++ Explorer"},
             {command="!dex unload",description="Unload Dex++ Explorer"},
@@ -9285,6 +9287,16 @@ state.initializeCommandConsole=function()
             local ok,name=state.gotoApi.setTarget(rest); finish(ok,ok and ("Target locked: "..name) or name); return
         elseif command=="untarget" then
             state.gotoApi.clearTarget(); finish(true,"Target cleared"); return
+        elseif command=="respawndelay" then
+            local value=tonumber(rest)
+            if not value or value<0 then finish(false,"Use: respawndelay <seconds, 0 or higher>"); return end
+            local previous=state.spawnpointDelay
+            state.spawnpointDelay=value; spawnDelayBox.Text=tostring(value)
+            state.pushUndo("Respawn delay",function()
+                state.spawnpointDelay=previous; spawnDelayBox.Text=tostring(previous)
+            end)
+            notifyLucid("Respawn delay",tostring(previous).."s → "..tostring(value).."s",Color3.fromRGB(75,210,120))
+            finish(true,"Respawn delay set to "..tostring(value).." seconds"); return
         elseif command=="getlink" then
             local link=currentServerJoinLink()
             if not link then finish(false,"Current server link is unavailable"); return end
@@ -10011,7 +10023,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.5] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.6] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.5] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.6] Loaded, but this executor does not expose queue_on_teleport")
 end
