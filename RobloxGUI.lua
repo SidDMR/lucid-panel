@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.10
+--// Lucid Panel v5.9.11
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -387,7 +387,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.10",
+    Text                   = "LUCID PANEL  •  v5.9.11",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -7476,6 +7476,12 @@ local function currentServerJoinLink()
     if placeId=="" or placeId=="0" or jobId=="" then return nil end
     return "https://www.roblox.com/games/start?placeId="..placeId.."&gameInstanceId="..jobId
 end
+local function currentMobileServerJoinLink()
+    local placeId=tostring(game.PlaceId or "")
+    local jobId=tostring(game.JobId or "")
+    if placeId=="" or placeId=="0" or jobId=="" then return nil end
+    return "roblox://experiences/start?placeId="..placeId.."&gameInstanceId="..jobId
+end
 actionButton("Copy Job ID", function(button)
     if setclipboard then setclipboard(game.JobId); button.Text="Copied Job ID" else button.Text=game.JobId end
 end)
@@ -8847,7 +8853,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.10 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.11 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -9125,7 +9131,7 @@ state.initializeCommandConsole=function()
     local shortCommandAliases={
         hlp="help",op="open",pnl="panel",gt="goto",lg="loopgoto",ulg="unloopgoto",rt="return",
         sy="sync",dsy="desync",sem="stopemote",ssy="stopsync",us="unspec",em="emote",
-        ra="reanim",fe="fogend",dx="dex",udx="undex",res="restore",ld="lgdir",gl="getlink",
+        ra="reanim",fe="fogend",dx="dex",udx="undex",res="restore",ld="lgdir",gl="getlink",gml="getmobilelink",gls="getlinks",
         cf="camerafollow",ucf="unfixcamera",tgt="target",ut="untarget",rd="respawndelay",
     }
     local function buildCommandCatalog()
@@ -9163,6 +9169,8 @@ state.initializeCommandConsole=function()
             {command="!goto <player>",description="Teleport to an in-game player"},
             {command="!gto <player>",description="Alias for goto"},
             {command="!getlink",description="Copy a link to the current game server"},
+            {command="!getmobilelink",description="Copy a direct Roblox-app link to this server"},
+            {command="!getlinks",description="Copy HTTPS and mobile links to this server"},
             {command="!help",description="Show a compact command summary"},
             {command="!jumpheight <value>",description="Set and lock jump height"},
             {command="!lgdir <direction>",description="Set Go To/Loop Go To direction, including headsit and snowboard"},
@@ -9375,6 +9383,23 @@ state.initializeCommandConsole=function()
             if not setclipboard then finish(false,"Clipboard unavailable • Job ID: "..tostring(game.JobId)); return end
             local ok=pcall(setclipboard,link)
             finish(ok,ok and ("Server link copied • Job ID: "..tostring(game.JobId)) or "Could not copy server link")
+            return
+        elseif command=="getmobilelink" then
+            local link=currentMobileServerJoinLink()
+            if not link then finish(false,"Current mobile server link is unavailable"); return end
+            if not setclipboard then finish(false,"Clipboard unavailable • Job ID: "..tostring(game.JobId)); return end
+            local ok=pcall(setclipboard,link)
+            finish(ok,ok and ("Mobile app link copied • Job ID: "..tostring(game.JobId)) or "Could not copy mobile link")
+            if ok then notifyLucid("Mobile server link copied","Place "..tostring(game.PlaceId).." • Job "..tostring(game.JobId),Color3.fromRGB(55,215,235)) end
+            return
+        elseif command=="getlinks" then
+            local webLink=currentServerJoinLink()
+            local mobileLink=currentMobileServerJoinLink()
+            if not webLink or not mobileLink then finish(false,"Current server links are unavailable"); return end
+            if not setclipboard then finish(false,"Clipboard unavailable • Job ID: "..tostring(game.JobId)); return end
+            local ok=pcall(setclipboard,webLink.."\n"..mobileLink)
+            finish(ok,ok and ("HTTPS + mobile links copied • Job ID: "..tostring(game.JobId)) or "Could not copy server links")
+            if ok then notifyLucid("Both server links copied","HTTPS and Roblox app formats",Color3.fromRGB(55,215,235)) end
             return
         elseif command=="help" or command=="commands" then
             finish(true,"!goto !loopgoto !sync !waypoint !espall !noclip !fly !freecam !walkspeed !fogend …")
@@ -10095,7 +10120,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.10] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.11] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.10] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.11] Loaded, but this executor does not expose queue_on_teleport")
 end
