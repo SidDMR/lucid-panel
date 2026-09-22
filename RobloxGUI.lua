@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.6
+--// Lucid Panel v5.9.10
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -387,7 +387,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.6",
+    Text                   = "LUCID PANEL  •  v5.9.10",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -880,6 +880,8 @@ state.initializeLucidDock=function()
     local frames=0
     local elapsed=0
     local lastStatsText=nil
+    local pingStatsItem=nil
+    pcall(function() pingStatsItem=game:GetService("Stats").Network.ServerStatsItem["Data Ping"] end)
     local function metricHex(value,low,mid,high,higherIsBetter)
         local red=Color3.fromRGB(235,70,80)
         local yellow=Color3.fromRGB(235,190,65)
@@ -898,10 +900,11 @@ state.initializeLucidDock=function()
     end
     track(RunService.RenderStepped:Connect(function(dt)
         frames=frames+1; elapsed=elapsed+dt
-        if elapsed<1 then return end
+        local refreshInterval=state.lowPerformanceMode and 1 or 0.25
+        if elapsed<refreshInterval then return end
         local fps=math.floor(frames/elapsed+0.5); frames=0; elapsed=0
         local ping=0
-        pcall(function() ping=math.floor(game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue()+0.5) end)
+        if pingStatsItem then pcall(function() ping=math.floor(pingStatsItem:GetValue()+0.5) end) end
         local fpsColor=metricHex(fps,60,180,300,true)
         local pingColor=metricHex(ping,1,150,300,false)
         local nextText=string.format('<font color="%s">● FPS %d</font>    <font color="%s">● PING %dms</font>',fpsColor,fps,pingColor,ping)
@@ -2916,7 +2919,7 @@ local function goToRequestedPlayer()
                     if recentGotoPlayers[index]==target.Name then table.remove(recentGotoPlayers,index) end
                 end
                 table.insert(recentGotoPlayers,1,target.Name)
-                while #recentGotoPlayers>5 do table.remove(recentGotoPlayers) end
+                while #recentGotoPlayers>6 do table.remove(recentGotoPlayers) end
                 if refreshRecentGoto then refreshRecentGoto() end
                 gotoBtn.Text = "Done"
             end
@@ -2951,38 +2954,33 @@ returnButton.MouseButton1Click:Connect(returnPreviousPosition)
 registerFavorite("Return Position",returnPreviousPosition,returnRow,returnButton,"Return to Previous Position")
 local recentGotoRow=create("Frame",{Size=UDim2.new(1,0,0,22),BackgroundTransparency=1,
     LayoutOrder=nextOrder(),Parent=currentSection})
-local recentGotoTitle=create("TextLabel",{Size=UDim2.new(0,43,1,0),BackgroundTransparency=1,
+local recentGotoTitle=create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
     Text="Recent:",TextColor3=Color3.fromRGB(145,135,165),TextSize=10,Font=Enum.Font.Gotham,
     TextXAlignment=Enum.TextXAlignment.Left,Parent=recentGotoRow})
-local recentGotoScroll=create("ScrollingFrame",{Size=UDim2.new(1,-43,1,0),Position=UDim2.new(0,43,0,0),
-    BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=2,ScrollingDirection=Enum.ScrollingDirection.X,
-    CanvasSize=UDim2.new(),Parent=recentGotoRow})
-local recentGotoLayout=create("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,
-    SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,4),Parent=recentGotoScroll})
+local recentGotoScroll=create("Frame",{Size=UDim2.new(1,0,0,43),Position=UDim2.new(0,0,0,19),
+    BackgroundTransparency=1,BorderSizePixel=0,Parent=recentGotoRow})
+create("UIGridLayout",{CellSize=UDim2.new(1/3,-3,0,20),CellPadding=UDim2.new(0,4,0,2),
+    FillDirectionMaxCells=3,SortOrder=Enum.SortOrder.LayoutOrder,Parent=recentGotoScroll})
 refreshRecentGoto=function()
     for _,child in ipairs(recentGotoScroll:GetChildren()) do
         if child:IsA("TextButton") then child:Destroy() end
     end
     recentGotoTitle.Text=#recentGotoPlayers>0 and "Recent:" or "Recent: none"
-    recentGotoTitle.Size=#recentGotoPlayers>0 and UDim2.new(0,43,1,0) or UDim2.new(1,0,1,0)
+    recentGotoRow.Size=#recentGotoPlayers==0 and UDim2.new(1,0,0,22)
+        or UDim2.new(1,0,0,#recentGotoPlayers>3 and 64 or 42)
     recentGotoScroll.Visible=#recentGotoPlayers>0
     for index,name in ipairs(recentGotoPlayers) do
         local playerName=name
-        local width=math.clamp(16+#playerName*6,44,96)
-        local button=create("TextButton",{Size=UDim2.new(0,width,0,20),BackgroundColor3=Color3.fromRGB(34,31,44),
+        local button=create("TextButton",{Size=UDim2.new(1,0,0,20),BackgroundColor3=Color3.fromRGB(34,31,44),
             BorderSizePixel=0,Text=playerName,TextColor3=Color3.fromRGB(205,198,220),TextSize=9,
-            Font=Enum.Font.Gotham,LayoutOrder=index,Parent=recentGotoScroll})
+            TextTruncate=Enum.TextTruncate.AtEnd,Font=Enum.Font.Gotham,LayoutOrder=index,Parent=recentGotoScroll})
         create("UICorner",{CornerRadius=UDim.new(0,5),Parent=button})
         button.MouseButton1Click:Connect(function()
             gotoBox.Text=playerName
             goToRequestedPlayer()
         end)
     end
-    recentGotoScroll.CanvasSize=UDim2.new(0,recentGotoLayout.AbsoluteContentSize.X,0,0)
 end
-recentGotoLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-    recentGotoScroll.CanvasSize=UDim2.new(0,recentGotoLayout.AbsoluteContentSize.X,0,0)
-end)
 refreshRecentGoto()
 
 local targetLockRow=rowFrame(nextOrder(),28)
@@ -3026,9 +3024,38 @@ track(Players.PlayerRemoving:Connect(function(player) if player.Name==state.targ
 local loopGotoTarget = nil
 local loopGotoGeneration = 0
 local fireLoopGoto
+local setLoopGotoToggle
+local recentLoopGotoPlayers={}
+local refreshRecentLoopGoto
+local loopGotoCollisionState={}
+local loopGotoStableRoot=nil
+local loopGotoRootWasAnchored=false
+local function restoreLoopGotoStability()
+    if loopGotoStableRoot and loopGotoStableRoot.Parent and not state.freezeEnabled then
+        loopGotoStableRoot.Anchored=loopGotoRootWasAnchored
+    end
+    loopGotoStableRoot=nil
+    for part,wasCollidable in pairs(loopGotoCollisionState) do
+        if part.Parent and not state.noclipEnabled then part.CanCollide=wasCollidable end
+    end
+    table.clear(loopGotoCollisionState)
+end
+local function applyLoopGotoStability(character,root)
+    if loopGotoStableRoot~=root then
+        restoreLoopGotoStability()
+        loopGotoStableRoot=root; loopGotoRootWasAnchored=root.Anchored
+    end
+    for _,item in ipairs(character:GetDescendants()) do
+        if item:IsA("BasePart") then
+            if loopGotoCollisionState[item]==nil then loopGotoCollisionState[item]=item.CanCollide end
+            item.CanCollide=false
+        end
+    end
+    root.Anchored=true
+end
 
 local loopGotoDirections = {"Right","Left","Head Sit","Snowboard","Down","Forward","Backwards","In"}
-local _, loopGotoToggle = createToggle("Loop Go To (uses player above)", nextOrder(), false, function(on)
+local _, loopGotoToggle, loopGotoSetter = createToggle("Loop Go To (uses player above)", nextOrder(), false, function(on)
     if on then
         local target = findGotoPlayer(gotoBox.Text)
         if not target then
@@ -3038,6 +3065,12 @@ local _, loopGotoToggle = createToggle("Loop Go To (uses player above)", nextOrd
             return
         end
         loopGotoTarget = target
+        for index=#recentLoopGotoPlayers,1,-1 do
+            if recentLoopGotoPlayers[index]==target.Name then table.remove(recentLoopGotoPlayers,index) end
+        end
+        table.insert(recentLoopGotoPlayers,1,target.Name)
+        while #recentLoopGotoPlayers>6 do table.remove(recentLoopGotoPlayers) end
+        if refreshRecentLoopGoto then refreshRecentLoopGoto() end
         state.loopGotoEnabled = true
         loopGotoGeneration = loopGotoGeneration + 1
         local generation = loopGotoGeneration
@@ -3055,11 +3088,14 @@ local _, loopGotoToggle = createToggle("Loop Go To (uses player above)", nextOrd
                 local targetCharacter = loopGotoTarget and loopGotoTarget.Character
                 local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
                 if root and targetRoot then
+                    local special=state.loopGotoDirection=="Head Sit" or state.loopGotoDirection=="Snowboard"
+                    if special then applyLoopGotoStability(character,root) else restoreLoopGotoStability() end
                     if humanoid then
                         humanoid.Sit=state.loopGotoDirection=="Head Sit"
                         humanoid.PlatformStand=state.loopGotoDirection=="Snowboard"
                     end
-                    root.CFrame=computeGotoCFrame(targetRoot,gotoOffset,state.loopGotoDirection,true)
+                    local desired=computeGotoCFrame(targetRoot,gotoOffset,state.loopGotoDirection,true)
+                    root.CFrame=state.loopGotoDirection=="Head Sit" and root.CFrame:Lerp(desired,0.7) or desired
                     root.AssemblyLinearVelocity=Vector3.zero; root.AssemblyAngularVelocity=Vector3.zero
                 end
                 if state.loopGotoDirection=="Head Sit" or state.loopGotoDirection=="Snowboard" then RunService.RenderStepped:Wait()
@@ -3067,6 +3103,7 @@ local _, loopGotoToggle = createToggle("Loop Go To (uses player above)", nextOrd
             end
             humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
             if humanoid then humanoid.Sit=false; humanoid.PlatformStand=false end
+            restoreLoopGotoStability()
         end)
     else
         state.loopGotoEnabled = false
@@ -3074,9 +3111,43 @@ local _, loopGotoToggle = createToggle("Loop Go To (uses player above)", nextOrd
         loopGotoGeneration = loopGotoGeneration + 1
         local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
         if humanoid then humanoid.Sit=false; humanoid.PlatformStand=false end
+        restoreLoopGotoStability()
     end
 end)
 fireLoopGoto = loopGotoToggle
+setLoopGotoToggle = loopGotoSetter
+
+local recentLoopGotoRow=create("Frame",{Size=UDim2.new(1,0,0,22),BackgroundTransparency=1,
+    LayoutOrder=nextOrder(),Parent=currentSection})
+local recentLoopGotoTitle=create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
+    Text="Loop recent:",TextColor3=Color3.fromRGB(145,135,165),TextSize=9,Font=Enum.Font.Gotham,
+    TextXAlignment=Enum.TextXAlignment.Left,Parent=recentLoopGotoRow})
+local recentLoopGotoScroll=create("Frame",{Size=UDim2.new(1,0,0,43),Position=UDim2.new(0,0,0,19),
+    BackgroundTransparency=1,BorderSizePixel=0,Parent=recentLoopGotoRow})
+create("UIGridLayout",{CellSize=UDim2.new(1/3,-3,0,20),CellPadding=UDim2.new(0,4,0,2),
+    FillDirectionMaxCells=3,SortOrder=Enum.SortOrder.LayoutOrder,Parent=recentLoopGotoScroll})
+refreshRecentLoopGoto=function()
+    for _,child in ipairs(recentLoopGotoScroll:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
+    recentLoopGotoTitle.Text=#recentLoopGotoPlayers>0 and "Loop recent:" or "Loop recent: none"
+    recentLoopGotoRow.Size=#recentLoopGotoPlayers==0 and UDim2.new(1,0,0,22)
+        or UDim2.new(1,0,0,#recentLoopGotoPlayers>3 and 64 or 42)
+    recentLoopGotoScroll.Visible=#recentLoopGotoPlayers>0
+    for index,name in ipairs(recentLoopGotoPlayers) do
+        local playerName=name
+        local button=create("TextButton",{Size=UDim2.new(1,0,0,20),BackgroundColor3=Color3.fromRGB(34,31,44),
+            BorderSizePixel=0,Text=playerName,TextColor3=Color3.fromRGB(205,198,220),TextSize=9,
+            TextTruncate=Enum.TextTruncate.AtEnd,Font=Enum.Font.Gotham,LayoutOrder=index,Parent=recentLoopGotoScroll})
+        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=button})
+        button.MouseButton1Click:Connect(function()
+            if state.loopGotoEnabled then setLoopGotoToggle(false,true) end
+            gotoBox.Text=playerName
+            setLoopGotoToggle(true,true)
+        end)
+    end
+end
+refreshRecentLoopGoto()
 
 do
     local lgDirRow = rowFrame(nextOrder(), 28)
@@ -3133,6 +3204,7 @@ addCleanup(function()
     state.loopGotoEnabled = false
     loopGotoGeneration = loopGotoGeneration + 1
     loopGotoTarget = nil
+    restoreLoopGotoStability()
     local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
     if humanoid then humanoid.Sit=false; humanoid.PlatformStand=false end
 end)
@@ -8775,7 +8847,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.6 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.10 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -10023,7 +10095,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.6] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.10] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.6] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.10] Loaded, but this executor does not expose queue_on_teleport")
 end
