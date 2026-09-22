@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.11
+--// Lucid Panel v5.9.12
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -387,7 +387,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.11",
+    Text                   = "LUCID PANEL  •  v5.9.12",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -8853,7 +8853,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.11 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.12 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -9819,9 +9819,11 @@ if LocalPlayer.Character then
     task.spawn(function() onCharacterAdded(LocalPlayer.Character) end)
 end
 
--- Single consolidated Heartbeat for all per-frame logic
+-- Single consolidated Heartbeat for features that genuinely need per-frame
+-- enforcement. Death-position respawning is event-driven through Died and
+-- CharacterRemoving above; including it here caused needless work at high FPS.
 track(RunService.Heartbeat:Connect(function(dt)
-    local needsCharacterFrame=state.spawnpointEnabled or state.freezeEnabled or state.antiPushEnabled
+    local needsCharacterFrame=state.freezeEnabled or state.antiPushEnabled
         or state.antiFlingEnabled or state.walkspeedLocked or state.jumpHeightLocked
         or state.noclipEnabled or state.airWalkEnabled
     local needsGlobalFrame=state.maxZoomLocked or state.fogEndLocked
@@ -9836,10 +9838,6 @@ track(RunService.Heartbeat:Connect(function(dt)
 
     local h = char:FindFirstChildOfClass("Humanoid")
     local hrp = char:FindFirstChild("HumanoidRootPart")
-
-    if state.spawnpointEnabled and h and h.Health>0 and hrp then
-        state.spawnpointLastAliveCFrame=hrp.CFrame
-    end
 
     -- IY-style freeze enforcement. Some games attempt to unanchor the root.
     if state.freezeEnabled and hrp then
@@ -10120,7 +10118,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.11] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.12] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.11] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.12] Loaded, but this executor does not expose queue_on_teleport")
 end
