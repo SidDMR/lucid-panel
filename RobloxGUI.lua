@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.23
+--// Lucid Panel v5.9.24
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -387,7 +387,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.23",
+    Text                   = "LUCID PANEL  •  v5.9.24",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -8346,6 +8346,12 @@ if game.PlaceId==136070094363960 then
         {-189.5,456,-146.618,22,12,1},{-177.5,467.956055,-146.617798,24,11.912,25},
         {-165.5,456,-146.618,22,12,1},{-177.5,456,-158.118,1,12,25},
     }
+    local sekretPassLevelOneToThreeTargets={
+        {-172.5,81.5,-136.118,27,11,1},{-177.5,87.5,-131.618,18,1,11},
+        {-182.5,81.5,-136.118,27,11,1},{-177.5,81.5,-150.118,1,11,11},
+        {-172.5,269,-145.118,9,364,1},{-177.5,269.5,-140.118,1,363,11},
+        {-182.5,269,-145.118,9,364,1},
+    }
     local protectedSekretPasses={
         {-177.5,450.5,-137.618,4,1,23},{-186,450.5,-148.618,18,1,6},
         {-169,450.5,-148.618,18,1,6},{-177.5,450.5,-154.118,7,1,11},
@@ -8373,11 +8379,16 @@ if game.PlaceId==136070094363960 then
         return part:IsA("BasePart") and part.Name:lower():match("main$")~=nil and inTowerCase(part)
     end
     local function isSekretPass(part)
-        if not part:IsA("BasePart") or part.Name~="LevelSekretPass" then return false end
+        if not part:IsA("BasePart") then return false end
         local parent=part.Parent
-        return parent~=nil and parent.Name=="SekretLevel" and parent:IsDescendantOf(workspace)
-            and not matchesPartSpec(part,protectedSekretPasses)
-            and matchesPartSpec(part,sekretPassTargets)
+        local inSekretLevel=false
+        while parent and parent~=workspace do
+            if parent.Name=="SekretLevel" then inSekretLevel=true; break end
+            parent=parent.Parent
+        end
+        if not inSekretLevel or matchesPartSpec(part,protectedSekretPasses) then return false end
+        return (part.Name=="LevelSekretPass" and matchesPartSpec(part,sekretPassTargets))
+            or matchesPartSpec(part,sekretPassLevelOneToThreeTargets)
     end
     local function isReleaseReadyTarget(part)
         if not part:IsA("BasePart") then return false end
@@ -8482,7 +8493,8 @@ if game.PlaceId==136070094363960 then
                         or releaseReadyTargets[object.Name] then
                         queueTowerMainScan()
                     elseif object:IsA("BasePart") and (object.Name:lower():match("main$")
-                        or object.Name=="LevelSekretPass") then
+                        or object.Name=="LevelSekretPass"
+                        or matchesPartSpec(object,sekretPassLevelOneToThreeTargets)) then
                         task.defer(refreshTowerMain,object)
                     end
                 end)
@@ -9130,7 +9142,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.23 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.24 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -10397,7 +10409,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.23] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.24] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.23] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.24] Loaded, but this executor does not expose queue_on_teleport")
 end
