@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.13
+--// Lucid Panel v5.9.15
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -387,7 +387,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.13",
+    Text                   = "LUCID PANEL  •  v5.9.15",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -8298,8 +8298,10 @@ if game.PlaceId==136070094363960 then
     local removeEveryTowerMain=false
     local hiddenTowerMains={}
     local towerMainConnection=nil
-    local wallPosition=Vector3.new(-192,142.5,-204.802)
-    local wallSize=Vector3.new(13.631,135,86)
+    local wallPositions={Vector3.new(-192,142.5,-204.802),Vector3.new(-148.5,142.5,-166.618)}
+    local wallSizes={Vector3.new(13.631,135,86),Vector3.new(90,135,1)}
+    local protectedFloorPosition=Vector3.new(-192,75.5,-166.118)
+    local protectedFloorSize=Vector3.new(89,1,86)
     local function inTowerCase(part)
         local parent=part.Parent
         while parent and parent~=workspace do
@@ -8312,11 +8314,21 @@ if game.PlaceId==136070094363960 then
         return part:IsA("BasePart") and part.Name:lower():match("main$")~=nil and inTowerCase(part)
     end
     local function isSelectedLevelOneMain(part)
+        if not isTowerMain(part) or part.Name~="Level1Main" then return false end
+        for index,position in ipairs(wallPositions) do
+            if (part.Position-position).Magnitude<2 and (part.Size-wallSizes[index]).Magnitude<2 then
+                return true
+            end
+        end
+        return false
+    end
+    local function isProtectedTowerFloor(part)
         return isTowerMain(part) and part.Name=="Level1Main"
-            and (part.Position-wallPosition).Magnitude<2
-            and (part.Size-wallSize).Magnitude<2
+            and (part.Position-protectedFloorPosition).Magnitude<2
+            and (part.Size-protectedFloorSize).Magnitude<2
     end
     local function shouldHideTowerMain(part)
+        if isProtectedTowerFloor(part) then return false end
         return (removeEveryTowerMain and isTowerMain(part))
             or (removeLevelOneMain and isSelectedLevelOneMain(part))
     end
@@ -8366,7 +8378,7 @@ if game.PlaceId==136070094363960 then
             for part in pairs(hiddenTowerMains) do refreshTowerMain(part) end
         end
     end
-    createToggle("Remove Level 1 Main Wall",nextOrder(),false,function(on)
+    createToggle("Remove Level 1 Main Walls",nextOrder(),false,function(on)
         removeLevelOneMain=on
         updateTowerMainMonitor()
     end)
@@ -8941,7 +8953,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.13 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.15 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -9190,7 +9202,7 @@ state.initializeCommandConsole=function()
         compact="Compact Panel",lowperf="Low Performance Mode",render3d="Disable 3D Rendering",
         backpackorder="Auto-arrange Saved Backpack Order",bananas="Remove Banana Peels",landmines="Remove Landmines",
         bananaesp="Banana Peel ESP (Yellow)",landmineesp="Landmine ESP (Red)",wormesp="Scary Worm ESP (Red 90% Transparent)",
-        level1wall="Remove Level 1 Main Wall",towermains="Remove All Tower Mains",
+        level1wall="Remove Level 1 Main Walls",towermains="Remove All Tower Mains",
         nc="Noclip",af="Enable Anti-Fling",aw="Enable Air Walk",frz="Freeze Me",ij="Enable Inf. Jump",
         sl="Enable Shift Lock Option",ctp="Left Alt + Click TP",ac="Enable AutoClick",sp="Return Where I Died",
         cr="Character Recovery Loop",rcs="Remove Camera Shake",um="Unlock Mouse",pm="Photo Mode — Clean Freecam",
@@ -9200,7 +9212,7 @@ state.initializeCommandConsole=function()
         lp="Low Performance Mode",r3d="Disable 3D Rendering",bo="Auto-arrange Saved Backpack Order",
         rb="Remove Banana Peels",rlm="Remove Landmines",besp="Banana Peel ESP (Yellow)",
         lesp="Landmine ESP (Red)",wesp="Scary Worm ESP (Red 90% Transparent)",
-        l1w="Remove Level 1 Main Wall",rtm="Remove All Tower Mains",
+        l1w="Remove Level 1 Main Walls",rtm="Remove All Tower Mains",
     }
     local actionCommandAliases={
         firstperson="First Person",thirdperson="Third Person / Restore",restorelighting="Restore Lighting",
@@ -10208,7 +10220,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.13] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.15] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.13] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.15] Loaded, but this executor does not expose queue_on_teleport")
 end
