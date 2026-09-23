@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.27
+--// Lucid Panel v5.9.28
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -387,7 +387,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.27",
+    Text                   = "LUCID PANEL  •  v5.9.28",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -5124,6 +5124,8 @@ state.initializePhotoIsolation=function()
             remember(object,"Enabled",object.Enabled); object.Enabled=false
         elseif object:IsA("Humanoid") then
             remember(object,"DisplayDistanceType",object.DisplayDistanceType); object.DisplayDistanceType=Enum.HumanoidDisplayDistanceType.None
+            remember(object,"NameDisplayDistance",object.NameDisplayDistance); object.NameDisplayDistance=0
+            remember(object,"HealthDisplayDistance",object.HealthDisplayDistance); object.HealthDisplayDistance=0
         end
     end
     local function shouldHide(player)
@@ -5135,6 +5137,20 @@ state.initializePhotoIsolation=function()
         hideObject(character)
         for _,object in ipairs(character:GetDescendants()) do hideObject(object) end
     end
+    local function hideAdornedPlayerGui(object)
+        if not (object:IsA("BillboardGui") or object:IsA("SurfaceGui")) then return end
+        local adornee=object.Adornee
+        local character=adornee and adornee:FindFirstAncestorOfClass("Model")
+        local player=character and Players:GetPlayerFromCharacter(character)
+        if player and shouldHide(player) then hideObject(object) end
+    end
+    local function scanAdornedPlayerGuis()
+        for _,object in ipairs(workspace:GetDescendants()) do hideAdornedPlayerGui(object) end
+        local playerGui=LocalPlayer:FindFirstChildOfClass("PlayerGui")
+        if playerGui then
+            for _,object in ipairs(playerGui:GetDescendants()) do hideAdornedPlayerGui(object) end
+        end
+    end
     local function restoreAll()
         for object,properties in pairs(originals) do
             if object and object.Parent then
@@ -5145,7 +5161,10 @@ state.initializePhotoIsolation=function()
     end
     local function refresh()
         restoreAll()
-        if isolationEnabled then for _,player in ipairs(Players:GetPlayers()) do applyPlayer(player) end end
+        if isolationEnabled then
+            for _,player in ipairs(Players:GetPlayers()) do applyPlayer(player) end
+            scanAdornedPlayerGuis()
+        end
     end
     local function updateStatus()
         local names={}; for name in pairs(exceptions) do table.insert(names,name) end
@@ -5177,6 +5196,19 @@ state.initializePhotoIsolation=function()
     inputBox.FocusLost:Connect(function(enterPressed) if enterPressed then addException() end end)
     createToggle("Photo Isolation — Hide Other Players",nextOrder(),false,function(on)
         isolationEnabled=on; state.photoIsolationEnabled=on; refresh()
+        state.photoIsolationGeneration=(state.photoIsolationGeneration or 0)+1
+        if on then
+            local generation=state.photoIsolationGeneration
+            task.spawn(function()
+                while isolationEnabled and state.photoIsolationGeneration==generation and screenGui.Parent do
+                    task.wait(2)
+                    if isolationEnabled and state.photoIsolationGeneration==generation then
+                        for _,player in ipairs(Players:GetPlayers()) do applyPlayer(player) end
+                        scanAdornedPlayerGuis()
+                    end
+                end
+            end)
+        end
     end)
     track(Players.PlayerAdded:Connect(function(player) watchPlayer(player); if isolationEnabled then task.defer(function() applyPlayer(player) end) end end))
     track(workspace.DescendantAdded:Connect(function(object)
@@ -5184,7 +5216,14 @@ state.initializePhotoIsolation=function()
         local character=object:FindFirstAncestorOfClass("Model")
         local player=character and Players:GetPlayerFromCharacter(character)
         if player and shouldHide(player) then hideObject(object) end
+        hideAdornedPlayerGui(object)
     end))
+    local playerGui=LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if playerGui then
+        track(playerGui.DescendantAdded:Connect(function(object)
+            if isolationEnabled then task.defer(hideAdornedPlayerGui,object) end
+        end))
+    end
     for _,player in ipairs(Players:GetPlayers()) do watchPlayer(player) end
     addCleanup(function() isolationEnabled=false; restoreAll() end)
 end
@@ -9204,7 +9243,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.27 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.28 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -10471,7 +10510,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.27] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.28] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.27] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.28] Loaded, but this executor does not expose queue_on_teleport")
 end
