@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.15
+--// Lucid Panel v5.9.17
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -387,7 +387,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.15",
+    Text                   = "LUCID PANEL  •  v5.9.17",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -1223,6 +1223,8 @@ local registerFavorite = (function()
             end)
             if sourceControl then
                 star.Position=UDim2.new(0.5,measuredWidth/2+2,0.5,-12)
+            elseif sourceRow:GetAttribute("LucidFavoriteStarRight") then
+                star.Position=UDim2.new(1,-82,0.5,-12)
             else
                 local starX=sourceRow:GetAttribute("LucidFavoriteStarX")
                 if type(starX)~="number" then starX=math.min(190,8+measuredWidth) end
@@ -1283,7 +1285,7 @@ end
 
 local function createToggle(labelText, order, default, callback)
     local row = rowFrame(order)
-    row:SetAttribute("LucidFavoriteStarX",math.min(190,8+#labelText*6.3))
+    row:SetAttribute("LucidFavoriteStarRight",true)
     for categoryName,body in pairs(categories) do
         if row:IsDescendantOf(body) then
             state.featureNavigationGroups[labelText]=state.mainNavigation.categoryGroup[categoryName]
@@ -1292,13 +1294,14 @@ local function createToggle(labelText, order, default, callback)
     end
 
     create("TextLabel", {
-        Size                   = UDim2.new(0.6, 0, 1, 0),
+        Size                   = UDim2.new(1, -94, 1, 0),
         BackgroundTransparency = 1,
         Text                   = labelText,
         TextColor3             = Color3.fromRGB(210, 210, 220),
         TextSize               = 13,
         Font                   = Enum.Font.Gotham,
         TextXAlignment         = Enum.TextXAlignment.Left,
+        TextTruncate           = Enum.TextTruncate.AtEnd,
         Parent                 = row,
     })
 
@@ -8313,6 +8316,15 @@ if game.PlaceId==136070094363960 then
     local function isTowerMain(part)
         return part:IsA("BasePart") and part.Name:lower():match("main$")~=nil and inTowerCase(part)
     end
+    local function isSekretPass(part)
+        if not part:IsA("BasePart") or part.Name~="LevelSekretPass" then return false end
+        local parent=part.Parent
+        while parent and parent~=workspace do
+            if parent.Name=="SekretLevel" then return true end
+            parent=parent.Parent
+        end
+        return false
+    end
     local function isSelectedLevelOneMain(part)
         if not isTowerMain(part) or part.Name~="Level1Main" then return false end
         for index,position in ipairs(wallPositions) do
@@ -8329,7 +8341,7 @@ if game.PlaceId==136070094363960 then
     end
     local function shouldHideTowerMain(part)
         if isProtectedTowerFloor(part) then return false end
-        return (removeEveryTowerMain and isTowerMain(part))
+        return (removeEveryTowerMain and (isTowerMain(part) or isSekretPass(part)))
             or (removeLevelOneMain and isSelectedLevelOneMain(part))
     end
     local function refreshTowerMain(part)
@@ -8357,7 +8369,7 @@ if game.PlaceId==136070094363960 then
     end
     local function scanTowerMains()
         for _,part in ipairs(workspace:GetDescendants()) do
-            if isTowerMain(part) then refreshTowerMain(part) end
+            if isTowerMain(part) or isSekretPass(part) then refreshTowerMain(part) end
         end
         for part in pairs(hiddenTowerMains) do refreshTowerMain(part) end
     end
@@ -8365,9 +8377,9 @@ if game.PlaceId==136070094363960 then
         if removeLevelOneMain or removeEveryTowerMain then
             if not towerMainConnection then
                 towerMainConnection=workspace.DescendantAdded:Connect(function(object)
-                    if object.Name=="TowerCase" then
+                    if object.Name=="TowerCase" or object.Name=="SekretLevel" then
                         task.defer(scanTowerMains)
-                    elseif object:IsA("BasePart") and object.Name:lower():match("main$") then
+                    elseif object:IsA("BasePart") and (object.Name:lower():match("main$") or object.Name=="LevelSekretPass") then
                         task.defer(refreshTowerMain,object)
                     end
                 end)
@@ -8953,7 +8965,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.15 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.17 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -10220,7 +10232,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.15] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.17] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.15] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.17] Loaded, but this executor does not expose queue_on_teleport")
 end
