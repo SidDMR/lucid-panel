@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.26
+--// Lucid Panel v5.9.27
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -387,7 +387,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.26",
+    Text                   = "LUCID PANEL  •  v5.9.27",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -8628,6 +8628,54 @@ if game.PlaceId==136070094363960 then
     hazardEspEnabled.cylinderEsp=(function()
         local markers={}
         local positions={}
+        -- Fixed XYZ from the user's 38-line tower mine collector report.
+        -- The pasted report contained the same 38 entries twice.
+        local fixedPositions={
+            {-227.119644,103.221207,-222.469299},
+            {-241.490219,166.221207,-204.492813},
+            {-143.969864,207.221207,-194.379761},
+            {-167.337265,213.221207,-223.582031},
+            {-202.872208,219.221207,-217.653351},
+            {-231.836670,224.221207,-216.521790},
+            {-240.551819,225.221207,-208.475128},
+            {-233.916336,227.221207,-202.193039},
+            {-227.825134,227.221207,-200.837555},
+            {-227.623291,227.221207,-204.276993},
+            {-227.117004,227.221207,-189.680984},
+            {-224.440750,227.221207,-201.162079},
+            {-235.508484,231.221207,-164.341141},
+            {-217.822113,237.221207,-133.356598},
+            {-150.518219,510.221191,-213.177628},
+            {-150.200760,510.221191,-216.445251},
+            {-147.425903,510.221191,-213.550751},
+            {-161.426346,512.221191,-215.931702},
+            {-172.892609,514.221191,-223.468582},
+            {-184.782150,516.221191,-215.426086},
+            {-241.761658,528.221191,-195.497879},
+            {-247.581070,537.221191,-139.292801},
+            {-249.923798,540.221191,-111.663277},
+            {-247.263275,540.221191,-113.893547},
+            {-244.616852,540.221191,-116.111992},
+            {-241.955078,540.221191,-118.343315},
+            {-239.334183,540.221191,-120.540382},
+            {-228.224960,541.221191,-113.661980},
+            {-207.140274,545.221191,-115.727776},
+            {-195.094284,547.221191,-111.652725},
+            {-183.444748,549.221191,-115.327675},
+            {-171.796356,551.221191,-112.724342},
+            {-152.640564,554.221191,-115.284042},
+            {-143.361603,560.221191,-154.226715},
+            {-150.521713,570.221191,-213.278381},
+            {-239.822083,591.221191,-174.486908},
+            {-247.014572,598.221191,-132.589096},
+            {-206.979111,605.221191,-110.558929},
+        }
+        local fixedSize=Vector3.new(2.719,0.442,2.719)
+        for _,coordinates in ipairs(fixedPositions) do
+            local position=Vector3.new(coordinates[1],coordinates[2],coordinates[3])
+            local key=string.format("%.3f:%.3f:%.3f",position.X,position.Y,position.Z)
+            positions[key]={position=position,size=fixedSize}
+        end
         local folder=nil
         local function clear()
             if folder then folder:Destroy(); folder=nil end
@@ -9156,7 +9204,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.26 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.27 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -10423,7 +10471,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.26] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.27] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.26] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.27] Loaded, but this executor does not expose queue_on_teleport")
 end
