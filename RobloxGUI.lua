@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.21
+--// Lucid Panel v5.9.23
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -387,7 +387,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.21",
+    Text                   = "LUCID PANEL  •  v5.9.23",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -8310,8 +8310,57 @@ if game.PlaceId==136070094363960 then
     local protectedFloorSize=Vector3.new(89,1,86)
     local protectedLevelFivePosition=Vector3.new(-242,739.5,-116.645)
     local protectedLevelFiveSize=Vector3.new(20,1,18)
-    local releaseReadyTargets={X1={Level2=true},Template={Level3=true},ZigZags={Level4=true},
-        DoubleInverse={Level5Main=true},Logs={Level6Main=true},PSliced={Level7Main=true}}
+    -- Exact local-removal whitelist: {position XYZ, size XYZ}.
+    -- Name + ReleaseReady child folder are checked before these dimensions.
+    local releaseReadyTargets={
+        X1={Level2Main={
+            {-225.5,218.5,-166.618,90,17,25},{-157,312,-148.618,32,66,18},
+            {-193,312,-127.118,11,66,90},{-158.5,218.5,-166.618,90,17,21},
+            {-191,218.5,-204.118,15,17,44},{-191,218.5,-128.618,14,17,44},
+            {-214,312,-148.618,32,66,48},{-193,312,-188.118,47,66,90},
+        }},
+        Template={Level3Main={
+            {-223.5,412.5,-166.618,29,135,90},{-183,412.5,-197.618,52,135,28},
+            {-152.5,412.5,-166.618,9,135,90},{-183,398,-122.118,52,106,1},
+            {-195,455.5,-122.118,28,9,1},{-183,470,-122.118,52,20,1},
+            {-165.5,455.5,-122.118,17,9,1},
+        }},
+        ZigZags={
+            Level4Main={{-193,547.5,-166.618,90,135,90}},
+            Level8Main={{-193,1092.5,-166.654,90,135,90}},
+        },
+        DoubleInverse={Level5Main={
+            {-237.5,673,-166.654,1,116,90},{-193,685,-211.154,88,140,1},
+            {-148.5,617.5,-159.654,1,5,6},{-148.5,685,-139.154,1,140,35},
+            {-148.5,692,-159.654,1,126,6},{-148.5,685,-187.154,1,140,49},
+            {-193,685,-122.154,88,140,1},{-237.5,743,-195.654,1,24,32},
+            {-237.5,743,-147.654,1,24,52},{-237.5,747,-176.654,1,16,6},
+        }},
+        Logs={Level6Main={{-193,822.5,-166.654,90,135,90}}},
+        PSliced={Level7Main={{-193,957.5,-166.654,90,135,90}}},
+    }
+    local sekretPassTargets={
+        {-173.5,455,-129.118,13,10,1},{-181.5,455,-129.118,13,10,1},
+        {-169,455,-135.118,1,10,8},{-177.5,460.5,-128.618,12,1,9},
+        {-173.5,461,-135.118,1,2,17},{-186,456,-135.118,1,12,8},
+        {-189.5,456,-146.618,22,12,1},{-177.5,467.956055,-146.617798,24,11.912,25},
+        {-165.5,456,-146.618,22,12,1},{-177.5,456,-158.118,1,12,25},
+    }
+    local protectedSekretPasses={
+        {-177.5,450.5,-137.618,4,1,23},{-186,450.5,-148.618,18,1,6},
+        {-169,450.5,-148.618,18,1,6},{-177.5,450.5,-154.118,7,1,11},
+    }
+    local function matchesPartSpec(part,specs)
+        local position,size=part.Position,part.Size
+        for _,spec in ipairs(specs) do
+            if math.abs(position.X-spec[1])<=0.5 and math.abs(position.Y-spec[2])<=0.5
+                and math.abs(position.Z-spec[3])<=0.5 and math.abs(size.X-spec[4])<=0.5
+                and math.abs(size.Y-spec[5])<=0.5 and math.abs(size.Z-spec[6])<=0.5 then
+                return true
+            end
+        end
+        return false
+    end
     local function inTowerCase(part)
         local parent=part.Parent
         while parent and parent~=workspace do
@@ -8326,21 +8375,19 @@ if game.PlaceId==136070094363960 then
     local function isSekretPass(part)
         if not part:IsA("BasePart") or part.Name~="LevelSekretPass" then return false end
         local parent=part.Parent
-        while parent and parent~=workspace do
-            if parent.Name=="SekretLevel" then return true end
-            parent=parent.Parent
-        end
-        return false
+        return parent~=nil and parent.Name=="SekretLevel" and parent:IsDescendantOf(workspace)
+            and not matchesPartSpec(part,protectedSekretPasses)
+            and matchesPartSpec(part,sekretPassTargets)
     end
     local function isReleaseReadyTarget(part)
         if not part:IsA("BasePart") then return false end
         local section=part.Parent
         local releaseReady=section and section.Parent
-        return section~=nil and releaseReady~=nil
-            and releaseReady.Name=="ReleaseReady"
-            and releaseReady:IsDescendantOf(workspace)
-            and releaseReadyTargets[section.Name]~=nil
-            and releaseReadyTargets[section.Name][part.Name]==true
+        if not (section and releaseReady and releaseReady.Name=="ReleaseReady"
+            and releaseReady:IsDescendantOf(workspace)) then return false end
+        local sectionTargets=releaseReadyTargets[section.Name]
+        local partTargets=sectionTargets and sectionTargets[part.Name]
+        return partTargets~=nil and matchesPartSpec(part,partTargets)
     end
     local function isSelectedLevelOneMain(part)
         if not isTowerMain(part) or part.Name~="Level1Main" then return false end
@@ -8357,8 +8404,12 @@ if game.PlaceId==136070094363960 then
             and (part.Size-protectedFloorSize).Magnitude<2
     end
     local function isProtectedLevelFive(part)
+        local section=part.Parent
+        local releaseReady=section and section.Parent
         return part.Name=="Level5Main" and part:IsA("UnionOperation")
-            and isReleaseReadyTarget(part)
+            and section~=nil and section.Name=="DoubleInverse"
+            and releaseReady~=nil and releaseReady.Name=="ReleaseReady"
+            and releaseReady:IsDescendantOf(workspace)
             and (part.Position-protectedLevelFivePosition).Magnitude<2
             and (part.Size-protectedLevelFiveSize).Magnitude<2
     end
@@ -8431,8 +8482,7 @@ if game.PlaceId==136070094363960 then
                         or releaseReadyTargets[object.Name] then
                         queueTowerMainScan()
                     elseif object:IsA("BasePart") and (object.Name:lower():match("main$")
-                        or object.Name=="LevelSekretPass" or object.Name=="Level2"
-                        or object.Name=="Level3" or object.Name=="Level4") then
+                        or object.Name=="LevelSekretPass") then
                         task.defer(refreshTowerMain,object)
                     end
                 end)
@@ -8559,6 +8609,41 @@ if game.PlaceId==136070094363960 then
         highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; highlight.Parent=object
         hazardHighlights[object]=highlight
     end
+    local mineCylinderEsp=(function()
+        local markers={}
+        local folder=nil
+        local function clear()
+            if folder then folder:Destroy(); folder=nil end
+            table.clear(markers)
+        end
+        local function add(object)
+            if not hazardEspEnabled.mine or not object:IsA("MeshPart")
+                or not object:IsDescendantOf(workspace) or heldByPlayer(object) then return end
+            if not string.find(tostring(object.MeshId),"14911033970",1,true) then return end
+            local size=object.Size
+            if math.abs(size.X-2.719)>0.1 or math.abs(size.Y-0.442)>0.1
+                or math.abs(size.Z-2.719)>0.1 then return end
+            local position=object.Position
+            local key=string.format("%.3f:%.3f:%.3f",position.X,position.Y,position.Z)
+            if markers[key] then return end
+            if not folder then
+                folder=Instance.new("Folder")
+                folder.Name="LucidMineCylinderESP"
+                folder.Parent=workspace
+            end
+            local marker=Instance.new("Part")
+            marker.Name="MineCylinderMarker"
+            marker.Shape=Enum.PartType.Cylinder
+            marker.Size=Vector3.new(size.Y,size.X,size.Z)
+            marker.CFrame=CFrame.new(position)*CFrame.Angles(0,0,math.rad(90))
+            marker.Anchored=true; marker.CanCollide=false; marker.CanTouch=false; marker.CanQuery=false
+            marker.CastShadow=false; marker.Material=Enum.Material.Neon
+            marker.Color=Color3.fromRGB(255,35,35); marker.Transparency=0.65
+            marker.Parent=folder
+            markers[key]=marker
+        end
+        return {add=add,clear=clear}
+    end)()
     local function clearHazardHighlights(kind)
         for object,highlight in pairs(hazardHighlights) do
             if not kind or highlight.Name=="LucidHazardESP_"..kind then
@@ -8567,7 +8652,10 @@ if game.PlaceId==136070094363960 then
         end
     end
     local function scanHazards()
-        for _,object in ipairs(workspace:GetDescendants()) do addHazardHighlight(object) end
+        for _,object in ipairs(workspace:GetDescendants()) do
+            addHazardHighlight(object)
+            mineCylinderEsp.add(object)
+        end
     end
     local function isScaryWorm(object)
         return object and object.Name:lower():find("scary worm",1,true)~=nil
@@ -8618,7 +8706,8 @@ if game.PlaceId==136070094363960 then
     end)
     createToggle("Landmine ESP (Red)",nextOrder(),false,function(on)
         hazardEspEnabled.mine=on
-        if on then task.defer(scanHazards) else clearHazardHighlights("mine") end
+        if on then task.defer(scanHazards)
+        else clearHazardHighlights("mine"); mineCylinderEsp.clear() end
     end)
     actionButton("Clear Hazard Ghost ESP",function(button)
         clearHazardGhosts(); button.Text="Hazard ghosts cleared"
@@ -8693,11 +8782,15 @@ if game.PlaceId==136070094363960 then
             task.defer(removeMatchingObstacle,object)
         end
         if hazardEspEnabled.banana or hazardEspEnabled.mine then task.defer(addHazardHighlight,object) end
+        if hazardEspEnabled.mine then
+            task.defer(mineCylinderEsp.add,object)
+            task.delay(0.5,mineCylinderEsp.add,object)
+        end
         if scaryWormEspEnabled and isScaryWorm(object) then task.defer(addScaryWormHighlight,object) end
     end))
     addCleanup(function()
         scaryWormEspEnabled=false; hazardEspEnabled.banana=false; hazardEspEnabled.mine=false
-        clearScaryWormHighlights(); clearHazardHighlights(); clearHazardGhosts()
+        clearScaryWormHighlights(); clearHazardHighlights(); clearHazardGhosts(); mineCylinderEsp.clear()
         removeKillPartsEnabled=false; stopKillPartsMonitor()
     end)
 end
@@ -9037,7 +9130,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.21 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.23 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -10304,7 +10397,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.21] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.23] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.21] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.23] Loaded, but this executor does not expose queue_on_teleport")
 end
