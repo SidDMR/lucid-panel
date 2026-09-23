@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.25
+--// Lucid Panel v5.9.26
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -387,7 +387,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.25",
+    Text                   = "LUCID PANEL  •  v5.9.26",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -8553,6 +8553,10 @@ if game.PlaceId==136070094363960 then
     end
     local function removeMatchingObstacle(object)
         if object and object.Parent and shouldRemoveObstacle(object) then
+            if hazardEspEnabled.cylinderEsp then
+                hazardEspEnabled.cylinderEsp.capture(object)
+                for _,descendant in ipairs(object:GetDescendants()) do hazardEspEnabled.cylinderEsp.capture(descendant) end
+            end
             preserveHazardGhost(object)
             pcall(function() object:Destroy() end)
         end
@@ -8621,23 +8625,16 @@ if game.PlaceId==136070094363960 then
         highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; highlight.Parent=object
         hazardHighlights[object]=highlight
     end
-    local mineCylinderEsp=(function()
+    hazardEspEnabled.cylinderEsp=(function()
         local markers={}
+        local positions={}
         local folder=nil
         local function clear()
             if folder then folder:Destroy(); folder=nil end
             table.clear(markers)
         end
-        local function add(object)
-            if not hazardEspEnabled.mine or not object:IsA("MeshPart")
-                or not object:IsDescendantOf(workspace) or heldByPlayer(object) then return end
-            if not string.find(tostring(object.MeshId),"14911033970",1,true) then return end
-            local size=object.Size
-            if math.abs(size.X-2.719)>0.1 or math.abs(size.Y-0.442)>0.1
-                or math.abs(size.Z-2.719)>0.1 then return end
-            local position=object.Position
-            local key=string.format("%.3f:%.3f:%.3f",position.X,position.Y,position.Z)
-            if markers[key] then return end
+        local function show(position,size,key)
+            if not hazardEspEnabled.mine or markers[key] then return end
             if not folder then
                 folder=Instance.new("Folder")
                 folder.Name="LucidMineCylinderESP"
@@ -8654,7 +8651,22 @@ if game.PlaceId==136070094363960 then
             marker.Parent=folder
             markers[key]=marker
         end
-        return {add=add,clear=clear}
+        local function capture(object)
+            if not object:IsA("MeshPart") or not object:IsDescendantOf(workspace)
+                or heldByPlayer(object) then return end
+            if not string.find(tostring(object.MeshId),"14911033970",1,true) then return end
+            local size=object.Size
+            if math.abs(size.X-2.719)>0.1 or math.abs(size.Y-0.442)>0.1
+                or math.abs(size.Z-2.719)>0.1 then return end
+            local position=object.Position
+            local key=string.format("%.3f:%.3f:%.3f",position.X,position.Y,position.Z)
+            positions[key]={position=position,size=size}
+            show(position,size,key)
+        end
+        local function showRemembered()
+            for key,data in pairs(positions) do show(data.position,data.size,key) end
+        end
+        return {add=capture,capture=capture,showRemembered=showRemembered,clear=clear}
     end)()
     local function clearHazardHighlights(kind)
         for object,highlight in pairs(hazardHighlights) do
@@ -8666,7 +8678,7 @@ if game.PlaceId==136070094363960 then
     local function scanHazards()
         for _,object in ipairs(workspace:GetDescendants()) do
             addHazardHighlight(object)
-            mineCylinderEsp.add(object)
+            hazardEspEnabled.cylinderEsp.add(object)
         end
     end
     local function isScaryWorm(object)
@@ -8718,8 +8730,8 @@ if game.PlaceId==136070094363960 then
     end)
     createToggle("Landmine ESP (Red)",nextOrder(),false,function(on)
         hazardEspEnabled.mine=on
-        if on then task.defer(scanHazards)
-        else clearHazardHighlights("mine"); mineCylinderEsp.clear() end
+        if on then hazardEspEnabled.cylinderEsp.showRemembered(); task.defer(scanHazards)
+        else clearHazardHighlights("mine"); hazardEspEnabled.cylinderEsp.clear() end
     end)
     actionButton("Clear Hazard Ghost ESP",function(button)
         clearHazardGhosts(); button.Text="Hazard ghosts cleared"
@@ -8790,21 +8802,23 @@ if game.PlaceId==136070094363960 then
     end)
 
     track(workspace.DescendantAdded:Connect(function(object)
+        hazardEspEnabled.cylinderEsp.capture(object)
         if removeBananaPeels or removeLandmines or removeAllObstacles then
             task.defer(removeMatchingObstacle,object)
         end
         if hazardEspEnabled.banana or hazardEspEnabled.mine then task.defer(addHazardHighlight,object) end
         if hazardEspEnabled.mine then
-            task.defer(mineCylinderEsp.add,object)
-            task.delay(0.5,mineCylinderEsp.add,object)
+            task.defer(hazardEspEnabled.cylinderEsp.add,object)
+            task.delay(0.5,hazardEspEnabled.cylinderEsp.add,object)
         end
         if scaryWormEspEnabled and isScaryWorm(object) then task.defer(addScaryWormHighlight,object) end
     end))
     addCleanup(function()
         scaryWormEspEnabled=false; hazardEspEnabled.banana=false; hazardEspEnabled.mine=false
-        clearScaryWormHighlights(); clearHazardHighlights(); clearHazardGhosts(); mineCylinderEsp.clear()
+        clearScaryWormHighlights(); clearHazardHighlights(); clearHazardGhosts(); hazardEspEnabled.cylinderEsp.clear()
         removeKillPartsEnabled=false; stopKillPartsMonitor()
     end)
+    for _,object in ipairs(workspace:GetDescendants()) do hazardEspEnabled.cylinderEsp.capture(object) end
 end
 
 -- General, event-driven kill-part inspector. Detection is heuristic because
@@ -9142,7 +9156,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.25 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.26 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -10409,7 +10423,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.25] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.26] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.25] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.26] Loaded, but this executor does not expose queue_on_teleport")
 end
