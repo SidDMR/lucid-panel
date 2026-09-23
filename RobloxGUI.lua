@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.28
+--// Lucid Panel v5.9.29
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -387,7 +387,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.28",
+    Text                   = "LUCID PANEL  •  v5.9.29",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -5126,6 +5126,7 @@ state.initializePhotoIsolation=function()
             remember(object,"DisplayDistanceType",object.DisplayDistanceType); object.DisplayDistanceType=Enum.HumanoidDisplayDistanceType.None
             remember(object,"NameDisplayDistance",object.NameDisplayDistance); object.NameDisplayDistance=0
             remember(object,"HealthDisplayDistance",object.HealthDisplayDistance); object.HealthDisplayDistance=0
+            remember(object,"DisplayName",object.DisplayName); pcall(function() object.DisplayName=" " end)
         end
     end
     local function shouldHide(player)
@@ -5137,19 +5138,34 @@ state.initializePhotoIsolation=function()
         hideObject(character)
         for _,object in ipairs(character:GetDescendants()) do hideObject(object) end
     end
-    local function hideAdornedPlayerGui(object)
-        if not (object:IsA("BillboardGui") or object:IsA("SurfaceGui")) then return end
-        local adornee=object.Adornee
-        local character=adornee and adornee:FindFirstAncestorOfClass("Model")
-        local player=character and Players:GetPlayerFromCharacter(character)
-        if player and shouldHide(player) then hideObject(object) end
+    local function hidePlayerNameVisual(object)
+        if object:IsA("BillboardGui") or object:IsA("SurfaceGui") then
+            local adornee=object.Adornee
+            local character=adornee and adornee:FindFirstAncestorOfClass("Model")
+            local player=character and Players:GetPlayerFromCharacter(character)
+            if player and shouldHide(player) then hideObject(object) end
+        elseif (object:IsA("TextLabel") or object:IsA("TextButton"))
+            and not object:IsDescendantOf(screenGui) then
+            -- Some games place overhead names in a separate GUI with no Adornee.
+            -- Hide only exact player-name text, not unrelated signs or chat.
+            local text=object.Text:gsub("<.->",""):match("^%s*(.-)%s*$"):lower()
+            for _,player in ipairs(Players:GetPlayers()) do
+                if shouldHide(player) and (text==player.Name:lower() or text==player.DisplayName:lower()) then
+                    remember(object,"Visible",object.Visible); object.Visible=false
+                    break
+                end
+            end
+        end
     end
-    local function scanAdornedPlayerGuis()
-        for _,object in ipairs(workspace:GetDescendants()) do hideAdornedPlayerGui(object) end
+    local function scanPlayerNameVisuals()
+        for _,object in ipairs(workspace:GetDescendants()) do hidePlayerNameVisual(object) end
         local playerGui=LocalPlayer:FindFirstChildOfClass("PlayerGui")
         if playerGui then
-            for _,object in ipairs(playerGui:GetDescendants()) do hideAdornedPlayerGui(object) end
+            for _,object in ipairs(playerGui:GetDescendants()) do hidePlayerNameVisual(object) end
         end
+        pcall(function()
+            for _,object in ipairs(game:GetService("CoreGui"):GetDescendants()) do hidePlayerNameVisual(object) end
+        end)
     end
     local function restoreAll()
         for object,properties in pairs(originals) do
@@ -5163,7 +5179,7 @@ state.initializePhotoIsolation=function()
         restoreAll()
         if isolationEnabled then
             for _,player in ipairs(Players:GetPlayers()) do applyPlayer(player) end
-            scanAdornedPlayerGuis()
+            scanPlayerNameVisuals()
         end
     end
     local function updateStatus()
@@ -5204,7 +5220,7 @@ state.initializePhotoIsolation=function()
                     task.wait(2)
                     if isolationEnabled and state.photoIsolationGeneration==generation then
                         for _,player in ipairs(Players:GetPlayers()) do applyPlayer(player) end
-                        scanAdornedPlayerGuis()
+                        scanPlayerNameVisuals()
                     end
                 end
             end)
@@ -5216,14 +5232,19 @@ state.initializePhotoIsolation=function()
         local character=object:FindFirstAncestorOfClass("Model")
         local player=character and Players:GetPlayerFromCharacter(character)
         if player and shouldHide(player) then hideObject(object) end
-        hideAdornedPlayerGui(object)
+        hidePlayerNameVisual(object)
     end))
     local playerGui=LocalPlayer:FindFirstChildOfClass("PlayerGui")
     if playerGui then
         track(playerGui.DescendantAdded:Connect(function(object)
-            if isolationEnabled then task.defer(hideAdornedPlayerGui,object) end
+            if isolationEnabled then task.defer(hidePlayerNameVisual,object) end
         end))
     end
+    pcall(function()
+        track(game:GetService("CoreGui").DescendantAdded:Connect(function(object)
+            if isolationEnabled then task.defer(hidePlayerNameVisual,object) end
+        end))
+    end)
     for _,player in ipairs(Players:GetPlayers()) do watchPlayer(player) end
     addCleanup(function() isolationEnabled=false; restoreAll() end)
 end
@@ -9243,7 +9264,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.28 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.29 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -10510,7 +10531,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.28] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.29] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.28] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.29] Loaded, but this executor does not expose queue_on_teleport")
 end
