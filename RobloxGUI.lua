@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.17
+--// Lucid Panel v5.9.18
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -387,7 +387,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.17",
+    Text                   = "LUCID PANEL  •  v5.9.18",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -8305,6 +8305,10 @@ if game.PlaceId==136070094363960 then
     local wallSizes={Vector3.new(13.631,135,86),Vector3.new(90,135,1)}
     local protectedFloorPosition=Vector3.new(-192,75.5,-166.118)
     local protectedFloorSize=Vector3.new(89,1,86)
+    local protectedLevelFivePosition=Vector3.new(-242,739.5,-116.645)
+    local protectedLevelFiveSize=Vector3.new(20,1,18)
+    local releaseReadyTargets={X1={Level2=true},Template={Level3=true},ZigZags={Level4=true},
+        DoubleInverse={Level5Main=true},Logs={Level6Main=true},PSliced={Level7Main=true}}
     local function inTowerCase(part)
         local parent=part.Parent
         while parent and parent~=workspace do
@@ -8325,6 +8329,17 @@ if game.PlaceId==136070094363960 then
         end
         return false
     end
+    local function isReleaseReadyTarget(part)
+        if not part:IsA("BasePart") then return false end
+        local section=part.Parent
+        local ds1=section and section.Parent
+        local releaseReady=ds1 and ds1.Parent
+        return section~=nil and ds1~=nil and releaseReady~=nil
+            and ds1.Name=="DS1" and releaseReady.Name=="ReleaseReady"
+            and releaseReady:IsDescendantOf(workspace)
+            and releaseReadyTargets[section.Name]~=nil
+            and releaseReadyTargets[section.Name][part.Name]==true
+    end
     local function isSelectedLevelOneMain(part)
         if not isTowerMain(part) or part.Name~="Level1Main" then return false end
         for index,position in ipairs(wallPositions) do
@@ -8339,9 +8354,15 @@ if game.PlaceId==136070094363960 then
             and (part.Position-protectedFloorPosition).Magnitude<2
             and (part.Size-protectedFloorSize).Magnitude<2
     end
+    local function isProtectedLevelFive(part)
+        return part.Name=="Level5Main" and part:IsA("UnionOperation")
+            and isReleaseReadyTarget(part)
+            and (part.Position-protectedLevelFivePosition).Magnitude<2
+            and (part.Size-protectedLevelFiveSize).Magnitude<2
+    end
     local function shouldHideTowerMain(part)
-        if isProtectedTowerFloor(part) then return false end
-        return (removeEveryTowerMain and (isTowerMain(part) or isSekretPass(part)))
+        if isProtectedTowerFloor(part) or isProtectedLevelFive(part) then return false end
+        return (removeEveryTowerMain and (isTowerMain(part) or isSekretPass(part) or isReleaseReadyTarget(part)))
             or (removeLevelOneMain and isSelectedLevelOneMain(part))
     end
     local function refreshTowerMain(part)
@@ -8369,7 +8390,7 @@ if game.PlaceId==136070094363960 then
     end
     local function scanTowerMains()
         for _,part in ipairs(workspace:GetDescendants()) do
-            if isTowerMain(part) or isSekretPass(part) then refreshTowerMain(part) end
+            if isTowerMain(part) or isSekretPass(part) or isReleaseReadyTarget(part) then refreshTowerMain(part) end
         end
         for part in pairs(hiddenTowerMains) do refreshTowerMain(part) end
     end
@@ -8377,9 +8398,13 @@ if game.PlaceId==136070094363960 then
         if removeLevelOneMain or removeEveryTowerMain then
             if not towerMainConnection then
                 towerMainConnection=workspace.DescendantAdded:Connect(function(object)
-                    if object.Name=="TowerCase" or object.Name=="SekretLevel" then
+                    if object.Name=="TowerCase" or object.Name=="SekretLevel"
+                        or object.Name=="ReleaseReady" or object.Name=="DS1"
+                        or releaseReadyTargets[object.Name] then
                         task.defer(scanTowerMains)
-                    elseif object:IsA("BasePart") and (object.Name:lower():match("main$") or object.Name=="LevelSekretPass") then
+                    elseif object:IsA("BasePart") and (object.Name:lower():match("main$")
+                        or object.Name=="LevelSekretPass" or object.Name=="Level2"
+                        or object.Name=="Level3" or object.Name=="Level4") then
                         task.defer(refreshTowerMain,object)
                     end
                 end)
@@ -8965,7 +8990,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.17 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.18 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -10232,7 +10257,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.17] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.18] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.17] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.18] Loaded, but this executor does not expose queue_on_teleport")
 end
