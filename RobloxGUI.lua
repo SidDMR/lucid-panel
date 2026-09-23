@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.18
+--// Lucid Panel v5.9.20
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -387,7 +387,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.18",
+    Text                   = "LUCID PANEL  •  v5.9.20",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -8301,6 +8301,9 @@ if game.PlaceId==136070094363960 then
     local removeEveryTowerMain=false
     local hiddenTowerMains={}
     local towerMainConnection=nil
+    local towerMainRoots=setmetatable({},{__mode="k"})
+    local towerMainPollGeneration=0
+    local towerMainScanQueued=false
     local wallPositions={Vector3.new(-192,142.5,-204.802),Vector3.new(-148.5,142.5,-166.618)}
     local wallSizes={Vector3.new(13.631,135,86),Vector3.new(90,135,1)}
     local protectedFloorPosition=Vector3.new(-192,75.5,-166.118)
@@ -8390,9 +8393,35 @@ if game.PlaceId==136070094363960 then
     end
     local function scanTowerMains()
         for _,part in ipairs(workspace:GetDescendants()) do
+            if part.Name=="TowerCase" or part.Name=="SekretLevel" or part.Name=="ReleaseReady" then
+                towerMainRoots[part]=true
+            end
             if isTowerMain(part) or isSekretPass(part) or isReleaseReadyTarget(part) then refreshTowerMain(part) end
         end
         for part in pairs(hiddenTowerMains) do refreshTowerMain(part) end
+    end
+    local function scanLoadedTowerRoots()
+        for root in pairs(towerMainRoots) do
+            if not root:IsDescendantOf(workspace) then
+                towerMainRoots[root]=nil
+            else
+                for _,part in ipairs(root:GetDescendants()) do
+                    if part:IsA("BasePart") and (isTowerMain(part) or isSekretPass(part)
+                        or isReleaseReadyTarget(part)) then
+                        refreshTowerMain(part)
+                    end
+                end
+            end
+        end
+        for part in pairs(hiddenTowerMains) do refreshTowerMain(part) end
+    end
+    local function queueTowerMainScan()
+        if towerMainScanQueued then return end
+        towerMainScanQueued=true
+        task.delay(0.1,function()
+            towerMainScanQueued=false
+            if removeLevelOneMain or removeEveryTowerMain then scanTowerMains() end
+        end)
     end
     local function updateTowerMainMonitor()
         if removeLevelOneMain or removeEveryTowerMain then
@@ -8401,18 +8430,30 @@ if game.PlaceId==136070094363960 then
                     if object.Name=="TowerCase" or object.Name=="SekretLevel"
                         or object.Name=="ReleaseReady" or object.Name=="DS1"
                         or releaseReadyTargets[object.Name] then
-                        task.defer(scanTowerMains)
+                        queueTowerMainScan()
                     elseif object:IsA("BasePart") and (object.Name:lower():match("main$")
                         or object.Name=="LevelSekretPass" or object.Name=="Level2"
                         or object.Name=="Level3" or object.Name=="Level4") then
                         task.defer(refreshTowerMain,object)
                     end
                 end)
+                towerMainPollGeneration+=1
+                local generation=towerMainPollGeneration
+                task.spawn(function()
+                    while generation==towerMainPollGeneration and screenGui.Parent do
+                        task.wait(2)
+                        if generation==towerMainPollGeneration and (removeLevelOneMain or removeEveryTowerMain) then
+                            scanLoadedTowerRoots()
+                        end
+                    end
+                end)
             end
-            task.defer(scanTowerMains)
+            queueTowerMainScan()
         else
+            towerMainPollGeneration+=1
             if towerMainConnection then towerMainConnection:Disconnect(); towerMainConnection=nil end
             for part in pairs(hiddenTowerMains) do refreshTowerMain(part) end
+            table.clear(towerMainRoots)
         end
     end
     createToggle("Remove Level 1 Main Walls",nextOrder(),false,function(on)
@@ -8960,6 +9001,13 @@ actionButton("Launch Dex++ Explorer", function(button)
         end)
         local launched=false
         if sharedEnvironment.__LUCID_DEX_LOADING==loadToken and fetched and type(source)=="string" and #source>0 then
+            -- This Dex build sometimes creates scroll buttons without their
+            -- decorative Arrow child. Keep scrolling functional without
+            -- repeatedly erroring when the optional icon is absent.
+            source=source:gsub("button1%.Arrow:GetChildren%(%)",
+                '(button1:FindFirstChild("Arrow") and button1.Arrow:GetChildren() or {})')
+            source=source:gsub("button2%.Arrow:GetChildren%(%)",
+                '(button2:FindFirstChild("Arrow") and button2.Arrow:GetChildren() or {})')
             local compiled, dexChunk=pcall(loadstring,source)
             if compiled and type(dexChunk)=="function" then launched=pcall(dexChunk) end
         end
@@ -8990,7 +9038,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.18 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.20 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -10257,7 +10305,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.18] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.20] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.18] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.20] Loaded, but this executor does not expose queue_on_teleport")
 end
