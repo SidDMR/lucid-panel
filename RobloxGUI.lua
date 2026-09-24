@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.29
+--// Lucid Panel v5.9.30
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -387,7 +387,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.29",
+    Text                   = "LUCID PANEL  •  v5.9.30",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -2152,6 +2152,10 @@ addCleanup(function() setSelfFrozen(false) end)
 
 createToggle("Mobile Freeze / Anti Push", nextOrder(), false, function(on)
     state.antiPushEnabled = on
+    state.physicsBypass = false
+    if state.antiPushStatusLabel then
+        state.antiPushStatusLabel.Text=on and "Anti Push: checking character..." or "Anti Push: off"
+    end
     if on and state.freezeEnabled and toggleRegistry["Freeze Me"] then
         toggleRegistry["Freeze Me"](false)
         notifyLucid("Compatibility manager","Freeze Me suspended because Anti-Push was enabled",Color3.fromRGB(235,175,70))
@@ -2163,6 +2167,11 @@ createToggle("Mobile Freeze / Anti Push", nextOrder(), false, function(on)
         root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
     end
 end)
+state.antiPushStatusLabel=create("TextLabel",{
+    Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,Text="Anti Push: off",
+    TextColor3=Color3.fromRGB(165,180,195),TextSize=10,Font=Enum.Font.Gotham,
+    TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=nextOrder(),Parent=currentSection,
+})
 local antiPushStrengthButton=create("TextButton",{
     Size=UDim2.new(1,0,0,26),BackgroundColor3=Color3.fromRGB(54,46,76),BorderSizePixel=0,
     Text="Anti Push Strength: Normal",TextColor3=Color3.fromRGB(225,215,240),TextSize=11,
@@ -9264,7 +9273,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.29 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.30 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -10252,6 +10261,26 @@ track(RunService.Heartbeat:Connect(function(dt)
     local h = char:FindFirstChildOfClass("Humanoid")
     local hrp = char:FindFirstChild("HumanoidRootPart")
 
+    -- InputEnded can be missed when focus changes. Reconcile the bypass with
+    -- the physical key each frame so Anti Push cannot stay silently bypassed.
+    if state.antiPushEnabled or state.antiFlingEnabled then
+        state.physicsBypass=UserInputService:IsKeyDown(Enum.KeyCode.B)
+            and UserInputService:GetFocusedTextBox()==nil
+    end
+    if state.antiPushEnabled and state.antiPushStatusLabel then
+        if state.freezeEnabled then
+            state.antiPushStatusLabel.Text="Anti Push: paused by Freeze Me"
+        elseif not hrp or not h then
+            state.antiPushStatusLabel.Text="Anti Push: waiting for character"
+        elseif state.physicsBypass then
+            state.antiPushStatusLabel.Text="Anti Push: paused (B held)"
+        elseif h.SeatPart then
+            state.antiPushStatusLabel.Text="Anti Push: paused while seated"
+        else
+            state.antiPushStatusLabel.Text="Anti Push: protecting"
+        end
+    end
+
     -- IY-style freeze enforcement. Some games attempt to unanchor the root.
     if state.freezeEnabled and hrp then
         if state.freezeRoot ~= hrp then
@@ -10531,7 +10560,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.29] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.30] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.29] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.30] Loaded, but this executor does not expose queue_on_teleport")
 end
