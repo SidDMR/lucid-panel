@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.30
+--// Lucid Panel v5.9.34
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -387,7 +387,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.30",
+    Text                   = "LUCID PANEL  •  v5.9.34",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -2289,6 +2289,70 @@ track(LocalPlayer:GetPropertyChangedSignal("DevEnableMouseLock"):Connect(functio
     end
 end))
 
+-- Spin only the local character. Normal spin pauses whenever Roblox locks the
+-- mouse to the center; spinsl continues through that Shift Lock state.
+do
+    local binding="LucidCharacterSpin"
+    local mode=nil
+    local speed=2 -- radians per second; command range 0.5–10
+    local spinningHumanoid=nil
+    local savedAutoRotate=nil
+    local function restoreAutoRotate()
+        if spinningHumanoid and spinningHumanoid.Parent and savedAutoRotate~=nil then
+            spinningHumanoid.AutoRotate=savedAutoRotate
+        end
+        spinningHumanoid=nil; savedAutoRotate=nil
+    end
+    local function step(dt)
+        if not mode then return end
+        local character=LocalPlayer.Character
+        local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+        local root=character and character:FindFirstChild("HumanoidRootPart")
+        if not humanoid or not root or humanoid.Health<=0 or humanoid.SeatPart
+            or state.freecamEnabled or (mode=="normal"
+                and UserInputService.MouseBehavior==Enum.MouseBehavior.LockCenter) then
+            restoreAutoRotate()
+            return
+        end
+        if spinningHumanoid~=humanoid then
+            restoreAutoRotate()
+            spinningHumanoid=humanoid
+            savedAutoRotate=humanoid.AutoRotate
+        end
+        humanoid.AutoRotate=false
+        root.CFrame=root.CFrame*CFrame.Angles(0,speed*math.min(dt,0.1),0)
+    end
+    local function stop()
+        mode=nil
+        pcall(function() RunService:UnbindFromRenderStep(binding) end)
+        restoreAutoRotate()
+        return true,"Spin stopped"
+    end
+    state.spinApi={
+        start=function(newMode,value)
+            local input=tostring(value or ""):match("^%s*(.-)%s*$")
+            if input:lower()=="off" then return stop() end
+            if input~="" then
+                local parsed=tonumber(input)
+                if not parsed or parsed<0.5 or parsed>10 then
+                    return false,"Speed must be between 0.5 and 10 radians/second"
+                end
+                speed=parsed
+            end
+            stop()
+            mode=newMode
+            local ok,err=pcall(function()
+                RunService:BindToRenderStep(binding,Enum.RenderPriority.Character.Value+2,step)
+            end)
+            if not ok then stop(); return false,"Spin could not start: "..tostring(err) end
+            return true,(newMode=="shiftlock" and "Shift-Lock spin" or "Spin")
+                .." active at "..tostring(speed).." rad/s"
+        end,
+        stop=stop,
+    }
+    addCleanup(stop)
+end
+
 useCategory("Teleport & Coordinates")
 sectionLabel("Click Teleport", nextOrder())
 createToggle("Left Alt + Click TP", nextOrder(), true, function(on)
@@ -3032,6 +3096,95 @@ lockTargetButton.MouseButton1Click:Connect(function() setTargetLock(gotoBox.Text
 clearTargetButton.MouseButton1Click:Connect(clearTargetLock)
 gotoApi.setTarget=setTargetLock; gotoApi.clearTarget=clearTargetLock
 track(Players.PlayerRemoving:Connect(function(player) if player.Name==state.targetPlayerName then clearTargetLock() end end))
+
+-- Single-target, local-only root hitbox extension. This can enlarge client
+-- queries/visuals but cannot force server-validated hits to register.
+do
+    local targetName=nil
+    local hitboxSize=10
+    local changedRoot=nil
+    local original=nil
+    local generation=0
+    local function restoreRoot()
+        if changedRoot and changedRoot.Parent and original then
+            pcall(function()
+                changedRoot.Size=original.Size
+                changedRoot.Transparency=original.Transparency
+                changedRoot.Color=original.Color
+                changedRoot.CanTouch=original.CanTouch
+                changedRoot.CanQuery=true
+                changedRoot.CanCollide=original.CanCollide
+                changedRoot.CanQuery=original.CanQuery
+            end)
+        end
+        changedRoot=nil; original=nil
+    end
+    local function applyRoot()
+        local player=targetName and Players:FindFirstChild(targetName)
+        local character=player and player.Character
+        local root=character and character:FindFirstChild("HumanoidRootPart")
+        if root~=changedRoot then
+            restoreRoot()
+            if root and root:IsA("BasePart") then
+                changedRoot=root
+                original={Size=root.Size,Transparency=root.Transparency,Color=root.Color,
+                    CanCollide=root.CanCollide,CanTouch=root.CanTouch,CanQuery=root.CanQuery}
+            end
+        end
+        if changedRoot then
+            pcall(function()
+                changedRoot.CanCollide=false
+                changedRoot.CanTouch=false
+                changedRoot.CanQuery=true
+                changedRoot.Size=Vector3.new(hitboxSize,hitboxSize,hitboxSize)
+                changedRoot.Transparency=0.7
+                changedRoot.Color=Color3.fromRGB(255,75,75)
+            end)
+        end
+    end
+    local function disable()
+        generation+=1
+        targetName=nil
+        restoreRoot()
+        return true,"Hitbox restored"
+    end
+    state.hitboxApi={
+        enable=function(input)
+            local query=tostring(input or ""):match("^%s*(.-)%s*$")
+            if query:lower()=="off" then return disable() end
+            local player=findGotoPlayer(query)
+            local requestedSize=10
+            if not player then
+                local name,sizeText=query:match("^(.-)%s+(%d+%.?%d*)$")
+                if name then
+                    player=findGotoPlayer(name)
+                    requestedSize=tonumber(sizeText)
+                end
+            end
+            if not player then return false,"Player not found; use !hitbox <user> [size]" end
+            if not requestedSize or requestedSize<4 or requestedSize>30 then
+                return false,"Size must be between 4 and 30 studs"
+            end
+            targetName=player.Name
+            hitboxSize=requestedSize
+            applyRoot()
+            generation+=1
+            local token=generation
+            task.spawn(function()
+                while targetName and generation==token and screenGui.Parent do
+                    task.wait(0.5)
+                    if targetName and generation==token then applyRoot() end
+                end
+            end)
+            return true,"Local hitbox: "..player.Name.." ("..requestedSize.." studs)"
+        end,
+        disable=disable,
+    }
+    track(Players.PlayerRemoving:Connect(function(player)
+        if player.Name==targetName then disable() end
+    end))
+    addCleanup(disable)
+end
 
 local loopGotoTarget = nil
 local loopGotoGeneration = 0
@@ -5104,6 +5257,7 @@ end
 sectionLabel("Photo Isolation",nextOrder())
 state.initializePhotoIsolation=function()
     local exceptions={}
+    local sessionHiddenNames={}
     local originals={}
     local characterConnections={}
     local isolationEnabled=false
@@ -5139,7 +5293,8 @@ state.initializePhotoIsolation=function()
         end
     end
     local function shouldHide(player)
-        return isolationEnabled and player~=LocalPlayer and not exceptions[player.Name]
+        return player~=LocalPlayer and (sessionHiddenNames[player.Name]==true
+            or (isolationEnabled and not exceptions[player.Name]))
     end
     local function applyPlayer(player)
         local character=player.Character
@@ -5186,7 +5341,7 @@ state.initializePhotoIsolation=function()
     end
     local function refresh()
         restoreAll()
-        if isolationEnabled then
+        if isolationEnabled or next(sessionHiddenNames) then
             for _,player in ipairs(Players:GetPlayers()) do applyPlayer(player) end
             scanPlayerNameVisuals()
         end
@@ -5219,25 +5374,57 @@ state.initializePhotoIsolation=function()
     end
     addButton.MouseButton1Click:Connect(addException); removeButton.MouseButton1Click:Connect(removeException)
     inputBox.FocusLost:Connect(function(enterPressed) if enterPressed then addException() end end)
-    createToggle("Photo Isolation — Hide Other Players",nextOrder(),false,function(on)
-        isolationEnabled=on; state.photoIsolationEnabled=on; refresh()
+    local function startReconcile()
         state.photoIsolationGeneration=(state.photoIsolationGeneration or 0)+1
-        if on then
+        if isolationEnabled or next(sessionHiddenNames) then
             local generation=state.photoIsolationGeneration
             task.spawn(function()
-                while isolationEnabled and state.photoIsolationGeneration==generation and screenGui.Parent do
+                while (isolationEnabled or next(sessionHiddenNames))
+                    and state.photoIsolationGeneration==generation and screenGui.Parent do
                     task.wait(2)
-                    if isolationEnabled and state.photoIsolationGeneration==generation then
+                    if (isolationEnabled or next(sessionHiddenNames))
+                        and state.photoIsolationGeneration==generation then
                         for _,player in ipairs(Players:GetPlayers()) do applyPlayer(player) end
                         scanPlayerNameVisuals()
                     end
                 end
             end)
         end
+    end
+    state.photoIsolationSessionApi={
+        hide=function(query)
+            local player=gotoApi.find(query)
+            if not player or player==LocalPlayer then return false,"Player not found" end
+            sessionHiddenNames[player.Name]=true
+            refresh(); startReconcile()
+            return true,player.Name
+        end,
+        unhide=function(query)
+            local needle=tostring(query or ""):match("^%s*(.-)%s*$"):lower()
+            if needle=="" then return false,"Enter a player name" end
+            local player=gotoApi.find(query)
+            if player and sessionHiddenNames[player.Name] then needle=player.Name:lower() end
+            local matched=nil
+            for name in pairs(sessionHiddenNames) do
+                if name:lower()==needle then matched=name; break end
+                if name:lower():sub(1,#needle)==needle then
+                    if matched then return false,"Multiple hidden players match" end
+                    matched=name
+                end
+            end
+            if not matched then return false,"Player is not hidden by this command" end
+            sessionHiddenNames[matched]=nil
+            if isolationEnabled then exceptions[matched]=true; updateStatus() end
+            refresh(); startReconcile()
+            return true,matched
+        end,
+    }
+    createToggle("Photo Isolation — Hide Other Players",nextOrder(),false,function(on)
+        isolationEnabled=on; state.photoIsolationEnabled=on; refresh(); startReconcile()
     end)
-    track(Players.PlayerAdded:Connect(function(player) watchPlayer(player); if isolationEnabled then task.defer(function() applyPlayer(player) end) end end))
+    track(Players.PlayerAdded:Connect(function(player) watchPlayer(player); if shouldHide(player) then task.defer(function() applyPlayer(player) end) end end))
     track(workspace.DescendantAdded:Connect(function(object)
-        if not isolationEnabled then return end
+        if not isolationEnabled and not next(sessionHiddenNames) then return end
         local character=object:FindFirstAncestorOfClass("Model")
         local player=character and Players:GetPlayerFromCharacter(character)
         if player and shouldHide(player) then hideObject(object) end
@@ -5246,16 +5433,16 @@ state.initializePhotoIsolation=function()
     local playerGui=LocalPlayer:FindFirstChildOfClass("PlayerGui")
     if playerGui then
         track(playerGui.DescendantAdded:Connect(function(object)
-            if isolationEnabled then task.defer(hidePlayerNameVisual,object) end
+            if isolationEnabled or next(sessionHiddenNames) then task.defer(hidePlayerNameVisual,object) end
         end))
     end
     pcall(function()
         track(game:GetService("CoreGui").DescendantAdded:Connect(function(object)
-            if isolationEnabled then task.defer(hidePlayerNameVisual,object) end
+            if isolationEnabled or next(sessionHiddenNames) then task.defer(hidePlayerNameVisual,object) end
         end))
     end)
     for _,player in ipairs(Players:GetPlayers()) do watchPlayer(player) end
-    addCleanup(function() isolationEnabled=false; restoreAll() end)
+    addCleanup(function() isolationEnabled=false; table.clear(sessionHiddenNames); restoreAll() end)
 end
 state.initializePhotoIsolation()
 
@@ -7737,6 +7924,17 @@ actionButton("Save Named Profile", function(button)
     local ok,savedName=saveNamedProfile(button,nil,false)
     if ok then activeProfileName=savedName end
 end)
+state.saveNamedProfileCommand=function(requestedName)
+    local name=tostring(requestedName or ""):match("^%s*(.-)%s*$")
+    if name~="" and name:gsub("[^%w_%-]","")=="" then
+        return false,"Use letters, numbers, _ or - in the profile name"
+    end
+    local ok,savedName=saveNamedProfile(nil,name~="" and name or nil,true)
+    if not ok then return false,writefile and "Profile save failed" or "File API unavailable" end
+    activeProfileName=savedName
+    profileNameBox.Text=savedName
+    return true,savedName
+end
 loadNamedProfile = function(button)
     local originalButtonText=button.Text
     local profilePath=getProfilePath()
@@ -9273,7 +9471,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.30 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.34 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -9594,6 +9792,10 @@ state.initializeCommandConsole=function()
             {command="!getmobilelink",description="Copy a direct Roblox-app link to this server"},
             {command="!getlinks",description="Copy HTTPS and mobile links to this server"},
             {command="!help",description="Show a compact command summary"},
+            {command="!hitbox <player> [size]",description="Locally extend one player's root hitbox (4-30 studs; default 10)"},
+            {command="!unhitbox",description="Restore the original target hitbox"},
+            {command="!hide <player>",description="Hide one player's character and name for this session only"},
+            {command="!unhide <player>",description="Restore a player hidden with !hide"},
             {command="!jumpheight <value>",description="Set and lock jump height"},
             {command="!lgdir <direction>",description="Set Go To/Loop Go To direction, including headsit and snowboard"},
             {command="!loopgoto <player>",description="Continuously follow a player"},
@@ -9603,6 +9805,10 @@ state.initializeCommandConsole=function()
             {command="!return",description="Return to the previous teleport position"},
             {command="!restore",description="Recover the local character and restore its camera"},
             {command="!rj",description="Rejoin using the IY-style same-server routine"},
+            {command="!save [profile name]",description="Save the current settings to the named profile"},
+            {command="!spin [0.5-10]",description="Spin at adjustable speed, pausing during Shift Lock"},
+            {command="!spinsl [0.5-10]",description="Keep spinning even while Shift Lock is active"},
+            {command="!unspin",description="Stop either spin mode and restore AutoRotate"},
             {command="!reanim <on|off>",description="Control Local Reanimation for Custom keyframes"},
             {command="!sh <player>",description="Add a player to Special highlights"},
             {command="!shc <#RRGGBB>",description="Set the Special highlight color"},
@@ -9789,6 +9995,30 @@ state.initializeCommandConsole=function()
             local ok,name=state.gotoApi.setTarget(rest); finish(ok,ok and ("Target locked: "..name) or name); return
         elseif command=="untarget" then
             state.gotoApi.clearTarget(); finish(true,"Target cleared"); return
+        elseif command=="hide" or command=="unhide" then
+            if rest=="" then finish(false,"Use: !"..command.." <player>"); return end
+            local api=state.photoIsolationSessionApi
+            if not api then finish(false,"Photo Isolation unavailable"); return end
+            local ok,name=api[command](rest)
+            finish(ok,ok and (command=="hide" and ("Hidden for this session: "..name)
+                or ("Restored: "..name)) or name)
+            return
+        elseif command=="save" then
+            local ok,name=state.saveNamedProfileCommand(rest)
+            finish(ok,ok and ("Profile saved: "..name) or name)
+            return
+        elseif command=="hitbox" or command=="unhitbox" then
+            local ok,message
+            if command=="hitbox" then ok,message=state.hitboxApi.enable(rest)
+            else ok,message=state.hitboxApi.disable() end
+            finish(ok,message)
+            return
+        elseif command=="spin" or command=="spinsl" or command=="unspin" then
+            local ok,message
+            if command=="unspin" then ok,message=state.spinApi.stop()
+            else ok,message=state.spinApi.start(command=="spinsl" and "shiftlock" or "normal",rest) end
+            finish(ok,message)
+            return
         elseif command=="respawndelay" then
             local value=tonumber(rest)
             if not value or value<0 then finish(false,"Use: respawndelay <seconds, 0 or higher>"); return end
@@ -10560,7 +10790,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.30] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.34] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.30] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.34] Loaded, but this executor does not expose queue_on_teleport")
 end
