@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.38
+--// Lucid Panel v5.9.40
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -388,7 +388,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.38",
+    Text                   = "LUCID PANEL  •  v5.9.40",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -2993,10 +2993,10 @@ local function computeGotoCFrame(targetRootPart,offset,direction,allowHeadSit)
         local targetCharacter=targetRootPart.Parent
         local targetHead=targetCharacter and targetCharacter:FindFirstChild("Head")
         if targetHead then
-            -- Anchor in animated head space. A small forward offset makes yaw
-            -- turns move the seat around the crown instead of staying centered.
+            -- Stay centered on the head. Head-local height follows tilt/roll;
+            -- facing follows head yaw when the actual Head part rotates.
             local headCF=targetHead.CFrame
-            local rootPosition=(headCF*CFrame.new(0,targetHead.Size.Y*0.5+1.05,-0.55)).Position
+            local rootPosition=(headCF*CFrame.new(0,targetHead.Size.Y*0.5+1.05,0)).Position
             local headLook=headCF.LookVector
             local flatLook=Vector3.new(headLook.X,0,headLook.Z)
             if flatLook.Magnitude<0.001 then
@@ -3262,7 +3262,7 @@ local function restoreLoopGotoStability()
     end
     table.clear(loopGotoCollisionState)
 end
-local function applyLoopGotoStability(character,root)
+local function applyLoopGotoStability(character,root,anchorRoot)
     if loopGotoStableRoot~=root then
         restoreLoopGotoStability()
         loopGotoStableRoot=root; loopGotoRootWasAnchored=root.Anchored
@@ -3273,7 +3273,9 @@ local function applyLoopGotoStability(character,root)
             item.CanCollide=false
         end
     end
-    root.Anchored=true
+    -- An anchored Head Sit only moves on this client; keep its assembly
+    -- unanchored so the character's position can replicate to other players.
+    if not state.freezeEnabled then root.Anchored=anchorRoot end
 end
 
 local loopGotoDirections = {"Right","Left","Head Sit","Snowboard","Down","Forward","Backwards","In"}
@@ -3311,7 +3313,7 @@ local _, loopGotoToggle, loopGotoSetter = createToggle("Loop Go To (uses player 
                 local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
                 if root and targetRoot then
                     local special=state.loopGotoDirection=="Head Sit" or state.loopGotoDirection=="Snowboard"
-                    if special then applyLoopGotoStability(character,root) else restoreLoopGotoStability() end
+                    if special then applyLoopGotoStability(character,root,state.loopGotoDirection=="Snowboard") else restoreLoopGotoStability() end
                     if humanoid then
                         humanoid.Sit=state.loopGotoDirection=="Head Sit"
                         humanoid.PlatformStand=state.loopGotoDirection=="Snowboard"
@@ -3320,7 +3322,7 @@ local _, loopGotoToggle, loopGotoSetter = createToggle("Loop Go To (uses player 
                     root.CFrame=state.loopGotoDirection=="Head Sit" and root.CFrame:Lerp(desired,0.7) or desired
                     root.AssemblyLinearVelocity=Vector3.zero; root.AssemblyAngularVelocity=Vector3.zero
                 end
-                if state.loopGotoDirection=="Head Sit" or state.loopGotoDirection=="Snowboard" then RunService.RenderStepped:Wait()
+                if state.loopGotoDirection=="Snowboard" then RunService.RenderStepped:Wait()
                 else RunService.Heartbeat:Wait() end
             end
             humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
@@ -9558,7 +9560,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.38 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.40 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -10877,7 +10879,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.38] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.40] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.38] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.40] Loaded, but this executor does not expose queue_on_teleport")
 end
