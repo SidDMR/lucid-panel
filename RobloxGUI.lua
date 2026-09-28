@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.34
+--// Lucid Panel v5.9.35
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -387,7 +387,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.34",
+    Text                   = "LUCID PANEL  •  v5.9.35",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -2294,7 +2294,7 @@ end))
 do
     local binding="LucidCharacterSpin"
     local mode=nil
-    local speed=2 -- radians per second; command range 0.5–10
+    local speed=2 -- full turns per second; command range 0.5–10
     local spinningHumanoid=nil
     local savedAutoRotate=nil
     local function restoreAutoRotate()
@@ -2320,7 +2320,9 @@ do
             savedAutoRotate=humanoid.AutoRotate
         end
         humanoid.AutoRotate=false
-        root.CFrame=root.CFrame*CFrame.Angles(0,speed*math.min(dt,0.1),0)
+        -- Cap unusually long frames below half a turn to avoid aliasing into
+        -- apparent stillness; at normal frame rates the selected rate is exact.
+        root.CFrame=root.CFrame*CFrame.Angles(0,math.min(speed*2*math.pi*dt,math.rad(150)),0)
     end
     local function stop()
         mode=nil
@@ -2335,7 +2337,7 @@ do
             if input~="" then
                 local parsed=tonumber(input)
                 if not parsed or parsed<0.5 or parsed>10 then
-                    return false,"Speed must be between 0.5 and 10 radians/second"
+                    return false,"Speed must be between 0.5 and 10 turns/second"
                 end
                 speed=parsed
             end
@@ -2346,7 +2348,7 @@ do
             end)
             if not ok then stop(); return false,"Spin could not start: "..tostring(err) end
             return true,(newMode=="shiftlock" and "Shift-Lock spin" or "Spin")
-                .." active at "..tostring(speed).." rad/s"
+                .." active at "..tostring(speed).." turns/s"
         end,
         stop=stop,
     }
@@ -9471,7 +9473,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.34 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.35 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -10790,7 +10792,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.34] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.35] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.34] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.35] Loaded, but this executor does not expose queue_on_teleport")
 end
