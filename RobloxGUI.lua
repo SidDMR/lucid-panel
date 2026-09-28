@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.36
+--// Lucid Panel v5.9.38
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -212,6 +212,7 @@ local state = {
     gotoOffsetX       = 3,
     gotoOffsetY       = 1,
     gotoOffsetZ       = 0,
+    gotoForwardBackStuds = 1,
     loopGotoDirection = "Right",
     localHeadlessEnabled = false,
     favoriteNames     = {},
@@ -387,7 +388,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.36",
+    Text                   = "LUCID PANEL  •  v5.9.38",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -2933,6 +2934,53 @@ gotoOffsetBox.FocusLost:Connect(function()
     end
     gotoOffsetBox.Text=string.format("%g, %g, %g",gotoOffset.X,gotoOffset.Y,gotoOffset.Z)
 end)
+local forwardBackRow=rowFrame(nextOrder(),50)
+create("TextLabel",{Size=UDim2.new(1,-70,0,22),BackgroundTransparency=1,
+    Text="Forward / Back studs",TextColor3=Color3.fromRGB(185,175,205),TextSize=10,
+    Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=forwardBackRow})
+local forwardBackBox=styledBox(forwardBackRow,{Size=UDim2.new(0,62,0,24),
+    Position=UDim2.new(1,-62,0,0),Text="1"})
+local forwardBackSlider=create("Frame",{Size=UDim2.new(1,-4,0,14),Position=UDim2.new(0,2,0,32),
+    BackgroundColor3=Color3.fromRGB(50,50,65),BorderSizePixel=0,Active=true,Parent=forwardBackRow})
+create("UICorner",{CornerRadius=UDim.new(1,0),Parent=forwardBackSlider})
+local forwardBackFill=create("Frame",{Size=UDim2.new(0,0,1,0),
+    BackgroundColor3=Color3.fromRGB(130,90,230),BorderSizePixel=0,Parent=forwardBackSlider})
+create("UICorner",{CornerRadius=UDim.new(1,0),Parent=forwardBackFill})
+local function setForwardBackStuds(value)
+    local numeric=tonumber(value)
+    if not numeric then
+        forwardBackBox.Text=string.format("%g",state.gotoForwardBackStuds)
+        return
+    end
+    numeric=math.floor(math.clamp(numeric,0.5,100)*10+0.5)/10
+    state.gotoForwardBackStuds=numeric
+    forwardBackBox.Text=string.format("%g",numeric)
+    forwardBackFill.Size=UDim2.new((numeric-0.5)/99.5,0,1,0)
+end
+gotoApi.setForwardBackStuds=setForwardBackStuds
+local draggingForwardBack=false
+local function updateForwardBackFromInput(input)
+    local width=math.max(forwardBackSlider.AbsoluteSize.X,1)
+    local ratio=math.clamp((input.Position.X-forwardBackSlider.AbsolutePosition.X)/width,0,1)
+    setForwardBackStuds(0.5+ratio*99.5)
+end
+track(forwardBackSlider.InputBegan:Connect(function(input)
+    if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+        draggingForwardBack=true
+        updateForwardBackFromInput(input)
+    end
+end))
+track(UserInputService.InputChanged:Connect(function(input)
+    if draggingForwardBack and (input.UserInputType==Enum.UserInputType.MouseMovement
+        or input.UserInputType==Enum.UserInputType.Touch) then updateForwardBackFromInput(input) end
+end))
+track(UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+        draggingForwardBack=false
+    end
+end))
+forwardBackBox.FocusLost:Connect(function() setForwardBackStuds(forwardBackBox.Text) end)
+setForwardBackStuds(state.gotoForwardBackStuds)
 local function computeGotoCFrame(targetRootPart,offset,direction,allowHeadSit)
     local targetCF=targetRootPart.CFrame
     local px=math.abs(offset.X)
@@ -2944,14 +2992,21 @@ local function computeGotoCFrame(targetRootPart,offset,direction,allowHeadSit)
     elseif direction=="Head Sit" and allowHeadSit then
         local targetCharacter=targetRootPart.Parent
         local targetHead=targetCharacter and targetCharacter:FindFirstChild("Head")
-        local supportPosition=targetRootPart.Position+Vector3.new(0,2,0)
         if targetHead then
-            -- Use the animated head's full world position so idle poses and
-            -- other animation-driven head movement are followed, not only Y.
-            supportPosition=targetHead.Position+targetHead.CFrame.UpVector*(targetHead.Size.Y*0.5)
+            -- Anchor in animated head space. A small forward offset makes yaw
+            -- turns move the seat around the crown instead of staying centered.
+            local headCF=targetHead.CFrame
+            local rootPosition=(headCF*CFrame.new(0,targetHead.Size.Y*0.5+1.05,-0.55)).Position
+            local headLook=headCF.LookVector
+            local flatLook=Vector3.new(headLook.X,0,headLook.Z)
+            if flatLook.Magnitude<0.001 then
+                local rootLook=targetCF.LookVector
+                flatLook=Vector3.new(rootLook.X,0,rootLook.Z)
+            end
+            if flatLook.Magnitude<0.001 then flatLook=Vector3.new(0,0,-1) end
+            return CFrame.lookAt(rootPosition,rootPosition+flatLook.Unit)
         end
-        local rootPosition=supportPosition+Vector3.new(0,1.05,0)
-        return CFrame.new(rootPosition)*(targetCF-targetCF.Position)
+        return targetCF*CFrame.new(0,3.05,0)
     elseif direction=="Snowboard" and allowHeadSit then
         -- Stay flat below the target's feet and inherit their horizontal
         -- facing, making the local avatar act like a moving snowboard.
@@ -2959,9 +3014,9 @@ local function computeGotoCFrame(targetRootPart,offset,direction,allowHeadSit)
     elseif direction=="Down" then
         return targetCF*CFrame.new(0,-px,0)
     elseif direction=="Forward" then
-        return targetCF*CFrame.new(0,0,-1)
+        return targetCF*CFrame.new(0,0,-state.gotoForwardBackStuds)
     elseif direction=="Backwards" then
-        return targetCF*CFrame.new(0,0,1)
+        return targetCF*CFrame.new(0,0,state.gotoForwardBackStuds)
     elseif direction=="In" then
         return targetCF
     end
@@ -8026,6 +8081,7 @@ loadNamedProfile = function(button)
     state.setEmotePlaybackSpeed(state.emoteSpeed)
     updateText(emoteSyncToleranceBox,string.format("%.2f",state.emoteSyncTolerance))
     if gotoApi.setOffset then gotoApi.setOffset(state.gotoOffsetX,state.gotoOffsetY,state.gotoOffsetZ) end
+    if gotoApi.setForwardBackStuds then gotoApi.setForwardBackStuds(state.gotoForwardBackStuds) end
     if gotoApi.setLoopDirection and state.loopGotoDirection then gotoApi.setLoopDirection(state.loopGotoDirection) end
     -- Safe startup: remembered toggle states are intentionally not activated.
     -- Import favorites from older profile files once, without replacing the
@@ -9502,7 +9558,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.36 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.38 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -10821,7 +10877,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.36] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.38] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.36] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.38] Loaded, but this executor does not expose queue_on_teleport")
 end
