@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.35
+--// Lucid Panel v5.9.36
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -387,7 +387,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.35",
+    Text                   = "LUCID PANEL  •  v5.9.36",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -5261,6 +5261,8 @@ state.initializePhotoIsolation=function()
     local exceptions={}
     local sessionHiddenNames={}
     local originals={}
+    local nameVisuals=setmetatable({},{__mode="k"})
+    local nameVisualsPrimed=false
     local characterConnections={}
     local isolationEnabled=false
     local inputRow=rowFrame(nextOrder(),30)
@@ -5323,15 +5325,41 @@ state.initializePhotoIsolation=function()
             end
         end
     end
-    local function scanPlayerNameVisuals()
-        for _,object in ipairs(workspace:GetDescendants()) do hidePlayerNameVisual(object) end
-        local playerGui=LocalPlayer:FindFirstChildOfClass("PlayerGui")
-        if playerGui then
-            for _,object in ipairs(playerGui:GetDescendants()) do hidePlayerNameVisual(object) end
+    local function cacheNameVisual(object)
+        if object:IsA("BillboardGui") or object:IsA("SurfaceGui")
+            or object:IsA("TextLabel") or object:IsA("TextButton") then
+            if object:IsDescendantOf(screenGui) then return end
+            nameVisuals[object]=true
+            if isolationEnabled or next(sessionHiddenNames) then hidePlayerNameVisual(object) end
         end
-        pcall(function()
-            for _,object in ipairs(game:GetService("CoreGui"):GetDescendants()) do hidePlayerNameVisual(object) end
+    end
+    local function primeNameVisuals()
+        if nameVisualsPrimed then return end
+        nameVisualsPrimed=true
+        task.spawn(function()
+            local function scanTree(root)
+                local pending={root}
+                local count=0
+                while #pending>0 and screenGui.Parent do
+                    local object=pending[#pending]
+                    pending[#pending]=nil
+                    cacheNameVisual(object)
+                    for _,child in ipairs(object:GetChildren()) do pending[#pending+1]=child end
+                    count+=1
+                    if count%200==0 then task.wait() end
+                end
+            end
+            scanTree(workspace)
+            local playerGui=LocalPlayer:FindFirstChildOfClass("PlayerGui")
+            if playerGui then scanTree(playerGui) end
+            pcall(function() scanTree(game:GetService("CoreGui")) end)
         end)
+    end
+    local function scanPlayerNameVisuals()
+        for object in pairs(nameVisuals) do
+            if object.Parent then hidePlayerNameVisual(object)
+            else nameVisuals[object]=nil end
+        end
     end
     local function restoreAll()
         for object,properties in pairs(originals) do
@@ -5345,6 +5373,7 @@ state.initializePhotoIsolation=function()
         restoreAll()
         if isolationEnabled or next(sessionHiddenNames) then
             for _,player in ipairs(Players:GetPlayers()) do applyPlayer(player) end
+            primeNameVisuals()
             scanPlayerNameVisuals()
         end
     end
@@ -5426,21 +5455,21 @@ state.initializePhotoIsolation=function()
     end)
     track(Players.PlayerAdded:Connect(function(player) watchPlayer(player); if shouldHide(player) then task.defer(function() applyPlayer(player) end) end end))
     track(workspace.DescendantAdded:Connect(function(object)
+        if nameVisualsPrimed then cacheNameVisual(object) end
         if not isolationEnabled and not next(sessionHiddenNames) then return end
         local character=object:FindFirstAncestorOfClass("Model")
         local player=character and Players:GetPlayerFromCharacter(character)
         if player and shouldHide(player) then hideObject(object) end
-        hidePlayerNameVisual(object)
     end))
     local playerGui=LocalPlayer:FindFirstChildOfClass("PlayerGui")
     if playerGui then
         track(playerGui.DescendantAdded:Connect(function(object)
-            if isolationEnabled or next(sessionHiddenNames) then task.defer(hidePlayerNameVisual,object) end
+            if nameVisualsPrimed then cacheNameVisual(object) end
         end))
     end
     pcall(function()
         track(game:GetService("CoreGui").DescendantAdded:Connect(function(object)
-            if isolationEnabled or next(sessionHiddenNames) then task.defer(hidePlayerNameVisual,object) end
+            if nameVisualsPrimed then cacheNameVisual(object) end
         end))
     end)
     for _,player in ipairs(Players:GetPlayers()) do watchPlayer(player) end
@@ -9473,7 +9502,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.35 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.36 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -10792,7 +10821,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.35] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.36] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.35] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.36] Loaded, but this executor does not expose queue_on_teleport")
 end
