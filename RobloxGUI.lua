@@ -1,5 +1,5 @@
---// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.44
+--// Roblox GUI — Lucid Panel v6
+--// Lucid Panel v6.0.1
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -388,7 +388,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.44",
+    Text                   = "LUCID PANEL  •  v6.0.1",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -661,14 +661,15 @@ createCategory("Camera", 6, false)
 createCategory("Waypoints", 7, false)
 createCategory("Emotes", 8, false)
 createCategory("Misc", 9, false)
-createCategory("Diagnostics", 10, false)
-createCategory("Interface", 11, false)
+if game.PlaceId==136070094363960 then createCategory("Scary Worm Tower 3", 10, false) end
+createCategory("Diagnostics", 11, false)
+createCategory("Interface", 12, false)
 
 state.mainNavigation={active="Home",groups={
     Home={Home=true,Favorites=true},
     Player={Player=true,Camera=true},
     World={["Teleport & Coordinates"]=true,Waypoints=true,Lighting=true,Servers=true},
-    Tools={Automation=true,Emotes=true,Misc=true},
+    Tools={Automation=true,Emotes=true,Misc=true,["Scary Worm Tower 3"]=true},
     Settings={Interface=true,Diagnostics=true},
 },categoryGroup={}}
 for group,names in pairs(state.mainNavigation.groups) do for name in pairs(names) do state.mainNavigation.categoryGroup[name]=group end end
@@ -710,7 +711,7 @@ state.initializeLucidDock=function()
         Amber={background=Color3.fromRGB(26,17,5),panel=Color3.fromRGB(43,29,9),surface=Color3.fromRGB(63,43,14),surface2=Color3.fromRGB(87,60,20),accent=Color3.fromRGB(245,165,25),text=Color3.fromRGB(240,240,245),muted=Color3.fromRGB(165,165,175)},
     }
     state.themeColors={}; for name,palette in pairs(state.themePalettes) do state.themeColors[name]=palette.accent end
-    local dock=create("Frame",{Name="LucidBottomDock",Size=UDim2.new(0,452,0,42),
+    local dock=create("Frame",{Name="LucidBottomDock",Size=UDim2.new(0,game.PlaceId==136070094363960 and 492 or 452,0,42),
         AnchorPoint=Vector2.new(0.5,1),Position=UDim2.new(0.5,0,1,-10),
         BackgroundColor3=Color3.fromRGB(17,17,22),BackgroundTransparency=0.12,
         BorderSizePixel=0,Active=true,Draggable=true,ZIndex=150,Parent=screenGui})
@@ -740,6 +741,9 @@ state.initializeLucidDock=function()
         {"rbxassetid://7733970318","Panel"},{"rbxassetid://7743872929","Command"},
         {"rbxassetid://7734053495","Settings"},
     }
+    if game.PlaceId==136070094363960 then
+        table.insert(buttonData,{"rbxassetid://7733954760","Browser"})
+    end
     state.lucidDockButtons={}
     state.lucidDockIcons={}
     for index,item in ipairs(buttonData) do
@@ -762,6 +766,8 @@ state.initializeLucidDock=function()
         button.MouseButton1Click:Connect(function()
             if item[2]=="Command" then
                 if state.toggleCommandConsole then state.toggleCommandConsole() end
+            elseif item[2]=="Browser" then
+                if state.toggleServerBrowser then state.toggleServerBrowser() end
             elseif item[2]=="Panel" then
                 mainFrame.Visible=not mainFrame.Visible
             else
@@ -776,6 +782,7 @@ state.initializeLucidDock=function()
         for name,button in pairs(state.lucidDockButtons) do
             local selected=(name~="Panel" and name~="Command" and name==state.mainNavigation.active and mainFrame.Visible)
                 or (name=="Command" and state.commandConsole and state.commandConsole.Visible)
+                or (name=="Browser" and state.serverBrowserVisible)
             button.BackgroundTransparency=selected and 0.15 or 1
             local icon=state.lucidDockIcons[name]
             if icon then icon.ImageColor3=(selected or (name=="Panel" and mainFrame.Visible)) and accent
@@ -8657,7 +8664,7 @@ end
 
 -- Place-specific obstacle cleanup for Climb Scary Worm Tower 3.
 if game.PlaceId==136070094363960 then
-    useCategory("Misc")
+    useCategory("Scary Worm Tower 3")
     sectionLabel("Climb Scary Worm Tower 3",nextOrder())
     local removeBananaPeels=false
     local removeLandmines=false
@@ -9496,8 +9503,8 @@ do
     -- the surrounding toolkit is close to Luau's local-register limit.
     task.defer(function()
         if not screenGui.Parent then return end
-        useCategory("Misc")
-        sectionLabel("Tower Doors + Platform",nextOrder())
+        useCategory("Scary Worm Tower 3")
+        sectionLabel("Level 3 Platform",nextOrder())
 
         local platformName="LucidLevel3SquarePlatformTest"
         local ownedPlatform=nil
@@ -9564,12 +9571,308 @@ do
                 notifyLucid(label,"Click failed: "..tostring(err),Color3.fromRGB(220,125,95))
             end
         end
+        sectionLabel("Tower Door Buttons",nextOrder())
+        local detachDoorRow=rowFrame(nextOrder(),30)
+        local detachDoorButton=create("TextButton",{Size=UDim2.new(1,0,0,26),
+            BackgroundColor3=Color3.fromRGB(65,52,95),BorderSizePixel=0,
+            Text="Detach Door Buttons",TextColor3=Color3.fromRGB(235,225,250),
+            TextSize=11,Font=Enum.Font.GothamSemibold,Parent=detachDoorRow})
+        create("UICorner",{CornerRadius=UDim.new(0,6),Parent=detachDoorButton})
+        local doorAttachedHost=create("Frame",{Size=UDim2.new(1,0,0,0),
+            AutomaticSize=Enum.AutomaticSize.Y,BackgroundTransparency=1,
+            LayoutOrder=nextOrder(),Parent=currentSection})
+        local doorTools=create("Frame",{Size=UDim2.new(1,0,0,0),
+            AutomaticSize=Enum.AutomaticSize.Y,BackgroundTransparency=1,Parent=doorAttachedHost})
+        create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,
+            Padding=UDim.new(0,6),Parent=doorTools})
+        local doorCategory=currentSection
+        currentSection=doorTools
         actionButton("Open Level 3 Door",function()
             clickTowerOpen(-180.928,454.5,"Level 3 Door")
         end)
         actionButton("Level 1 Open",function()
             clickTowerOpen(-173.103,80.518,"Level 1 Open")
         end)
+        currentSection=doorCategory
+
+        local doorWindow=create("Frame",{Name="LucidTowerDoorWindow",
+            Size=UDim2.new(0,260,0,135),Position=UDim2.new(0.5,-130,0.5,-67),
+            BackgroundColor3=Color3.fromRGB(24,22,34),BackgroundTransparency=0.12,
+            BorderSizePixel=0,Active=true,Draggable=true,Visible=false,Parent=screenGui})
+        create("UICorner",{CornerRadius=UDim.new(0,9),Parent=doorWindow})
+        create("UIStroke",{Color=Color3.fromRGB(115,85,190),Thickness=1.3,Parent=doorWindow})
+        create("TextLabel",{Size=UDim2.new(1,-85,0,30),Position=UDim2.fromOffset(10,3),
+            BackgroundTransparency=1,Text="Tower Door Buttons",
+            TextColor3=Color3.fromRGB(220,210,245),TextSize=13,
+            Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left,Parent=doorWindow})
+        local doorPinButton=create("TextButton",{Size=UDim2.fromOffset(34,25),
+            Position=UDim2.new(1,-73,0,4),BackgroundColor3=Color3.fromRGB(65,58,85),
+            BorderSizePixel=0,Text="Pin",TextColor3=Color3.fromRGB(225,215,235),
+            TextSize=9,Font=Enum.Font.GothamSemibold,Parent=doorWindow})
+        local doorAttachButton=create("TextButton",{Size=UDim2.fromOffset(30,25),
+            Position=UDim2.new(1,-34,0,4),BackgroundColor3=Color3.fromRGB(105,65,75),
+            BorderSizePixel=0,Text="X",TextColor3=Color3.new(1,1,1),
+            TextSize=11,Font=Enum.Font.GothamBold,Parent=doorWindow})
+        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=doorPinButton})
+        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=doorAttachButton})
+        local doorWindowContent=create("ScrollingFrame",{Size=UDim2.new(1,-16,1,-43),
+            Position=UDim2.fromOffset(8,36),BackgroundTransparency=1,BorderSizePixel=0,
+            ScrollBarThickness=3,AutomaticCanvasSize=Enum.AutomaticSize.Y,
+            CanvasSize=UDim2.new(),Parent=doorWindow})
+        makeResizableWindow(doorWindow,220,110)
+        local doorDetached=false
+        local doorPinned=false
+        local function setDoorDetached(value)
+            doorDetached=value==true
+            doorTools.Parent=doorDetached and doorWindowContent or doorAttachedHost
+            doorWindow.Visible=doorDetached
+            detachDoorButton.Text=doorDetached and "Door Buttons Detached" or "Detach Door Buttons"
+        end
+        local function setDoorPinned(value)
+            doorPinned=value==true
+            doorPinButton.Text=doorPinned and "ON" or "Pin"
+            doorPinButton.BackgroundColor3=doorPinned and Color3.fromRGB(150,115,45)
+                or Color3.fromRGB(65,58,85)
+        end
+        detachDoorButton.MouseButton1Click:Connect(function() setDoorDetached(not doorDetached) end)
+        doorAttachButton.MouseButton1Click:Connect(function() setDoorDetached(false) end)
+        doorPinButton.MouseButton1Click:Connect(function() setDoorPinned(not doorPinned) end)
+        registerDetachableWindow(doorWindow,function() return doorPinned end,
+            function() return doorDetached end,setDoorPinned,setDoorDetached)
+        addCleanup(function() if doorWindow.Parent then setDoorDetached(false) end end)
+    end)
+
+    task.defer(function()
+        if not screenGui.Parent then return end
+        useCategory("Scary Worm Tower 3")
+        sectionLabel("Low-Ping Server Finder",nextOrder())
+
+        local filters={maxPing=170,minPlayers=10,maxPlayers=100}
+        local candidates={}
+        local selectedServer=nil
+        local searchGeneration=0
+        local pingGeneration=0
+
+        local function panelFilter(label,value)
+            local row=rowFrame(nextOrder(),28)
+            create("TextLabel",{Size=UDim2.new(0.6,0,1,0),BackgroundTransparency=1,
+                Text=label,TextColor3=Color3.fromRGB(210,205,225),TextSize=11,
+                Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=row})
+            return styledBox(row,{Size=UDim2.new(0.4,0,0,24),Position=UDim2.new(0.6,0,0,2),
+                Text=tostring(value),ClearTextOnFocus=false})
+        end
+        local panelPing=panelFilter("Max list ping (ms)",filters.maxPing)
+        local panelMin=panelFilter("Minimum players",filters.minPlayers)
+        local panelMax=panelFilter("Maximum players",filters.maxPlayers)
+        local scanFromPanel=nil
+        actionButton("Find Low-Ping Servers",function()
+            if scanFromPanel then scanFromPanel() end
+        end)
+        actionButton("Copy Game IDs",function(button)
+            local ids="PlaceId: "..tostring(game.PlaceId).." | UniverseId: "..tostring(game.GameId)
+            if setclipboard then pcall(setclipboard,ids) end
+            button.Text="IDs shown in notification"
+            notifyLucid("Game IDs",ids,Color3.fromRGB(55,215,235))
+            task.delay(2,function() if button.Parent then button.Text="Copy Game IDs" end end)
+        end)
+
+        local panelStatus=create("TextLabel",{Size=UDim2.new(1,0,0,36),BackgroundTransparency=1,
+            Text="Choose filters, then find servers. List ping is not your measured ping.",TextWrapped=true,
+            TextColor3=Color3.fromRGB(175,170,190),TextSize=10,Font=Enum.Font.Gotham,
+            LayoutOrder=nextOrder(),Parent=currentSection})
+        local panelResults=create("Frame",{Size=UDim2.new(1,0,0,128),BackgroundTransparency=1,
+            LayoutOrder=nextOrder(),Parent=currentSection})
+        create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,2),Parent=panelResults})
+
+        local browser=create("Frame",{Name="LucidServerBrowser",Size=UDim2.new(0,460,0,460),
+            Position=UDim2.new(0.5,-230,0.5,-230),BackgroundColor3=Color3.fromRGB(24,22,34),
+            BackgroundTransparency=0.08,BorderSizePixel=0,Active=true,Draggable=true,
+            Visible=false,Parent=screenGui})
+        create("UICorner",{CornerRadius=UDim.new(0,9),Parent=browser})
+        create("UIStroke",{Color=Color3.fromRGB(115,85,190),Thickness=1.3,Parent=browser})
+        makeResizableWindow(browser,360,260)
+        create("TextLabel",{Size=UDim2.new(1,-42,0,28),Position=UDim2.fromOffset(10,5),
+            BackgroundTransparency=1,Text="Lucid Server Browser",TextColor3=Color3.fromRGB(230,220,245),
+            TextSize=14,Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left,Parent=browser})
+        local closeBrowser=create("TextButton",{Size=UDim2.fromOffset(26,24),
+            Position=UDim2.new(1,-31,0,5),BackgroundColor3=Color3.fromRGB(90,55,65),
+            BorderSizePixel=0,Text="X",TextColor3=Color3.new(1,1,1),TextSize=11,
+            Font=Enum.Font.GothamBold,Parent=browser})
+        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=closeBrowser})
+        local currentPing=create("TextLabel",{Size=UDim2.new(1,-20,0,17),Position=UDim2.fromOffset(10,34),
+            BackgroundTransparency=1,Text="Current server RTT: checking... | Region: unavailable",
+            TextColor3=Color3.fromRGB(175,200,220),TextSize=10,Font=Enum.Font.Gotham,
+            TextXAlignment=Enum.TextXAlignment.Left,Parent=browser})
+
+        local function browserFilter(label,x,value)
+            create("TextLabel",{Size=UDim2.new(0.3,0,0,16),Position=UDim2.new(x,8,0,54),
+                BackgroundTransparency=1,Text=label,TextColor3=Color3.fromRGB(200,195,220),
+                TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=browser})
+            return styledBox(browser,{Size=UDim2.new(0.3,-4,0,24),Position=UDim2.new(x,8,0,72),
+                Text=tostring(value),ClearTextOnFocus=false})
+        end
+        local browserPing=browserFilter("Max ping",0,filters.maxPing)
+        local browserMin=browserFilter("Min players",0.33,filters.minPlayers)
+        local browserMax=browserFilter("Max players",0.66,filters.maxPlayers)
+        local findBrowser=create("TextButton",{Size=UDim2.new(1,-20,0,25),Position=UDim2.fromOffset(10,102),
+            BackgroundColor3=Color3.fromRGB(75,57,110),BorderSizePixel=0,Text="Find Servers",
+            TextColor3=Color3.new(1,1,1),TextSize=11,Font=Enum.Font.GothamSemibold,Parent=browser})
+        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=findBrowser})
+        local browserStatus=create("TextLabel",{Size=UDim2.new(1,-20,0,29),Position=UDim2.fromOffset(10,132),
+            BackgroundTransparency=1,Text="List ping is an estimate, not your own RTT.",TextWrapped=true,
+            TextColor3=Color3.fromRGB(180,175,200),TextSize=10,Font=Enum.Font.Gotham,
+            TextXAlignment=Enum.TextXAlignment.Left,Parent=browser})
+        local browserResults=create("ScrollingFrame",{Size=UDim2.new(1,-20,1,-208),
+            Position=UDim2.fromOffset(10,164),BackgroundTransparency=1,BorderSizePixel=0,
+            ScrollBarThickness=4,AutomaticCanvasSize=Enum.AutomaticSize.Y,
+            CanvasSize=UDim2.new(),Parent=browser})
+        create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,3),Parent=browserResults})
+        local selectedLabel=create("TextLabel",{Size=UDim2.new(1,-160,0,20),Position=UDim2.new(0,10,1,-42),
+            BackgroundTransparency=1,Text="Selected: none",TextColor3=Color3.fromRGB(205,200,225),
+            TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=browser})
+        local joinBrowser=create("TextButton",{Size=UDim2.new(0,135,0,27),Position=UDim2.new(1,-160,1,-37),
+            BackgroundColor3=Color3.fromRGB(62,110,78),BorderSizePixel=0,Text="Join Selected",
+            TextColor3=Color3.new(1,1,1),TextSize=11,Font=Enum.Font.GothamSemibold,Parent=browser})
+        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=joinBrowser})
+
+        local function setStatus(message)
+            panelStatus.Text=message
+            browserStatus.Text=message
+        end
+        local function updateCurrentPing()
+            local ok,ping=pcall(function() return LocalPlayer:GetNetworkPing() end)
+            currentPing.Text="Current server RTT: "..(ok and type(ping)=="number"
+                and (tostring(math.floor(ping*1000+0.5)).." ms") or "unavailable")
+                .." | Region: unavailable"
+        end
+        local function setBrowserOpen(visible)
+            browser.Visible=visible==true
+            state.serverBrowserVisible=browser.Visible
+            if state.refreshLucidDock then state.refreshLucidDock() end
+            pingGeneration+=1
+            if browser.Visible then
+                local generation=pingGeneration
+                task.spawn(function()
+                    while browser.Visible and browser.Parent and generation==pingGeneration do
+                        updateCurrentPing()
+                        task.wait(2)
+                    end
+                end)
+            end
+        end
+        state.toggleServerBrowser=function() setBrowserOpen(not browser.Visible) end
+        closeBrowser.MouseButton1Click:Connect(function() setBrowserOpen(false) end)
+        registerDetachableWindow(browser,function() return false end,function() return browser.Visible end,
+            function() end,setBrowserOpen)
+        addCleanup(function()
+            searchGeneration+=1; pingGeneration+=1
+            state.serverBrowserVisible=false; state.toggleServerBrowser=nil
+            if browser.Parent then browser:Destroy() end
+        end)
+
+        local function readFilters(pingBox,minBox,maxBox)
+            filters.maxPing=math.clamp(math.floor(tonumber(pingBox.Text) or filters.maxPing),1,1000)
+            filters.minPlayers=math.clamp(math.floor(tonumber(minBox.Text) or filters.minPlayers),1,1000)
+            filters.maxPlayers=math.clamp(math.floor(tonumber(maxBox.Text) or filters.maxPlayers),filters.minPlayers,1000)
+            for _,boxes in ipairs({{panelPing,panelMin,panelMax},{browserPing,browserMin,browserMax}}) do
+                boxes[1].Text=tostring(filters.maxPing)
+                boxes[2].Text=tostring(filters.minPlayers)
+                boxes[3].Text=tostring(filters.maxPlayers)
+            end
+        end
+        local function renderRows(parent,limit)
+            for _,item in ipairs(parent:GetChildren()) do
+                if item:IsA("TextButton") then item:Destroy() end
+            end
+            for index=1,math.min(#candidates,limit) do
+                local server=candidates[index]
+                local row=create("TextButton",{Size=UDim2.new(1,-5,0,22),
+                    BackgroundColor3=server==selectedServer and Color3.fromRGB(62,105,80)
+                        or Color3.fromRGB(47,43,59),BorderSizePixel=0,
+                    Text=string.format("~%d ms list • %d/%d players • %s",server.ping,server.playing,
+                        server.maxPlayers,tostring(server.id):sub(1,8)),
+                    TextColor3=Color3.fromRGB(230,225,240),TextSize=10,Font=Enum.Font.Gotham,
+                    TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=index,Parent=parent})
+                create("UICorner",{CornerRadius=UDim.new(0,4),Parent=row})
+                row.MouseButton1Click:Connect(function()
+                    selectedServer=server
+                    selectedLabel.Text="Selected: "..tostring(server.id):sub(1,8)
+                        .." • "..server.playing.." players • ~"..server.ping.." ms list"
+                    renderRows(panelResults,5)
+                    renderRows(browserResults,50)
+                end)
+            end
+        end
+        local function searchServers()
+            searchGeneration+=1
+            local generation=searchGeneration
+            candidates={}; selectedServer=nil; selectedLabel.Text="Selected: none"
+            renderRows(panelResults,5); renderRows(browserResults,50)
+            setStatus("Scanning up to 5 pages of public servers...")
+            task.spawn(function()
+                local cursor=nil
+                local seen={}
+                local pages=0
+                local failure=nil
+                repeat
+                    pages+=1
+                    local url="https://games.roblox.com/v1/games/"..game.PlaceId
+                        .."/servers/Public?sortOrder=Asc&limit=100"
+                        ..(cursor and ("&cursor="..HttpService:UrlEncode(cursor)) or "")
+                    local ok,response=pcall(function()
+                        return HttpService:JSONDecode(game:HttpGet(url))
+                    end)
+                    if generation~=searchGeneration or not screenGui.Parent then return end
+                    if not ok or type(response)~="table" then
+                        failure="Server list request failed"
+                        break
+                    end
+                    for _,server in ipairs(response.data or {}) do
+                        local ping=tonumber(server.ping)
+                        local count=tonumber(server.playing)
+                        local capacity=tonumber(server.maxPlayers)
+                        if server.id and server.id~=game.JobId and not seen[server.id]
+                            and ping and ping>0 and ping<=filters.maxPing
+                            and count and capacity and count>=filters.minPlayers
+                            and count<=filters.maxPlayers and count<capacity then
+                            seen[server.id]=true
+                            table.insert(candidates,{id=server.id,ping=math.floor(ping+0.5),
+                                playing=count,maxPlayers=capacity})
+                        end
+                    end
+                    cursor=response.nextPageCursor
+                    if cursor and pages<5 then task.wait(0.2) end
+                until not cursor or pages>=5 or generation~=searchGeneration or not screenGui.Parent
+                if generation~=searchGeneration or not screenGui.Parent then return end
+                table.sort(candidates,function(a,b)
+                    if a.ping==b.ping then return a.playing>b.playing end
+                    return a.ping<b.ping
+                end)
+                renderRows(panelResults,5)
+                renderRows(browserResults,50)
+                setStatus((failure and (failure.." • ") or "")..#candidates.." matches in "..pages
+                    .." page(s). Select one; listed ping may differ after joining.")
+            end)
+        end
+        local function joinSelected()
+            if not selectedServer then setStatus("Select a server from the list first."); return end
+            setStatus("Joining "..tostring(selectedServer.id):sub(1,8).."...")
+            local ok,err=pcall(function()
+                TeleportService:TeleportToPlaceInstance(game.PlaceId,selectedServer.id,LocalPlayer)
+            end)
+            if not ok then setStatus("Join failed: "..tostring(err)) end
+        end
+        findBrowser.MouseButton1Click:Connect(function()
+            readFilters(browserPing,browserMin,browserMax)
+            searchServers()
+        end)
+        joinBrowser.MouseButton1Click:Connect(joinSelected)
+        scanFromPanel=function()
+            readFilters(panelPing,panelMin,panelMax)
+            searchServers()
+        end
+        actionButton("Join Selected Server",joinSelected)
+        actionButton("Open Server Browser",function() setBrowserOpen(true) end)
     end)
 end
 
@@ -9673,7 +9976,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.44 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.1 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -9936,7 +10239,7 @@ state.initializeCommandConsole=function()
     }
     local actionCommandAliases={
         firstperson="First Person",thirdperson="Third Person / Restore",restorelighting="Restore Lighting",
-        copyjobid="Copy Job ID",joinjobid="Join Job ID",serverhop="Server Hop",saveprofile="Save Named Profile",
+        copyjobid="Copy Job ID",joinjobid="Join Job ID",serverhop="Server Hop",
         exportprofile="Export Profile to Clipboard",importprofile="Import Profile from Text Box",
         deleteprofile="Delete Selected Profile",showwindows="Show All Detached Windows",
         resetwindows="Reset Off-screen Windows",snapwindows="Snap Detached Windows to Edges",
@@ -9944,7 +10247,7 @@ state.initializeCommandConsole=function()
         clearbackpack="Clear Backpack Auto-Remove List",savebackpackorder="Save Current Backpack Order",
         copydiagnostics="Copy Diagnostic Report",cleanup="Emergency Cleanup Only",
         fp="First Person",tp="Third Person / Restore",rl="Restore Lighting",cji="Copy Job ID",jji="Join Job ID",
-        shp="Server Hop",svp="Save Named Profile",exp="Export Profile to Clipboard",imp="Import Profile from Text Box",
+        shp="Server Hop",exp="Export Profile to Clipboard",imp="Import Profile from Text Box",
         dp="Delete Selected Profile",saw="Show All Detached Windows",row="Reset Off-screen Windows",
         snw="Snap Detached Windows to Edges",pn="PANIC / Reset Features [End]",sa="PANIC / Reset Features [End]",un="Undo Last Change",
         rbt="Refresh Detected Backpack Tools",cbt="Clear Backpack Auto-Remove List",
@@ -9954,7 +10257,7 @@ state.initializeCommandConsole=function()
         hlp="help",op="open",pnl="panel",gt="goto",lg="loopgoto",ulg="unloopgoto",rt="return",
         sy="sync",dsy="desync",sem="stopemote",ssy="stopsync",us="unspec",em="emote",
         ra="reanim",fe="fogend",dx="dex",udx="undex",res="restore",ld="lgdir",gl="getlink",gml="getmobilelink",gls="getlinks",
-        cf="camerafollow",ucf="unfixcamera",tgt="target",ut="untarget",rd="respawndelay",
+        cf="camerafollow",ucf="unfixcamera",tgt="target",ut="untarget",rd="respawndelay",svp="saveprofile",ggi="getgameid",
     }
     local function buildCommandCatalog()
         local catalog={
@@ -9991,6 +10294,7 @@ state.initializeCommandConsole=function()
             {command="!goto <player>",description="Teleport to an in-game player"},
             {command="!gto <player>",description="Alias for goto"},
             {command="!getlink",description="Copy a link to the current game server"},
+            {command="!getgameid",description="Show and copy this game's PlaceId and UniverseId"},
             {command="!getmobilelink",description="Copy a direct Roblox-app link to this server"},
             {command="!getlinks",description="Copy HTTPS and mobile links to this server"},
             {command="!help",description="Show a compact command summary"},
@@ -10008,6 +10312,7 @@ state.initializeCommandConsole=function()
             {command="!restore",description="Recover the local character and restore its camera"},
             {command="!rj",description="Rejoin using the IY-style same-server routine"},
             {command="!save [profile name]",description="Save the current settings to the named profile"},
+            {command="!saveprofile <name>",description="Save the current settings to this profile name (!svp also works)"},
             {command="!spin [0.5-10]",description="Spin at adjustable speed, pausing during Shift Lock"},
             {command="!spinsl [0.5-10]",description="Keep spinning even while Shift Lock is active"},
             {command="!unspin",description="Stop either spin mode and restore AutoRotate"},
@@ -10205,7 +10510,7 @@ state.initializeCommandConsole=function()
             finish(ok,ok and (command=="hide" and ("Hidden for this session: "..name)
                 or ("Restored: "..name)) or name)
             return
-        elseif command=="save" then
+        elseif command=="save" or command=="saveprofile" then
             local ok,name=state.saveNamedProfileCommand(rest)
             finish(ok,ok and ("Profile saved: "..name) or name)
             return
@@ -10231,6 +10536,10 @@ state.initializeCommandConsole=function()
             end)
             notifyLucid("Respawn delay",tostring(previous).."s → "..tostring(value).."s",Color3.fromRGB(75,210,120))
             finish(true,"Respawn delay set to "..tostring(value).." seconds"); return
+        elseif command=="getgameid" then
+            local ids="PlaceId: "..tostring(game.PlaceId).." | UniverseId: "..tostring(game.GameId)
+            if setclipboard then pcall(setclipboard,ids) end
+            finish(true,ids); return
         elseif command=="getlink" then
             local link=currentServerJoinLink()
             if not link then finish(false,"Current server link is unavailable"); return end
@@ -10992,7 +11301,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.44] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.1] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.44] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.1] Loaded, but this executor does not expose queue_on_teleport")
 end
