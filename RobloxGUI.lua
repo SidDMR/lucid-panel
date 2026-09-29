@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.40
+--// Lucid Panel v5.9.43
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -388,7 +388,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.40",
+    Text                   = "LUCID PANEL  •  v5.9.43",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -3252,6 +3252,19 @@ local refreshRecentLoopGoto
 local loopGotoCollisionState={}
 local loopGotoStableRoot=nil
 local loopGotoRootWasAnchored=false
+local loopGotoFreezeSuspended=false
+local function syncHeadSitFreeze()
+    local freezeSetter=toggleRegistry["Freeze Me"]
+    if state.loopGotoEnabled and state.loopGotoDirection=="Head Sit" then
+        if state.freezeEnabled and freezeSetter then
+            loopGotoFreezeSuspended=true
+            freezeSetter(false,true)
+        end
+    elseif loopGotoFreezeSuspended then
+        loopGotoFreezeSuspended=false
+        if freezeSetter then freezeSetter(true,true) end
+    end
+end
 local function restoreLoopGotoStability()
     if loopGotoStableRoot and loopGotoStableRoot.Parent and not state.freezeEnabled then
         loopGotoStableRoot.Anchored=loopGotoRootWasAnchored
@@ -3296,6 +3309,7 @@ local _, loopGotoToggle, loopGotoSetter = createToggle("Loop Go To (uses player 
         while #recentLoopGotoPlayers>6 do table.remove(recentLoopGotoPlayers) end
         if refreshRecentLoopGoto then refreshRecentLoopGoto() end
         state.loopGotoEnabled = true
+        syncHeadSitFreeze()
         loopGotoGeneration = loopGotoGeneration + 1
         local generation = loopGotoGeneration
         task.spawn(function()
@@ -3306,6 +3320,7 @@ local _, loopGotoToggle, loopGotoSetter = createToggle("Loop Go To (uses player 
                 task.wait(0.1)
             end
             while state.loopGotoEnabled and generation == loopGotoGeneration and screenGui.Parent do
+                syncHeadSitFreeze()
                 character = LocalPlayer.Character
                 local root = character and character:FindFirstChild("HumanoidRootPart")
                 humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -3331,6 +3346,7 @@ local _, loopGotoToggle, loopGotoSetter = createToggle("Loop Go To (uses player 
         end)
     else
         state.loopGotoEnabled = false
+        syncHeadSitFreeze()
         loopGotoTarget = nil
         loopGotoGeneration = loopGotoGeneration + 1
         local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
@@ -3400,6 +3416,7 @@ do
         if dir=="Up" then dir="Head Sit" end -- migrate v5.4.12 profiles
         if not table.find(loopGotoDirections,dir) then dir="Right" end
         state.loopGotoDirection = dir
+        syncHeadSitFreeze()
         lgDirBtn.Text = dir
         setDirectionMenuOpen(false)
     end
@@ -3426,6 +3443,8 @@ end
 state.gotoApi=gotoApi
 addCleanup(function()
     state.loopGotoEnabled = false
+    -- The Freeze Me cleanup runs earlier; do not turn it back on during unload.
+    loopGotoFreezeSuspended=false
     loopGotoGeneration = loopGotoGeneration + 1
     loopGotoTarget = nil
     restoreLoopGotoStability()
@@ -8782,7 +8801,8 @@ if game.PlaceId==136070094363960 then
     end
     local function shouldHideTowerMain(part)
         if isProtectedTowerFloor(part) or isProtectedLevelFive(part) then return false end
-        return (removeEveryTowerMain and (isTowerMain(part) or isSekretPass(part) or isReleaseReadyTarget(part)))
+        return (removeEveryTowerMain and (isTowerMain(part) or isSekretPass(part)
+            or isReleaseReadyTarget(part) or part:FindFirstAncestor("KarKerKar_Tries")~=nil))
             or (removeLevelOneMain and isSelectedLevelOneMain(part))
     end
     local function refreshTowerMain(part)
@@ -8810,10 +8830,14 @@ if game.PlaceId==136070094363960 then
     end
     local function scanTowerMains()
         for _,part in ipairs(workspace:GetDescendants()) do
-            if part.Name=="TowerCase" or part.Name=="SekretLevel" or part.Name=="ReleaseReady" then
+            if part.Name=="TowerCase" or part.Name=="SekretLevel" or part.Name=="ReleaseReady"
+                or (part.Name=="KarKerKar_Tries" and part:IsA("Model")) then
                 towerMainRoots[part]=true
             end
-            if isTowerMain(part) or isSekretPass(part) or isReleaseReadyTarget(part) then refreshTowerMain(part) end
+            if isTowerMain(part) or isSekretPass(part) or isReleaseReadyTarget(part)
+                or (part:IsA("BasePart") and part:FindFirstAncestor("KarKerKar_Tries")) then
+                refreshTowerMain(part)
+            end
         end
         for part in pairs(hiddenTowerMains) do refreshTowerMain(part) end
     end
@@ -8824,7 +8848,7 @@ if game.PlaceId==136070094363960 then
             else
                 for _,part in ipairs(root:GetDescendants()) do
                     if part:IsA("BasePart") and (isTowerMain(part) or isSekretPass(part)
-                        or isReleaseReadyTarget(part)) then
+                        or isReleaseReadyTarget(part) or part:FindFirstAncestor("KarKerKar_Tries")) then
                         refreshTowerMain(part)
                     end
                 end
@@ -8846,11 +8870,13 @@ if game.PlaceId==136070094363960 then
                 towerMainConnection=workspace.DescendantAdded:Connect(function(object)
                     if object.Name=="TowerCase" or object.Name=="SekretLevel"
                         or object.Name=="ReleaseReady" or object.Name=="DS1"
+                        or object.Name=="KarKerKar_Tries"
                         or releaseReadyTargets[object.Name] then
                         queueTowerMainScan()
                     elseif object:IsA("BasePart") and (object.Name:lower():match("main$")
                         or object.Name=="LevelSekretPass"
-                        or matchesPartSpec(object,sekretPassLevelOneToThreeTargets)) then
+                        or matchesPartSpec(object,sekretPassLevelOneToThreeTargets)
+                        or object:FindFirstAncestor("KarKerKar_Tries")) then
                         task.defer(refreshTowerMain,object)
                     end
                 end)
@@ -9458,6 +9484,86 @@ do
         if inspectorMarker and inspectorMarker.Parent then inspectorMarker:Destroy() end
         if inspectorWindow and inspectorWindow.Parent then inspectorWindow:Destroy() end
     end)
+
+    -- Keep the game-specific platform and door controls in their own scope;
+    -- the surrounding toolkit is close to Luau's local-register limit.
+    task.defer(function()
+        if not screenGui.Parent then return end
+        useCategory("Misc")
+        sectionLabel("Tower Doors + Platform",nextOrder())
+
+        local platformName="LucidLevel3SquarePlatformTest"
+        local ownedPlatform=nil
+        local function removeTowerPlatform()
+            if ownedPlatform and ownedPlatform.Parent then ownedPlatform:Destroy() end
+            ownedPlatform=nil
+        end
+        local function createTowerPlatform()
+            removeTowerPlatform()
+            local existing=workspace:FindFirstChild(platformName)
+            if existing and existing:GetAttribute("LucidPlatformTest") then existing:Destroy() end
+            local model=Instance.new("Model")
+            model.Name=platformName
+            model:SetAttribute("LucidPlatformTest",true)
+            local function addSection(name,minX,maxX,minZ,maxZ)
+                local part=Instance.new("Part")
+                part.Name=name; part.Anchored=true; part.CanCollide=true
+                part.Size=Vector3.new(maxX-minX,1,maxZ-minZ)
+                part.CFrame=CFrame.new((minX+maxX)/2,464.5,(minZ+maxZ)/2)
+                part.Material=Enum.Material.Concrete
+                part.Color=Color3.fromRGB(135,139,132)
+                part.Transparency=0.5
+                part.Parent=model
+            end
+            -- Six-point test shape, with a half-stud overlap at the join.
+            addSection("WideLowerSection",-234.85,-190.10,-208.13,-156.53)
+            addSection("NarrowUpperSection",-234.85,-216.21,-157.61,-108.71)
+            model.Parent=workspace
+            ownedPlatform=model
+        end
+        createToggle("Level 3 Thin Platform",nextOrder(),false,function(on)
+            if on then createTowerPlatform() else removeTowerPlatform() end
+        end)
+        addCleanup(removeTowerPlatform)
+
+        local function clickTowerOpen(targetX,targetY,label)
+            local selected,score
+            for _,item in ipairs(workspace:GetDescendants()) do
+                if item.Name=="Open" and item:IsA("BasePart") then
+                    local dx=math.abs(item.Position.X-targetX)
+                    local dy=math.abs(item.Position.Y-targetY)
+                    if dx<2 and dy<2 and (not score or dx+dy<score) then
+                        selected=item; score=dx+dy
+                    end
+                end
+            end
+            if not selected then
+                notifyLucid(label,"Open part is not loaded/found",Color3.fromRGB(220,125,95))
+                return
+            end
+            local detector=selected:FindFirstChildWhichIsA("ClickDetector",true)
+            if not detector then
+                notifyLucid(label,"No ClickDetector found",Color3.fromRGB(220,125,95))
+                return
+            end
+            if type(fireclickdetector)~="function" then
+                notifyLucid(label,"Executor lacks fireclickdetector",Color3.fromRGB(220,125,95))
+                return
+            end
+            local ok,err=pcall(fireclickdetector,detector)
+            if ok then
+                notifyLucid(label,"Click sent",Color3.fromRGB(75,210,120))
+            else
+                notifyLucid(label,"Click failed: "..tostring(err),Color3.fromRGB(220,125,95))
+            end
+        end
+        actionButton("Open Level 3 Door",function()
+            clickTowerOpen(-180.928,454.5,"Level 3 Door")
+        end)
+        actionButton("Level 1 Open",function()
+            clickTowerOpen(-173.103,80.518,"Level 1 Open")
+        end)
+    end)
 end
 
 -- Live diagnostics and a copyable report.
@@ -9560,7 +9666,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.40 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.43 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -10879,7 +10985,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.40] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.43] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.40] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.43] Loaded, but this executor does not expose queue_on_teleport")
 end
