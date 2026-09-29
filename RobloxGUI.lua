@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.4
+--// Lucid Panel v6.0.5
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -388,7 +388,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.4",
+    Text                   = "LUCID PANEL  •  v6.0.5",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -4861,16 +4861,21 @@ addCleanup(function()
     end
 end)
 
+do
 local spectatingPlayer = nil
-local spectateWindow=create("Frame",{Name="LucidSpectatePreview",Size=UDim2.new(0,300,0,82),
-    Position=UDim2.new(0.5,180,0.5,-41),BackgroundColor3=Color3.fromRGB(18,18,24),
+local spectateWindow=create("Frame",{Name="LucidSpectatePreview",Size=UDim2.new(0,300,0,230),
+    Position=UDim2.new(0.5,180,0.5,-115),BackgroundColor3=Color3.fromRGB(18,18,24),
     BackgroundTransparency=0.05,BorderSizePixel=0,Active=true,Draggable=true,Visible=false,ZIndex=155,Parent=screenGui})
 create("UICorner",{CornerRadius=UDim.new(0,9),Parent=spectateWindow})
 create("UIStroke",{Color=Color3.fromRGB(105,80,170),Thickness=1.2,Transparency=0.15,Parent=spectateWindow})
-local spectateTitle=create("TextLabel",{Size=UDim2.new(1,-112,0,32),Position=UDim2.new(0,10,0,0),
+local spectateTitle=create("TextLabel",{Size=UDim2.new(1,-160,0,32),Position=UDim2.new(0,10,0,0),
     BackgroundTransparency=1,Text="Spectate Preview",TextColor3=Color3.fromRGB(225,215,245),TextSize=12,
     Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=156,Parent=spectateWindow})
 local spectatePin=false
+local spectateFullButton=create("TextButton",{Size=UDim2.new(0,46,0,24),Position=UDim2.new(1,-151,0,4),
+    BackgroundColor3=Color3.fromRGB(52,48,67),BorderSizePixel=0,Text="Full",
+    TextColor3=Color3.fromRGB(220,215,230),TextSize=9,Font=Enum.Font.GothamSemibold,
+    ZIndex=157,Parent=spectateWindow})
 local spectatePinButton=create("TextButton",{Size=UDim2.new(0,30,0,24),Position=UDim2.new(1,-100,0,4),
     BackgroundColor3=Color3.fromRGB(52,48,67),BorderSizePixel=0,Text="Pin",TextColor3=Color3.fromRGB(220,215,230),
     TextSize=9,Font=Enum.Font.GothamSemibold,ZIndex=157,Parent=spectateWindow})
@@ -4880,79 +4885,178 @@ local spectateMinButton=create("TextButton",{Size=UDim2.new(0,26,0,24),Position=
 local spectateCloseButton=create("TextButton",{Size=UDim2.new(0,26,0,24),Position=UDim2.new(1,-32,0,4),
     BackgroundColor3=Color3.fromRGB(105,48,62),BorderSizePixel=0,Text="X",TextColor3=Color3.fromRGB(245,225,230),
     TextSize=10,Font=Enum.Font.GothamBold,ZIndex=157,Parent=spectateWindow})
-for _,button in ipairs({spectatePinButton,spectateMinButton,spectateCloseButton}) do
+for _,button in ipairs({spectateFullButton,spectatePinButton,spectateMinButton,spectateCloseButton}) do
     create("UICorner",{CornerRadius=UDim.new(0,5),Parent=button})
 end
-local spectateHint=create("TextLabel",{Size=UDim2.new(1,-16,0,38),Position=UDim2.fromOffset(8,36),
-    BackgroundTransparency=1,Text="Hold right mouse to look around • X to stop",
-    TextColor3=Color3.fromRGB(190,185,210),TextSize=11,Font=Enum.Font.Gotham,
-    TextWrapped=true,ZIndex=156,Parent=spectateWindow})
+local spectateViewport=create("ViewportFrame",{Size=UDim2.new(1,-12,1,-40),Position=UDim2.new(0,6,0,34),
+    BackgroundColor3=Color3.fromRGB(32,34,42),BackgroundTransparency=0.05,BorderSizePixel=0,
+    Ambient=Color3.fromRGB(185,185,195),LightColor=Color3.fromRGB(235,235,240),LightDirection=Vector3.new(-1,-1,-1),
+    Active=true,ZIndex=156,Parent=spectateWindow})
+create("UICorner",{CornerRadius=UDim.new(0,6),Parent=spectateViewport})
+local spectateWorld=Instance.new("WorldModel"); spectateWorld.Parent=spectateViewport
+local spectateCamera=Instance.new("Camera"); spectateCamera.FieldOfView=55; spectateCamera.Parent=spectateViewport
+spectateViewport.CurrentCamera=spectateCamera
+local spectateClone=nil
+local spectateSourceCharacter=nil
+local spectatePartPairs={}
+local spectateBackground={}
+local spectateBackgroundCenter=nil
+local spectateBackgroundAt=0
+local function descendantKey(object,root)
+    local pieces={}
+    while object and object~=root do
+        local index=0
+        for _,sibling in ipairs(object.Parent:GetChildren()) do
+            if sibling.Name==object.Name and sibling.ClassName==object.ClassName then
+                index+=1
+                if sibling==object then break end
+            end
+        end
+        table.insert(pieces,1,object.Name..":"..object.ClassName..":"..index)
+        object=object.Parent
+    end
+    return table.concat(pieces,"/")
+end
+local function rebuildSpectateClone(character)
+    if spectateClone then spectateClone:Destroy(); spectateClone=nil end
+    table.clear(spectatePartPairs); spectateSourceCharacter=character
+    if not character then return end
+    local wasArchivable=character.Archivable; character.Archivable=true
+    local ok,clone=pcall(function() return character:Clone() end)
+    character.Archivable=wasArchivable
+    if not ok or not clone then return end
+    clone.Name="SpectateClone"
+    for _,object in ipairs(clone:GetDescendants()) do
+        if object:IsA("Script") or object:IsA("LocalScript") or object:IsA("Tool") then object:Destroy()
+        elseif object:IsA("BasePart") then object.Anchored=true; object.CanCollide=false; object.CastShadow=false end
+    end
+    local cloneParts={}
+    for _,object in ipairs(clone:GetDescendants()) do
+        if object:IsA("BasePart") then cloneParts[descendantKey(object,clone)]=object end
+    end
+    for _,object in ipairs(character:GetDescendants()) do
+        if object:IsA("BasePart") then
+            local clonePart=cloneParts[descendantKey(object,character)]
+            if clonePart then table.insert(spectatePartPairs,{object,clonePart}) end
+        end
+    end
+    spectateClone=clone; clone.Parent=spectateWorld
+end
+local function refreshSpectateBackground(center,character)
+    if spectateBackgroundCenter and (center-spectateBackgroundCenter).Magnitude<30
+        and os.clock()-spectateBackgroundAt<3 then return end
+    spectateBackgroundCenter=center; spectateBackgroundAt=os.clock()
+    for _,clone in ipairs(spectateBackground) do clone:Destroy() end
+    table.clear(spectateBackground)
+    local params=OverlapParams.new()
+    params.MaxParts=120
+    params.FilterType=Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances={character}
+    local ok,parts=pcall(function() return workspace:GetPartBoundsInRadius(center,85,params) end)
+    if not ok then return end
+    for _,part in ipairs(parts) do
+        if part:IsA("BasePart") and part.Archivable and part.Transparency<1 then
+            local cloned,copy=pcall(function() return part:Clone() end)
+            if cloned and copy then
+                for _,child in ipairs(copy:GetDescendants()) do
+                    if child:IsA("Script") or child:IsA("LocalScript") or child:IsA("ClickDetector")
+                        or child:IsA("ProximityPrompt") then child:Destroy() end
+                end
+                copy.Anchored=true; copy.CanCollide=false; copy.CastShadow=false
+                copy.Parent=spectateWorld
+                table.insert(spectateBackground,copy)
+            end
+        end
+    end
+end
 local spectateCameraState=nil
+local spectateFullScreen=false
 local spectateRightMouse=false
 local spectateYaw=0
 local spectatePitch=0.25
 local spectateDistance=9
+local function setSpectateFullScreen(on)
+    spectateFullScreen=on==true
+    spectateFullButton.Text=spectateFullScreen and "Small" or "Full"
+    if spectateFullScreen then
+        local camera=workspace.CurrentCamera
+        if camera and not spectateCameraState then
+            spectateCameraState={cameraType=camera.CameraType,subject=camera.CameraSubject,
+                cframe=camera.CFrame,mouseBehavior=UserInputService.MouseBehavior}
+        end
+        if camera then camera.CameraType=Enum.CameraType.Scriptable end
+    else
+        local saved=spectateCameraState
+        spectateCameraState=nil
+        if saved then
+            local camera=workspace.CurrentCamera
+            if camera then
+                camera.CameraType=saved.cameraType
+                if saved.subject and saved.subject.Parent then camera.CameraSubject=saved.subject
+                else
+                    local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                    if humanoid then camera.CameraSubject=humanoid end
+                end
+                camera.CFrame=saved.cframe
+            end
+            UserInputService.MouseBehavior=saved.mouseBehavior
+        end
+    end
+end
 local function stopSpectatePreview()
     spectatingPlayer=nil; spectateWindow.Visible=false; spectateTitle.Text="Spectate Preview"
     spectateRightMouse=false
-    local saved=spectateCameraState
-    spectateCameraState=nil
-    if saved then
-        local camera=workspace.CurrentCamera
-        if camera then
-            camera.CameraType=saved.cameraType
-            if saved.subject and saved.subject.Parent then camera.CameraSubject=saved.subject
-            else
-                local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-                if humanoid then camera.CameraSubject=humanoid end
-            end
-            camera.CFrame=saved.cframe
-        end
-        UserInputService.MouseBehavior=saved.mouseBehavior
-    end
+    setSpectateFullScreen(false)
+    spectateSourceCharacter=nil; table.clear(spectatePartPairs)
+    if spectateClone then spectateClone:Destroy(); spectateClone=nil end
+    for _,clone in ipairs(spectateBackground) do clone:Destroy() end
+    table.clear(spectateBackground); spectateBackgroundCenter=nil
 end
 local function startSpectatePreview(target)
     if not target then return false end
-    if state.freecamEnabled then
-        notifyLucid("Spectate","Disable Freecam first",Color3.fromRGB(220,125,95))
-        return false
-    end
-    if state.cameraFollowApi and state.cameraFollowApi.stop then state.cameraFollowApi.stop() end
-    local camera=workspace.CurrentCamera
-    if not camera then return false end
-    if not spectateCameraState then
-        spectateCameraState={cameraType=camera.CameraType,subject=camera.CameraSubject,
-            cframe=camera.CFrame,mouseBehavior=UserInputService.MouseBehavior}
-    end
-    spectatingPlayer=target; spectateWindow.Visible=true; spectateHint.Visible=true
+    spectatingPlayer=target; spectateWindow.Visible=true; spectateViewport.Visible=true
     spectateTitle.Text="Watching "..target.Name
+    rebuildSpectateClone(target.Character)
+    spectateBackgroundCenter=nil
     local root=target.Character and target.Character:FindFirstChild("HumanoidRootPart")
     if root then
         local look=root.CFrame.LookVector
         spectateYaw=math.atan2(-look.X,-look.Z)
     end
     spectatePitch=0.25
-    camera.CameraType=Enum.CameraType.Scriptable
     return true
 end
 local spectateExpandedSize=spectateWindow.Size
 local spectateExpanded=true
 spectateMinButton.MouseButton1Click:Connect(function()
     spectateExpanded=not spectateExpanded
-    if spectateExpanded then spectateWindow.Size=spectateExpandedSize; spectateHint.Visible=true; spectateMinButton.Text="-"
-    else spectateExpandedSize=spectateWindow.Size; spectateWindow.Size=UDim2.new(0,spectateWindow.AbsoluteSize.X,0,32); spectateHint.Visible=false; spectateMinButton.Text="+" end
+    if spectateExpanded then spectateWindow.Size=spectateExpandedSize; spectateViewport.Visible=true; spectateMinButton.Text="-"
+    else spectateExpandedSize=spectateWindow.Size; spectateWindow.Size=UDim2.new(0,spectateWindow.AbsoluteSize.X,0,32); spectateViewport.Visible=false; spectateMinButton.Text="+" end
 end)
 local function setSpectatePinned(value)
     spectatePin=value==true; spectatePinButton.Text=spectatePin and "ON" or "Pin"
     spectatePinButton.BackgroundColor3=spectatePin and Color3.fromRGB(145,108,45) or Color3.fromRGB(52,48,67)
 end
 spectatePinButton.MouseButton1Click:Connect(function() setSpectatePinned(not spectatePin) end)
+spectateFullButton.MouseButton1Click:Connect(function()
+    if state.freecamEnabled and not spectateFullScreen then
+        notifyLucid("Spectate","Disable Freecam before full-screen view",Color3.fromRGB(220,125,95))
+        return
+    end
+    setSpectateFullScreen(not spectateFullScreen)
+end)
 spectateCloseButton.MouseButton1Click:Connect(stopSpectatePreview)
-makeResizableWindow(spectateWindow,210,32)
+makeResizableWindow(spectateWindow,210,140)
 registerDetachableWindow(spectateWindow,function() return spectatePin end,function() return spectatingPlayer~=nil end,
     setSpectatePinned,function(value) if value and spectatingPlayer then spectateWindow.Visible=true elseif not value then stopSpectatePreview() end end)
 track(UserInputService.InputBegan:Connect(function(input,processed)
-    if spectatingPlayer and input.UserInputType==Enum.UserInputType.MouseButton2 and not processed then
+    local mouse=UserInputService:GetMouseLocation()
+    local pos=spectateViewport.AbsolutePosition
+    local size=spectateViewport.AbsoluteSize
+    local overPreview=mouse.X>=pos.X and mouse.X<=pos.X+size.X
+        and mouse.Y>=pos.Y and mouse.Y<=pos.Y+size.Y
+    if spectatingPlayer and input.UserInputType==Enum.UserInputType.MouseButton2
+        and (spectateFullScreen or (spectateWindow.Visible and spectateViewport.Visible and overPreview)) then
         spectateRightMouse=true
         UserInputService.MouseBehavior=Enum.MouseBehavior.LockCurrentPosition
     end
@@ -4960,7 +5064,8 @@ end))
 track(UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType==Enum.UserInputType.MouseButton2 and spectateRightMouse then
         spectateRightMouse=false
-        UserInputService.MouseBehavior=Enum.MouseBehavior.Default
+        UserInputService.MouseBehavior=spectateCameraState and spectateCameraState.mouseBehavior
+            or Enum.MouseBehavior.Default
     end
 end))
 track(UserInputService.InputChanged:Connect(function(input)
@@ -4969,19 +5074,33 @@ track(UserInputService.InputChanged:Connect(function(input)
         spectatePitch=math.clamp(spectatePitch+input.Delta.Y*0.004,-1.15,1.15)
     end
 end))
-track(RunService.RenderStepped:Connect(function()
+local spectatePreviewElapsed=0
+track(RunService.RenderStepped:Connect(function(dt)
     if not spectatingPlayer then return end
     if not spectatingPlayer.Parent then stopSpectatePreview(); return end
-    local camera=workspace.CurrentCamera
-    if not camera then return end
-    camera.CameraType=Enum.CameraType.Scriptable
     local character=spectatingPlayer.Character
+    if character~=spectateSourceCharacter then rebuildSpectateClone(character); spectateBackgroundCenter=nil end
     local root=character and character:FindFirstChild("HumanoidRootPart")
     if not root then return end
+    spectatePreviewElapsed+=dt
+    if spectatePreviewElapsed<1/30 then return end
+    spectatePreviewElapsed=0
+    for _,pair in ipairs(spectatePartPairs) do
+        local source,clonePart=pair[1],pair[2]
+        if source.Parent and clonePart.Parent then
+            clonePart.CFrame=source.CFrame; clonePart.Transparency=source.Transparency
+        end
+    end
     local focus=root.Position+Vector3.new(0,1.5,0)
     local cp=math.cos(spectatePitch)
     local offset=Vector3.new(math.sin(spectateYaw)*cp,math.sin(spectatePitch),math.cos(spectateYaw)*cp)*spectateDistance
-    camera.CFrame=CFrame.lookAt(focus+offset,focus)
+    spectateCamera.CFrame=CFrame.lookAt(focus+offset,focus)
+    if spectateFullScreen then
+        local camera=workspace.CurrentCamera
+        if camera then camera.CameraType=Enum.CameraType.Scriptable; camera.CFrame=spectateCamera.CFrame end
+    else
+        refreshSpectateBackground(root.Position,character)
+    end
 end))
 actionButton("Spectate GoTo Player", function(button)
     local target = gotoApi.find(gotoApi.box.Text)
@@ -4993,6 +5112,7 @@ actionButton("Stop Spectating", function()
     if state.cameraFollowApi and state.cameraFollowApi.stop then state.cameraFollowApi.stop() end
 end)
 addCleanup(stopSpectatePreview)
+end
 actionButton("Copy GoTo Player ID", function(button)
     local target=gotoApi.find(gotoApi.box.Text)
     if target and setclipboard then setclipboard(tostring(target.UserId)); button.Text="Copied "..target.Name.." ID"
@@ -10021,7 +10141,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.4 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.5 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -11355,7 +11475,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.4] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.5] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.4] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.5] Loaded, but this executor does not expose queue_on_teleport")
 end
