@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.1
+--// Lucid Panel v6.0.3
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -388,7 +388,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.1",
+    Text                   = "LUCID PANEL  •  v6.0.3",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -9540,35 +9540,45 @@ do
         end)
         addCleanup(removeTowerPlatform)
 
-        local function clickTowerOpen(targetX,targetY,label)
-            local selected,score
-            for _,item in ipairs(workspace:GetDescendants()) do
-                if item.Name=="Open" and item:IsA("BasePart") then
-                    local dx=math.abs(item.Position.X-targetX)
-                    local dy=math.abs(item.Position.Y-targetY)
-                    if dx<2 and dy<2 and (not score or dx+dy<score) then
-                        selected=item; score=dx+dy
+        local doorDetectorCache={}
+        local doorRetryAt={}
+        local function clickTowerOpen(targetX,targetY,label,silent)
+            local detector=doorDetectorCache[label]
+            if not detector or not detector:IsDescendantOf(workspace) then
+                doorDetectorCache[label]=nil
+                if silent and os.clock()<(doorRetryAt[label] or 0) then return end
+                local selected,score
+                for _,item in ipairs(workspace:GetDescendants()) do
+                    if item.Name=="Open" and item:IsA("BasePart") then
+                        local dx=math.abs(item.Position.X-targetX)
+                        local dy=math.abs(item.Position.Y-targetY)
+                        if dx<2 and dy<2 and (not score or dx+dy<score) then
+                            selected=item; score=dx+dy
+                        end
                     end
                 end
-            end
-            if not selected then
-                notifyLucid(label,"Open part is not loaded/found",Color3.fromRGB(220,125,95))
-                return
-            end
-            local detector=selected:FindFirstChildWhichIsA("ClickDetector",true)
-            if not detector then
-                notifyLucid(label,"No ClickDetector found",Color3.fromRGB(220,125,95))
-                return
+                detector=selected and selected:FindFirstChildWhichIsA("ClickDetector",true)
+                if detector then
+                    doorDetectorCache[label]=detector
+                else
+                    doorRetryAt[label]=os.clock()+5
+                    if not silent then
+                        notifyLucid(label,selected and "No ClickDetector found" or "Open part is not loaded/found",Color3.fromRGB(220,125,95))
+                    end
+                    return
+                end
             end
             if type(fireclickdetector)~="function" then
-                notifyLucid(label,"Executor lacks fireclickdetector",Color3.fromRGB(220,125,95))
+                if not silent then notifyLucid(label,"Executor lacks fireclickdetector",Color3.fromRGB(220,125,95)) end
                 return
             end
             local ok,err=pcall(fireclickdetector,detector)
-            if ok then
-                notifyLucid(label,"Click sent",Color3.fromRGB(75,210,120))
-            else
-                notifyLucid(label,"Click failed: "..tostring(err),Color3.fromRGB(220,125,95))
+            if not silent then
+                if ok then
+                    notifyLucid(label,"Click sent",Color3.fromRGB(75,210,120))
+                else
+                    notifyLucid(label,"Click failed: "..tostring(err),Color3.fromRGB(220,125,95))
+                end
             end
         end
         sectionLabel("Tower Door Buttons",nextOrder())
@@ -9593,10 +9603,44 @@ do
         actionButton("Level 1 Open",function()
             clickTowerOpen(-173.103,80.518,"Level 1 Open")
         end)
+        local doorInterval=2.5
+        local intervalRow=rowFrame(nextOrder(),30)
+        create("TextLabel",{Size=UDim2.new(1,-83,1,0),BackgroundTransparency=1,
+            Text="Auto-open interval (0.5–5s)",TextColor3=Color3.fromRGB(220,210,235),
+            TextSize=11,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=intervalRow})
+        local intervalBox=styledBox(intervalRow,{Size=UDim2.new(0,74,0,25),
+            Position=UDim2.new(1,-74,0.5,-12),Text="2.5"})
+        intervalBox.FocusLost:Connect(function()
+            local value=tonumber(intervalBox.Text)
+            if value then doorInterval=math.clamp(value,0.5,5) end
+            intervalBox.Text=string.format("%.1f",doorInterval)
+        end)
+        local doorLoopTokens={level3=0,level1=0}
+        local function setAutoDoor(key,on,x,y,label)
+            doorLoopTokens[key]=doorLoopTokens[key]+1
+            local token=doorLoopTokens[key]
+            if not on then return end
+            task.spawn(function()
+                while screenGui.Parent and doorLoopTokens[key]==token do
+                    clickTowerOpen(x,y,label,true)
+                    task.wait(doorInterval)
+                end
+            end)
+        end
+        createToggle("Auto Open Level 3 Door",nextOrder(),false,function(on)
+            setAutoDoor("level3",on,-180.928,454.5,"Level 3 Door")
+        end)
+        createToggle("Auto Level 1 Open",nextOrder(),false,function(on)
+            setAutoDoor("level1",on,-173.103,80.518,"Level 1 Open")
+        end)
+        addCleanup(function()
+            doorLoopTokens.level3=doorLoopTokens.level3+1
+            doorLoopTokens.level1=doorLoopTokens.level1+1
+        end)
         currentSection=doorCategory
 
         local doorWindow=create("Frame",{Name="LucidTowerDoorWindow",
-            Size=UDim2.new(0,260,0,135),Position=UDim2.new(0.5,-130,0.5,-67),
+            Size=UDim2.new(0,280,0,255),Position=UDim2.new(0.5,-140,0.5,-127),
             BackgroundColor3=Color3.fromRGB(24,22,34),BackgroundTransparency=0.12,
             BorderSizePixel=0,Active=true,Draggable=true,Visible=false,Parent=screenGui})
         create("UICorner",{CornerRadius=UDim.new(0,9),Parent=doorWindow})
@@ -9619,7 +9663,7 @@ do
             Position=UDim2.fromOffset(8,36),BackgroundTransparency=1,BorderSizePixel=0,
             ScrollBarThickness=3,AutomaticCanvasSize=Enum.AutomaticSize.Y,
             CanvasSize=UDim2.new(),Parent=doorWindow})
-        makeResizableWindow(doorWindow,220,110)
+        makeResizableWindow(doorWindow,240,170)
         local doorDetached=false
         local doorPinned=false
         local function setDoorDetached(value)
@@ -9976,7 +10020,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.1 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.3 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -10511,8 +10555,17 @@ state.initializeCommandConsole=function()
                 or ("Restored: "..name)) or name)
             return
         elseif command=="save" or command=="saveprofile" then
-            local ok,name=state.saveNamedProfileCommand(rest)
-            finish(ok,ok and ("Profile saved: "..name) or name)
+            local ran,ok,name=pcall(state.saveNamedProfileCommand,rest)
+            if not ran then
+                warn("[Lucid Panel] Profile save command failed: "..tostring(ok))
+                finish(false,"Profile save error: "..tostring(ok))
+                notifyLucid("Profile save failed",tostring(ok),Color3.fromRGB(230,90,105))
+            else
+                local message=ok and ("Profile saved: "..name) or name
+                finish(ok,message)
+                notifyLucid(ok and "Profile saved" or "Profile save failed",tostring(message),
+                    ok and Color3.fromRGB(75,210,120) or Color3.fromRGB(230,90,105))
+            end
             return
         elseif command=="hitbox" or command=="unhitbox" then
             local ok,message
@@ -10735,7 +10788,7 @@ state.initializeCommandConsole=function()
         finish(false,"Unknown command: !"..command.." | use !help")
     end
     local chatAliases={commands=true,stopgoto=true,returnposition=true,reanimation=true,spectate=true,recover=true,
-        wp=true,waypointmarkers=true,ws=true,jh=true,fpscap=true}
+        wp=true,waypointmarkers=true,ws=true,jh=true,fpscap=true,save=true,saveprofile=true}
     for command in pairs(toggleCommandAliases) do chatAliases[command]=true end
     for command in pairs(actionCommandAliases) do chatAliases[command]=true end
     for command in pairs(shortCommandAliases) do chatAliases[command]=true end
@@ -11301,7 +11354,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.1] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.3] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.1] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.3] Loaded, but this executor does not expose queue_on_teleport")
 end
