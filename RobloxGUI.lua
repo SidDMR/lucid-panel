@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v5
---// Lucid Panel v5.9.43
+--// Lucid Panel v5.9.44
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -388,7 +388,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v5.9.43",
+    Text                   = "LUCID PANEL  •  v5.9.44",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -8802,7 +8802,8 @@ if game.PlaceId==136070094363960 then
     local function shouldHideTowerMain(part)
         if isProtectedTowerFloor(part) or isProtectedLevelFive(part) then return false end
         return (removeEveryTowerMain and (isTowerMain(part) or isSekretPass(part)
-            or isReleaseReadyTarget(part) or part:FindFirstAncestor("KarKerKar_Tries")~=nil))
+            or isReleaseReadyTarget(part) or ((part:IsA("Seat") or part:IsA("VehicleSeat"))
+                and part:FindFirstAncestor("KarKerKar_Tries")~=nil)))
             or (removeLevelOneMain and isSelectedLevelOneMain(part))
     end
     local function refreshTowerMain(part)
@@ -8812,18 +8813,21 @@ if game.PlaceId==136070094363960 then
             if not saved then
                 saved={transparency=part.Transparency,canCollide=part.CanCollide,
                     canTouch=part.CanTouch,canQuery=part.CanQuery}
+                if part:IsA("Seat") or part:IsA("VehicleSeat") then saved.disabled=part.Disabled end
                 hiddenTowerMains[part]=saved
             end
             part.Transparency=1
             part.CanCollide=false
             part.CanTouch=false
             part.CanQuery=false
+            if saved.disabled~=nil then part.Disabled=true end
         elseif saved then
             if part.Parent then
                 part.Transparency=saved.transparency
                 part.CanCollide=saved.canCollide
                 part.CanTouch=saved.canTouch
                 part.CanQuery=saved.canQuery
+                if saved.disabled~=nil then part.Disabled=saved.disabled end
             end
             hiddenTowerMains[part]=nil
         end
@@ -8835,7 +8839,8 @@ if game.PlaceId==136070094363960 then
                 towerMainRoots[part]=true
             end
             if isTowerMain(part) or isSekretPass(part) or isReleaseReadyTarget(part)
-                or (part:IsA("BasePart") and part:FindFirstAncestor("KarKerKar_Tries")) then
+                or ((part:IsA("Seat") or part:IsA("VehicleSeat"))
+                    and part:FindFirstAncestor("KarKerKar_Tries")) then
                 refreshTowerMain(part)
             end
         end
@@ -8848,7 +8853,8 @@ if game.PlaceId==136070094363960 then
             else
                 for _,part in ipairs(root:GetDescendants()) do
                     if part:IsA("BasePart") and (isTowerMain(part) or isSekretPass(part)
-                        or isReleaseReadyTarget(part) or part:FindFirstAncestor("KarKerKar_Tries")) then
+                        or isReleaseReadyTarget(part) or ((part:IsA("Seat") or part:IsA("VehicleSeat"))
+                            and part:FindFirstAncestor("KarKerKar_Tries"))) then
                         refreshTowerMain(part)
                     end
                 end
@@ -8876,7 +8882,8 @@ if game.PlaceId==136070094363960 then
                     elseif object:IsA("BasePart") and (object.Name:lower():match("main$")
                         or object.Name=="LevelSekretPass"
                         or matchesPartSpec(object,sekretPassLevelOneToThreeTargets)
-                        or object:FindFirstAncestor("KarKerKar_Tries")) then
+                        or ((object:IsA("Seat") or object:IsA("VehicleSeat"))
+                            and object:FindFirstAncestor("KarKerKar_Tries"))) then
                         task.defer(refreshTowerMain,object)
                     end
                 end)
@@ -9666,7 +9673,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v5.9.43 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v5.9.44 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -10985,7 +10992,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v5.9.43] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v5.9.44] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v5.9.43] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v5.9.44] Loaded, but this executor does not expose queue_on_teleport")
 end
