@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.5
+--// Lucid Panel v6.0.6
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -388,7 +388,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.5",
+    Text                   = "LUCID PANEL  •  v6.0.6",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -8220,6 +8220,7 @@ loadNamedProfile = function(button)
     updateText(flingAngularBox,state.antiFlingAngular); updateText(fogBox,state.fogEndValue)
     updateText(clockBox,state.nightClockTime); updateText(lightRangeBox,state.playerLightRange)
     updateText(lightPowerBox,state.playerLightPower); updateText(spawnDelayBox,state.spawnpointDelay)
+    if state.refreshTowerDoorIntervalBox then state.refreshTowerDoorIntervalBox() end
     if antiPushStrengthButton and antiPushStrengthButton.Parent then
         antiPushStrengthButton.Text="Anti Push Strength: "..tostring(state.antiPushStrength)
     end
@@ -9724,17 +9725,21 @@ do
         actionButton("Level 1 Open",function()
             clickTowerOpen(-173.103,80.518,"Level 1 Open")
         end)
-        local doorInterval=2.5
+        state.towerDoorAutoInterval=math.clamp(tonumber(state.towerDoorAutoInterval) or 2.5,0.5,5)
         local intervalRow=rowFrame(nextOrder(),30)
         create("TextLabel",{Size=UDim2.new(1,-83,1,0),BackgroundTransparency=1,
             Text="Auto-open interval (0.5–5s)",TextColor3=Color3.fromRGB(220,210,235),
             TextSize=11,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=intervalRow})
         local intervalBox=styledBox(intervalRow,{Size=UDim2.new(0,74,0,25),
-            Position=UDim2.new(1,-74,0.5,-12),Text="2.5"})
+            Position=UDim2.new(1,-74,0.5,-12),Text=string.format("%.1f",state.towerDoorAutoInterval)})
+        state.refreshTowerDoorIntervalBox=function()
+            state.towerDoorAutoInterval=math.clamp(tonumber(state.towerDoorAutoInterval) or 2.5,0.5,5)
+            if intervalBox.Parent then intervalBox.Text=string.format("%.1f",state.towerDoorAutoInterval) end
+        end
         intervalBox.FocusLost:Connect(function()
             local value=tonumber(intervalBox.Text)
-            if value then doorInterval=math.clamp(value,0.5,5) end
-            intervalBox.Text=string.format("%.1f",doorInterval)
+            if value then state.towerDoorAutoInterval=math.clamp(value,0.5,5) end
+            state.refreshTowerDoorIntervalBox()
         end)
         local doorLoopTokens={level3=0,level1=0}
         local function setAutoDoor(key,on,x,y,label)
@@ -9744,7 +9749,7 @@ do
             task.spawn(function()
                 while screenGui.Parent and doorLoopTokens[key]==token do
                     clickTowerOpen(x,y,label,true)
-                    task.wait(doorInterval)
+                    task.wait(state.towerDoorAutoInterval)
                 end
             end)
         end
@@ -10141,7 +10146,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.5 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.6 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -11475,7 +11480,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.5] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.6] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.5] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.6] Loaded, but this executor does not expose queue_on_teleport")
 end
