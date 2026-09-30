@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.8
+--// Lucid Panel v6.0.11
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -388,7 +388,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.8",
+    Text                   = "LUCID PANEL  •  v6.0.11",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -9673,8 +9673,8 @@ do
             local part=Instance.new("Part")
             part.Name="LucidLevel1AreaPlatform"
             part.Anchored=true; part.CanCollide=true; part.CanTouch=false
-            part.Size=Vector3.new(256.57,1,182.99)
-            part.CFrame=CFrame.new(-159.985,75.5,-153.565)
+            part.Size=Vector3.new(627.84,1,517.79)
+            part.CFrame=CFrame.new(-165.05,75.6,-143.085)
             part.Material=Enum.Material.Concrete
             part.Color=Color3.fromRGB(135,139,132)
             part.Transparency=0.5
@@ -9792,25 +9792,45 @@ do
             BorderSizePixel=0,Active=true,Draggable=true,Visible=false,Parent=screenGui})
         create("UICorner",{CornerRadius=UDim.new(0,9),Parent=doorWindow})
         create("UIStroke",{Color=Color3.fromRGB(115,85,190),Thickness=1.3,Parent=doorWindow})
-        create("TextLabel",{Size=UDim2.new(1,-85,0,30),Position=UDim2.fromOffset(10,3),
+        create("TextLabel",{Size=UDim2.new(1,-124,0,30),Position=UDim2.fromOffset(10,3),
             BackgroundTransparency=1,Text="Tower Door Buttons",
             TextColor3=Color3.fromRGB(220,210,245),TextSize=13,
-            Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left,Parent=doorWindow})
+            Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left,
+            TextTruncate=Enum.TextTruncate.AtEnd,Parent=doorWindow})
         local doorPinButton=create("TextButton",{Size=UDim2.fromOffset(34,25),
-            Position=UDim2.new(1,-73,0,4),BackgroundColor3=Color3.fromRGB(65,58,85),
+            Position=UDim2.new(1,-111,0,4),BackgroundColor3=Color3.fromRGB(65,58,85),
             BorderSizePixel=0,Text="Pin",TextColor3=Color3.fromRGB(225,215,235),
             TextSize=9,Font=Enum.Font.GothamSemibold,Parent=doorWindow})
+        local doorMinButton=create("TextButton",{Size=UDim2.fromOffset(30,25),
+            Position=UDim2.new(1,-73,0,4),BackgroundColor3=Color3.fromRGB(65,58,85),
+            BorderSizePixel=0,Text="-",TextColor3=Color3.fromRGB(225,215,235),
+            TextSize=13,Font=Enum.Font.GothamBold,Parent=doorWindow})
         local doorAttachButton=create("TextButton",{Size=UDim2.fromOffset(30,25),
             Position=UDim2.new(1,-34,0,4),BackgroundColor3=Color3.fromRGB(105,65,75),
             BorderSizePixel=0,Text="X",TextColor3=Color3.new(1,1,1),
             TextSize=11,Font=Enum.Font.GothamBold,Parent=doorWindow})
         create("UICorner",{CornerRadius=UDim.new(0,5),Parent=doorPinButton})
+        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=doorMinButton})
         create("UICorner",{CornerRadius=UDim.new(0,5),Parent=doorAttachButton})
         local doorWindowContent=create("ScrollingFrame",{Size=UDim2.new(1,-16,1,-43),
             Position=UDim2.fromOffset(8,36),BackgroundTransparency=1,BorderSizePixel=0,
             ScrollBarThickness=3,AutomaticCanvasSize=Enum.AutomaticSize.Y,
             CanvasSize=UDim2.new(),Parent=doorWindow})
-        makeResizableWindow(doorWindow,240,170)
+        local doorResizeHandle=makeResizableWindow(doorWindow,240,170)
+        local doorMinimized=false
+        local doorExpandedSize=doorWindow.Size
+        doorMinButton.MouseButton1Click:Connect(function()
+            doorMinimized=not doorMinimized
+            if doorMinimized then
+                doorExpandedSize=doorWindow.Size
+                doorWindow.Size=UDim2.new(0,doorWindow.AbsoluteSize.X,0,34)
+            else
+                doorWindow.Size=doorExpandedSize
+            end
+            doorWindowContent.Visible=not doorMinimized
+            doorResizeHandle.Visible=not doorMinimized
+            doorMinButton.Text=doorMinimized and "+" or "-"
+        end)
         local doorDetached=false
         local doorPinned=false
         local function setDoorDetached(value)
@@ -10167,7 +10187,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.8 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.11 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -11571,7 +11591,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.8] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.11] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.8] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.11] Loaded, but this executor does not expose queue_on_teleport")
 end
