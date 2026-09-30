@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.6
+--// Lucid Panel v6.0.8
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -388,7 +388,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.6",
+    Text                   = "LUCID PANEL  •  v6.0.8",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -9662,6 +9662,27 @@ do
         end)
         addCleanup(removeTowerPlatform)
 
+        sectionLabel("Level 1 Platform",nextOrder())
+        local level1Platform=nil
+        local function removeLevel1Platform()
+            if level1Platform then level1Platform:Destroy(); level1Platform=nil end
+        end
+        createToggle("Level 1 Area Platform",nextOrder(),false,function(on)
+            removeLevel1Platform()
+            if not on then return end
+            local part=Instance.new("Part")
+            part.Name="LucidLevel1AreaPlatform"
+            part.Anchored=true; part.CanCollide=true; part.CanTouch=false
+            part.Size=Vector3.new(256.57,1,182.99)
+            part.CFrame=CFrame.new(-159.985,75.5,-153.565)
+            part.Material=Enum.Material.Concrete
+            part.Color=Color3.fromRGB(135,139,132)
+            part.Transparency=0.5
+            level1Platform=part
+            part.Parent=workspace
+        end)
+        addCleanup(removeLevel1Platform)
+
         local doorDetectorCache={}
         local doorRetryAt={}
         local function clickTowerOpen(targetX,targetY,label,silent)
@@ -10146,7 +10167,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.6 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.8 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -10156,6 +10177,76 @@ create("UICorner", { CornerRadius=UDim.new(0,6), Parent=diagnosticsLabel })
 actionButton("Copy Diagnostic Report", function(button)
     if setclipboard then setclipboard(diagnosticsLabel.Text); button.Text="Report copied" else button.Text="Clipboard unavailable" end
 end)
+do
+    sectionLabel("Velocity Test",nextOrder())
+    local window=create("Frame",{Name="LucidVelocityMonitor",Size=UDim2.fromOffset(255,132),
+        Position=UDim2.new(1,-275,0.5,-66),BackgroundColor3=Color3.fromRGB(24,22,34),
+        BackgroundTransparency=0.12,BorderSizePixel=0,Visible=false,Active=true,Draggable=true,
+        ZIndex=160,Parent=screenGui})
+    create("UICorner",{CornerRadius=UDim.new(0,8),Parent=window})
+    create("UIStroke",{Color=Color3.fromRGB(105,80,170),Thickness=1,Parent=window})
+    create("TextLabel",{Size=UDim2.new(1,-42,0,28),Position=UDim2.fromOffset(9,2),
+        BackgroundTransparency=1,Text="Velocity Monitor • studs/s",TextSize=12,
+        TextColor3=Color3.fromRGB(225,215,245),Font=Enum.Font.GothamSemibold,
+        TextXAlignment=Enum.TextXAlignment.Left,ZIndex=161,Parent=window})
+    local close=create("TextButton",{Size=UDim2.fromOffset(25,23),Position=UDim2.new(1,-30,0,4),
+        BackgroundColor3=Color3.fromRGB(105,48,62),BorderSizePixel=0,Text="X",TextSize=11,
+        TextColor3=Color3.new(1,1,1),Font=Enum.Font.GothamBold,ZIndex=161,Parent=window})
+    create("UICorner",{CornerRadius=UDim.new(0,5),Parent=close})
+    local readout=create("TextLabel",{Size=UDim2.new(1,-18,1,-38),Position=UDim2.fromOffset(9,32),
+        BackgroundTransparency=1,Text="Waiting for character...",TextSize=12,
+        TextColor3=Color3.fromRGB(205,225,215),Font=Enum.Font.Code,
+        TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,
+        ZIndex=161,Parent=window})
+    local connection=nil
+    local character,root=nil,nil
+    local peaks={}
+    local head,tail=1,0
+    local displayElapsed=0
+    local function resetSamples()
+        table.clear(peaks); head=1; tail=0; displayElapsed=0
+    end
+    local function setMonitor(on)
+        if connection then connection:Disconnect(); connection=nil end
+        window.Visible=on
+        character=nil; root=nil; resetSamples()
+        if not on then return end
+        readout.Text="Waiting for character..."
+        connection=RunService.Heartbeat:Connect(function(dt)
+            if character~=LocalPlayer.Character then
+                character=LocalPlayer.Character; root=nil; resetSamples()
+            end
+            if not root or not root.Parent then
+                root=character and character:FindFirstChild("HumanoidRootPart")
+            end
+            if not root then
+                resetSamples()
+                if readout.Text~="Waiting for character..." then readout.Text="Waiting for character..." end
+                return
+            end
+            local velocity=root.AssemblyLinearVelocity
+            local speed=velocity.Magnitude
+            local now=os.clock()
+            -- A monotonic queue retains the rolling maximum without rescanning samples.
+            while head<=tail and now-peaks[head].time>1 do peaks[head]=nil; head+=1 end
+            while head<=tail and peaks[tail].speed<=speed do peaks[tail]=nil; tail-=1 end
+            if head>tail then head=1; tail=0 end
+            tail+=1; peaks[tail]={time=now,speed=speed}
+            displayElapsed+=dt
+            if displayElapsed<0.2 then return end
+            displayElapsed=displayElapsed%0.2
+            local text=string.format("Current:       %7.1f\nPeak (last 1s): %7.1f\nHorizontal:    %7.1f\nVertical:      %+7.1f",speed,
+                peaks[head].speed,Vector3.new(velocity.X,0,velocity.Z).Magnitude,velocity.Y)
+            if readout.Text~=text then readout.Text=text end
+        end)
+    end
+    createToggle("Velocity Test Monitor",nextOrder(),false,setMonitor)
+    close.MouseButton1Click:Connect(function()
+        local setter=toggleRegistry["Velocity Test Monitor"]
+        if setter then setter(false) else setMonitor(false) end
+    end)
+    addCleanup(function() setMonitor(false) end)
+end
 sectionLabel("Notification Center",nextOrder())
 local notificationHistoryLabel=create("TextLabel",{Size=UDim2.new(1,0,0,112),BackgroundColor3=Color3.fromRGB(28,26,38),
     BorderSizePixel=0,Text="No notifications yet",TextColor3=Color3.fromRGB(205,200,218),TextSize=10,Font=Enum.Font.Code,
@@ -11480,7 +11571,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.6] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.8] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.6] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.8] Loaded, but this executor does not expose queue_on_teleport")
 end
