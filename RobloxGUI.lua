@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.18
+--// Lucid Panel v6.0.19
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -388,7 +388,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.18",
+    Text                   = "LUCID PANEL  •  v6.0.19",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -5604,6 +5604,7 @@ local function setNoCameraShake(on)
     state.noCameraShake=on
     pcall(function() RunService:UnbindFromRenderStep("LucidNoCameraShake") end)
     if state.setMonsterShakeWatcher then state.setMonsterShakeWatcher(on) end
+    if state.refreshWormEventProtection then state.refreshWormEventProtection() end
     if on then
         RunService:BindToRenderStep("LucidNoCameraShake",Enum.RenderPriority.Last.Value,function()
             local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
@@ -6542,6 +6543,7 @@ local function setComfort(clock, brightness, exposure, ambient)
     Lighting.Ambient=ambient; Lighting.OutdoorAmbient=ambient
 end
 local function applySavedComfortPreset()
+    if state.wormEventLightingActive then return end
     if state.comfortPreset=="Migraine" then setComfort(0,1,-1,Color3.fromRGB(55,55,75))
     elseif state.comfortPreset=="Evening" then setComfort(19,1.5,-0.35,Color3.fromRGB(85,70,85))
     elseif state.comfortPreset=="Overcast" then setComfort(12,1,-0.5,Color3.fromRGB(90,90,95)) end
@@ -6611,6 +6613,7 @@ state.initializeFullbright=function()
     end
     local function processLightingEffect(item)
         if not state.fullbrightEnabled then return end
+        if state.wormEventLightingActive and item.Name=="EventCC" then return end
         if (item:IsA("BloomEffect") or item:IsA("ColorCorrectionEffect")) and not effectConnections[item] then
             effectConnections[item]=track(item.Changed:Connect(function()
                 if state.fullbrightEnabled then task.defer(processLightingEffect,item) end
@@ -6634,6 +6637,7 @@ state.initializeFullbright=function()
     end
     local function enforceLightingProperty(property)
         if not state.fullbrightEnabled or applying then return end
+        if state.wormEventLightingActive and (property=="Brightness" or property=="Ambient" or property=="OutdoorAmbient") then return end
         local target=targets[property]
         if target==nil then return end
         applying=true
@@ -6644,7 +6648,9 @@ state.initializeFullbright=function()
         if not state.fullbrightEnabled then return end
         applying=true
         for property,target in pairs(targets) do
-            pcall(function() if Lighting[property]~=target then Lighting[property]=target end end)
+            if not state.wormEventLightingActive or (property~="Brightness" and property~="Ambient" and property~="OutdoorAmbient") then
+                pcall(function() if Lighting[property]~=target then Lighting[property]=target end end)
+            end
         end
         applying=false
         for _,item in ipairs(Lighting:GetDescendants()) do processLightingEffect(item) end
@@ -9383,6 +9389,318 @@ end
 -- Place-specific obstacle cleanup for Climb Scary Worm Tower 3.
 if game.PlaceId==136070094363960 then
     useCategory("Scary Worm Tower 3")
+    do
+    local function initializeEventProtections()
+        -- EventClient / EventConfig from the user's dump. These protections
+        -- affect this client only and do not stop the server's event or rewards.
+        sectionLabel("Event Protections",nextOrder())
+        state.wormEventLightingEnabled=false
+        state.wormEventLightingActive=false
+        state.wormBounceProtection=false
+        state.wormEarthquakeProtection=false
+        local replicated=game:GetService("ReplicatedStorage")
+        local configModule,config=nil,nil
+        local eventName=workspace:GetAttribute("ActiveEvent")
+        if eventName=="" then eventName=nil end
+        local disposed=false
+        local lightingRecords={}
+        local lightingConnections={}
+        local writingLighting=false
+        local quakeTable,quakeOriginal=nil,nil
+        local quakeFallback=false
+        local beforeQuake=nil
+        local remote,remoteConnection=nil,nil
+        local bounceHumanoid,bounceConnection=nil,nil
+        local bounceRoot,bounceCharacter=nil,nil
+        local bounceChildConnections={}
+        local mutedBounce={}
+        local jumpConnection=nil
+        local jumpRequestedAt=-math.huge
+        local bounceGeneration=0
+        local lastBounceScan=-math.huge
+        local reconcile
+        local normalLighting={Brightness=2,Ambient=Color3.new(0,0,0),OutdoorAmbient=Color3.fromRGB(70,70,70)}
+        local normalAtmosphere={Density=0.437,Haze=1.46,Offset=0.408,Glare=0,
+            Color=Color3.fromRGB(250,250,244),Decay=Color3.fromRGB(214,214,214)}
+        local sunRays=Lighting:FindFirstChild("SunRays")
+        local normalSunRays=not sunRays or sunRays.Enabled
+        local statusRow=rowFrame(nextOrder(),44)
+        local status=create("TextLabel",{Size=UDim2.fromScale(1,1),BackgroundTransparency=1,Text="Event protections: off",
+            TextWrapped=true,TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
+            TextColor3=Color3.fromRGB(180,175,195),Parent=statusRow})
+        local function loadConfig()
+            local module=replicated:FindFirstChild("EventConfig")
+            if module==configModule and config then return end
+            if not module or not module:IsA("ModuleScript") then return end
+            local ok,value=pcall(require,module)
+            if not ok or type(value)~="table" then return end
+            configModule=module; config=value
+            for key in pairs(normalLighting) do
+                if type(value.NormalLighting)=="table" and value.NormalLighting[key]~=nil then
+                    normalLighting[key]=value.NormalLighting[key]
+                end
+            end
+            for key in pairs(normalAtmosphere) do
+                if type(value.NormalAtmosphere)=="table" and value.NormalAtmosphere[key]~=nil then
+                    normalAtmosphere[key]=value.NormalAtmosphere[key]
+                end
+            end
+        end
+        local function updateStatus()
+            local bounce=state.wormBounceProtection and (eventName=="BouncyFloors"
+                and (#mutedBounce>0 and "handler muted" or "landing fallback") or "ready") or "off"
+            local quake=(state.wormEarthquakeProtection or state.noCameraShake)
+                and (eventName=="Earthquake" and (quakeTable and "amplitude zero" or "camera filter") or "ready") or "off"
+            local text="Event: "..tostring(eventName or "None").." | Lighting: "
+                ..(state.wormEventLightingActive and "normal / fog zero" or (state.wormEventLightingEnabled and "ready" or "off"))
+                .."\nBounce: "..bounce.." | Earthquake: "..quake
+            if status.Text~=text then status.Text=text end
+        end
+        local function watchLighting(object,targets)
+            if lightingRecords[object] then return end
+            local original={}
+            lightingRecords[object]={original=original,targets=targets}
+            for property,value in pairs(targets) do
+                original[property]=object[property]
+                table.insert(lightingConnections,object:GetPropertyChangedSignal(property):Connect(function()
+                    if disposed or writingLighting or not state.wormEventLightingActive or not object.Parent then return end
+                    if object[property]~=value then
+                        original[property]=object[property]
+                        writingLighting=true; object[property]=value; writingLighting=false
+                    end
+                end))
+                if object[property]~=value then
+                    writingLighting=true; object[property]=value; writingLighting=false
+                end
+            end
+        end
+        local function watchEventEffect(item)
+            if item:IsA("Atmosphere") then
+                local values=table.clone(normalAtmosphere); values.Density=0; values.Haze=0; values.Glare=0
+                watchLighting(item,values)
+            elseif item:IsA("ColorCorrectionEffect") and item.Name=="EventCC" then
+                watchLighting(item,{Brightness=0,Contrast=0,Saturation=0,TintColor=Color3.new(1,1,1)})
+            elseif item:IsA("SunRaysEffect") and item.Name=="SunRays" then
+                watchLighting(item,{Enabled=normalSunRays})
+            end
+        end
+        local function stopLighting(useNormal)
+            for _,connection in ipairs(lightingConnections) do connection:Disconnect() end
+            table.clear(lightingConnections)
+            state.wormEventLightingActive=false
+            for object,record in pairs(lightingRecords) do
+                if object.Parent then
+                    local values=record.original
+                    if useNormal then
+                        if object==Lighting then values=normalLighting
+                        elseif object:IsA("Atmosphere") then values=table.clone(normalAtmosphere)
+                            if state.removeFogEnabled then values.Density=0; values.Haze=0 end
+                        elseif object:IsA("ColorCorrectionEffect") then values=record.targets
+                        elseif object:IsA("SunRaysEffect") then values={Enabled=normalSunRays} end
+                    end
+                    for property,value in pairs(values) do pcall(function() object[property]=value end) end
+                end
+            end
+            table.clear(lightingRecords)
+        end
+        local function updateLighting()
+            local eventUsesLighting=eventName=="LightsOut" or eventName=="Mist" or eventName=="Earthquake"
+            local wanted=state.wormEventLightingEnabled and eventUsesLighting and not disposed
+            if wanted and not state.wormEventLightingActive then
+                state.wormEventLightingActive=true
+                watchLighting(Lighting,table.clone(normalLighting))
+                for _,item in ipairs(Lighting:GetChildren()) do watchEventEffect(item) end
+                table.insert(lightingConnections,Lighting.ChildAdded:Connect(function(item)
+                    if state.wormEventLightingActive then watchEventEffect(item) end
+                end))
+            elseif not wanted and state.wormEventLightingActive then
+                stopLighting(not eventUsesLighting)
+            end
+        end
+        local function restoreQuake()
+            if quakeTable then pcall(function() quakeTable.ShakeAmplitude=quakeOriginal end) end
+            quakeTable=nil; quakeOriginal=nil; beforeQuake=nil
+            if quakeFallback then
+                RunService:UnbindFromRenderStep("LucidEarthquakeBefore")
+                RunService:UnbindFromRenderStep("LucidEarthquakeAfter")
+                quakeFallback=false
+            end
+        end
+        local function updateQuake()
+            local wanted=not disposed and eventName=="Earthquake" and (state.wormEarthquakeProtection or state.noCameraShake)
+            if not wanted then restoreQuake(); return end
+            local earthquake=config and config.Earthquake
+            if quakeTable and quakeTable~=earthquake then restoreQuake() end
+            if type(earthquake)=="table" and type(earthquake.ShakeAmplitude)=="number" then
+                if not quakeTable then
+                    local original=earthquake.ShakeAmplitude
+                    if pcall(function() earthquake.ShakeAmplitude=0 end) then quakeTable=earthquake; quakeOriginal=original end
+                elseif earthquake.ShakeAmplitude~=0 then
+                    if not pcall(function() earthquake.ShakeAmplitude=0 end) then restoreQuake() end
+                end
+            end
+            if quakeTable and quakeFallback then
+                RunService:UnbindFromRenderStep("LucidEarthquakeBefore")
+                RunService:UnbindFromRenderStep("LucidEarthquakeAfter"); quakeFallback=false
+            elseif not quakeTable and not quakeFallback then
+                -- Frozen/unavailable EventConfig: isolate the known +2 camera
+                -- translation without unbinding the game's sound/lighting code.
+                quakeFallback=true
+                RunService:BindToRenderStep("LucidEarthquakeBefore",Enum.RenderPriority.Camera.Value+1,function()
+                    local camera=workspace.CurrentCamera
+                    beforeQuake=not state.freecamEnabled and camera and camera.CameraType~=Enum.CameraType.Scriptable
+                        and {camera,camera.CFrame} or nil
+                end)
+                RunService:BindToRenderStep("LucidEarthquakeAfter",Enum.RenderPriority.Camera.Value+3,function()
+                    local saved=beforeQuake; beforeQuake=nil
+                    if not saved or workspace.CurrentCamera~=saved[1] then return end
+                    local delta=saved[2]:ToObjectSpace(saved[1].CFrame)
+                    local _,angle=delta:ToAxisAngle()
+                    if math.abs(angle)<0.00001 and math.abs(delta.Position.Z)<0.00001 and delta.Position.Magnitude<10 then
+                        saved[1].CFrame=saved[2]
+                    end
+                end)
+            end
+        end
+        local function restoreBounce()
+            bounceGeneration+=1
+            if bounceConnection then bounceConnection:Disconnect(); bounceConnection=nil end
+            if jumpConnection then jumpConnection:Disconnect(); jumpConnection=nil end
+            for _,connection in ipairs(mutedBounce) do pcall(function() connection:Enable() end) end
+            table.clear(mutedBounce); bounceHumanoid=nil; bounceRoot=nil; lastBounceScan=-math.huge
+        end
+        local function watchBounceCharacter(character)
+            if character==bounceCharacter then return end
+            for _,connection in ipairs(bounceChildConnections) do connection:Disconnect() end
+            table.clear(bounceChildConnections); bounceCharacter=character
+            if not character then return end
+            local function changed(item)
+                if item:IsA("Humanoid") or item.Name=="HumanoidRootPart" then
+                    task.defer(function() if not disposed then reconcile() end end)
+                end
+            end
+            table.insert(bounceChildConnections,character.ChildAdded:Connect(changed))
+            table.insert(bounceChildConnections,character.ChildRemoved:Connect(changed))
+        end
+        local function muteBounceHandler(humanoid,root)
+            if os.clock()-lastBounceScan<0.5 then return end
+            lastBounceScan=os.clock()
+            local readUpvalues=(debug and debug.getupvalues) or getupvalues
+            if type(getconnections)~="function" or type(readUpvalues)~="function" or not config or not config.BouncyFloors then return end
+            local ok,items=pcall(getconnections,humanoid.StateChanged)
+            if not ok or type(items)~="table" then return end
+            for _,connection in ipairs(items) do
+                pcall(function()
+                    if connection.Enabled~=true or type(connection.Function)~="function" then return end
+                    local values=readUpvalues(connection.Function)
+                    local hasConfig,hasHumanoid,hasRoot=false,false,false
+                    for _,value in pairs(values) do
+                        if value==config.BouncyFloors then hasConfig=true end
+                        if value==humanoid then hasHumanoid=true end
+                        if value==root then hasRoot=true end
+                    end
+                    -- All three exact identities must match EventClient's
+                    -- bounce closure. Never disable unrelated movement hooks.
+                    if hasConfig and hasHumanoid and hasRoot then
+                        connection:Disable(); table.insert(mutedBounce,connection)
+                    end
+                end)
+            end
+        end
+        local function updateBounce()
+            local character=LocalPlayer.Character
+            local active=not disposed and state.wormBounceProtection and eventName=="BouncyFloors"
+            watchBounceCharacter(active and character or nil)
+            local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+            local root=character and character:FindFirstChild("HumanoidRootPart")
+            local wanted=active and humanoid and root
+            if not wanted then restoreBounce(); return end
+            if bounceHumanoid~=humanoid or bounceRoot~=root then
+                restoreBounce(); bounceHumanoid=humanoid; bounceRoot=root; jumpRequestedAt=-math.huge
+                local generation=bounceGeneration
+                jumpConnection=UserInputService.JumpRequest:Connect(function() jumpRequestedAt=os.clock() end)
+                bounceConnection=humanoid.StateChanged:Connect(function(_,newState)
+                    if newState~=Enum.HumanoidStateType.Landed then return end
+                    muteBounceHandler(humanoid,root)
+                    updateStatus()
+                    -- If selective connection inspection is unsupported, only
+                    -- undo a matching post-landing bounce, never global velocity.
+                    -- Also catches a callback already queued before it was muted.
+                    task.defer(function()
+                        if disposed or generation~=bounceGeneration or eventName~="BouncyFloors" or not state.wormBounceProtection
+                            or LocalPlayer.Character~=character or not root.Parent or humanoid.Health<=0 then return end
+                        local torso=character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso")
+                        local carpetFlying=torso and torso:FindFirstChild("FlightHold") and torso:FindFirstChild("FlightPower")
+                        if carpetFlying or state.flyEnabled or state.loopGotoEnabled or state.airWalkEnabled or root.Anchored
+                            or humanoid.Sit or humanoid.PlatformStand or humanoid.Jump or os.clock()-jumpRequestedAt<0.25 then return end
+                        local bounce=config and config.BouncyFloors
+                        local minimum=bounce and tonumber(bounce.BounceForceMin) or 25
+                        local maximum=bounce and tonumber(bounce.BounceForceMax) or 80
+                        local velocity=root.AssemblyLinearVelocity
+                        if humanoid:GetState()==Enum.HumanoidStateType.Jumping and velocity.Y>=minimum-0.1 and velocity.Y<=maximum+0.1 then
+                            root.AssemblyLinearVelocity=Vector3.new(velocity.X,0,velocity.Z)
+                            humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                        end
+                    end)
+                end)
+            end
+            muteBounceHandler(humanoid,root)
+        end
+        reconcile=function()
+            if disposed then return end
+            loadConfig(); updateLighting(); updateQuake(); updateBounce(); updateStatus()
+        end
+        state.refreshWormEventProtection=reconcile
+        local function scheduleReconcile()
+            task.defer(function() if not disposed then reconcile() end end)
+        end
+        local function bindRemote()
+            local found=replicated:FindFirstChild("EventRemote")
+            if found==remote then return end
+            if remoteConnection then remoteConnection:Disconnect(); remoteConnection=nil end
+            remote=found and found:IsA("RemoteEvent") and found or nil
+            if remote then remoteConnection=remote.OnClientEvent:Connect(function(action,name)
+                if action=="Start" and type(name)=="string" then eventName=name; scheduleReconcile()
+                elseif action=="End" then eventName=nil; scheduleReconcile() end
+            end) end
+        end
+        createToggle("Normal Event Lighting",nextOrder(),false,function(on)
+            state.wormEventLightingEnabled=on; reconcile()
+        end)
+        createToggle("Counter Bouncy Floors",nextOrder(),false,function(on)
+            state.wormBounceProtection=on; reconcile()
+        end)
+        createToggle("Remove Earthquake Shake",nextOrder(),false,function(on)
+            state.wormEarthquakeProtection=on; reconcile()
+        end)
+        create("TextLabel",{Size=UDim2.new(1,0,0,30),BackgroundTransparency=1,TextWrapped=true,
+            Text="Normal lighting: Lights Out / Mist / quake flicker. Kill counter: Settings > Diagnostics.",
+            TextColor3=Color3.fromRGB(160,150,185),TextSize=10,Font=Enum.Font.Gotham,LayoutOrder=nextOrder(),Parent=currentSection})
+        track(workspace:GetAttributeChangedSignal("ActiveEvent"):Connect(function()
+            eventName=workspace:GetAttribute("ActiveEvent")
+            if eventName=="" then eventName=nil end
+            scheduleReconcile()
+        end))
+        track(replicated.ChildAdded:Connect(function(item)
+            if item.Name=="EventRemote" then bindRemote()
+            elseif item.Name=="EventConfig" then scheduleReconcile() end
+        end))
+        track(replicated.ChildRemoved:Connect(function(item)
+            if item==configModule then restoreQuake(); configModule=nil; config=nil; scheduleReconcile()
+            elseif item==remote then bindRemote() end
+        end))
+        track(LocalPlayer.CharacterAdded:Connect(scheduleReconcile))
+        track(LocalPlayer.CharacterRemoving:Connect(function() restoreBounce(); watchBounceCharacter(nil) end))
+        bindRemote(); reconcile()
+        addCleanup(function()
+            disposed=true; state.wormEventLightingEnabled=false; state.wormBounceProtection=false; state.wormEarthquakeProtection=false
+            if remoteConnection then remoteConnection:Disconnect() end
+            stopLighting(eventName~= "LightsOut" and eventName~="Mist" and eventName~="Earthquake")
+            restoreQuake(); restoreBounce(); watchBounceCharacter(nil); state.refreshWormEventProtection=nil
+        end)
+    end
+    initializeEventProtections()
+    end
     sectionLabel("Climb Scary Worm Tower 3",nextOrder())
     local removeBananaPeels=false
     local removeLandmines=false
@@ -10826,7 +11144,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.18 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.19 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -12231,7 +12549,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.18] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.19] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.18] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.19] Loaded, but this executor does not expose queue_on_teleport")
 end
