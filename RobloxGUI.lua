@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.16
+--// Lucid Panel v6.0.17
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -388,7 +388,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.16",
+    Text                   = "LUCID PANEL  •  v6.0.17",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -3225,14 +3225,31 @@ do
         restorePart(); refreshUi()
         return true,"Hitbox restored"
     end
+    local function resolvePlayer(input)
+        local query=tostring(input or ""):match("^%s*(.-)%s*$"):gsub("^@",""):lower()
+        if query=="" then return nil,"Type or select a player name" end
+        local displayMatches,prefixMatches,partialMatches={},{},{}
+        for _,player in ipairs(Players:GetPlayers()) do
+            if player~=LocalPlayer then
+                local name,display=player.Name:lower(),player.DisplayName:lower()
+                if name==query then return player end
+                if display==query then table.insert(displayMatches,player) end
+                if name:sub(1,#query)==query or display:sub(1,#query)==query then table.insert(prefixMatches,player) end
+                if name:find(query,1,true) or display:find(query,1,true) then table.insert(partialMatches,player) end
+            end
+        end
+        local matches=#displayMatches>0 and displayMatches or (#prefixMatches>0 and prefixMatches or partialMatches)
+        if #matches==1 then return matches[1] end
+        return nil,#matches>1 and "Multiple matches — choose a player below" or "Player is not in this server"
+    end
     state.hitboxApi={
         enable=function(input)
             local query=tostring(input or ""):match("^%s*(.-)%s*$")
             if query:lower()=="off" then return disable() end
             local name,sizeText=query:match("^(.-)%s+(%d+%.?%d*)$")
-            local player=findGotoPlayer(name or query)
+            local player,message=resolvePlayer(name or query)
             local size=sizeText and tonumber(sizeText) or state.hitboxSizeValue
-            if not player or player==LocalPlayer then return false,"Select another online player" end
+            if not player then return false,message end
             if not size or size~=size or size<1 or size>1000 then return false,"Size must be between 1 and 1000 studs" end
             if targetName~=player.Name then restorePart() end
             targetName=player.Name; state.hitboxSizeValue=size
@@ -3255,6 +3272,7 @@ do
             refreshUi()
         end,
         getTarget=function() return targetName end,
+        resolvePlayer=resolvePlayer,
     }
     track(Players.PlayerRemoving:Connect(function(player)
         if player.Name==targetName then disable() end
@@ -4949,6 +4967,9 @@ do
     sectionLabel("Selected Player Limb Extender",nextOrder())
     local selectedName=nil
     local syncing=false
+    local updatingName=false
+    local suggestionGeneration=0
+    local setExtenderToggle=nil
     local playerRow=rowFrame(nextOrder(),30)
     local playerBox=styledBox(playerRow,{Size=UDim2.new(1,-38,0,26),
         Position=UDim2.new(0,0,0.5,-13),Text="",PlaceholderText="Select / type username"})
@@ -4959,22 +4980,38 @@ do
     local menuRow=rowFrame(nextOrder(),0)
     local menu=create("ScrollingFrame",{Size=UDim2.new(1,0,0,110),BackgroundColor3=Color3.fromRGB(35,32,45),
         BorderSizePixel=0,ScrollBarThickness=4,CanvasSize=UDim2.new(),Visible=false,Parent=menuRow})
+    local statusRow=rowFrame(nextOrder(),26)
+    local targetStatus=create("TextLabel",{Size=UDim2.fromScale(1,1),BackgroundTransparency=1,
+        Text="Select a player — extender can stay off",TextWrapped=true,
+        TextColor3=Color3.fromRGB(180,175,195),TextSize=10,Font=Enum.Font.Gotham,
+        TextXAlignment=Enum.TextXAlignment.Left,Parent=statusRow})
     local function closeMenu() menu.Visible=false; menuRow.Size=UDim2.new(1,0,0,0) end
+    local function setPlayerText(text)
+        updatingName=true; playerBox.Text=text; updatingName=false
+    end
     local function selectPlayer(name)
-        selectedName=name; playerBox.Text=name; closeMenu()
+        local player=Players:FindFirstChild(name)
+        if not player or player==LocalPlayer then
+            selectedName=nil; targetStatus.Text="Player left — select another player"; return false
+        end
+        suggestionGeneration+=1
+        selectedName=player.Name; setPlayerText(player.Name); closeMenu()
+        targetStatus.Text="Selected: @"..player.Name
         if state.hitboxApi.getTarget() then
-            local ok,message=state.hitboxApi.enable(name)
+            local ok,message=state.hitboxApi.enable(player.Name)
             if not ok then notifyLucid("Limb Extender",message,Color3.fromRGB(230,90,105)) end
         end
+        return true
     end
-    dropdown.MouseButton1Click:Connect(function()
-        if menu.Visible then closeMenu(); return end
+    local function showSuggestions(input,excludedPlayer)
         for _,item in ipairs(menu:GetChildren()) do item:Destroy() end
+        local query=tostring(input or ""):match("^%s*(.-)%s*$"):gsub("^@",""):lower()
         local players=Players:GetPlayers()
         table.sort(players,function(a,b) return a.Name:lower()<b.Name:lower() end)
         local count=0
         for _,player in ipairs(players) do
-            if player~=LocalPlayer then
+            if player~=LocalPlayer and player~=excludedPlayer and (query==""
+                or player.Name:lower():find(query,1,true) or player.DisplayName:lower():find(query,1,true)) then
                 local choice=create("TextButton",{Size=UDim2.new(1,-6,0,25),Position=UDim2.new(0,0,0,count*25),
                     BackgroundTransparency=1,Text=player.DisplayName.." (@"..player.Name..")",
                     TextColor3=Color3.fromRGB(225,220,240),TextSize=11,Font=Enum.Font.Gotham,
@@ -4983,13 +5020,39 @@ do
                 count+=1
             end
         end
+        if count==0 then closeMenu(); return end
         menu.CanvasSize=UDim2.new(0,0,0,count*25); menu.CanvasPosition=Vector2.zero
         menu.Visible=true; menuRow.Size=UDim2.new(1,0,0,114)
+    end
+    dropdown.MouseButton1Click:Connect(function()
+        suggestionGeneration+=1
+        if menu.Visible then closeMenu() else showSuggestions("") end
     end)
-    playerBox.FocusLost:Connect(function()
-        local player=findGotoPlayer(playerBox.Text)
-        if player and player~=LocalPlayer then selectPlayer(player.Name)
-        else playerBox.Text=selectedName or "" end
+    track(playerBox:GetPropertyChangedSignal("Text"):Connect(function()
+        if updatingName or not playerBox:IsFocused() then return end
+        suggestionGeneration+=1
+        local generation=suggestionGeneration
+        task.delay(0.15,function()
+            if generation==suggestionGeneration and playerBox.Parent and playerBox:IsFocused() then
+                showSuggestions(playerBox.Text)
+            end
+        end)
+    end))
+    playerBox.FocusLost:Connect(function(enterPressed,input)
+        suggestionGeneration+=1
+        -- Let a clicked suggestion win; completing on mouse-down would hide
+        -- the list before that button receives its mouse-up/click event.
+        if not enterPressed and menu.Visible and input and (input.UserInputType==Enum.UserInputType.MouseButton1
+            or input.UserInputType==Enum.UserInputType.Touch) then
+            local pointer=input.UserInputType==Enum.UserInputType.Touch and input.Position
+                or UserInputService:GetMouseLocation()
+            local position,size=menu.AbsolutePosition,menu.AbsoluteSize
+            if pointer.X>=position.X and pointer.X<=position.X+size.X
+                and pointer.Y>=position.Y and pointer.Y<=position.Y+size.Y then return end
+        end
+        local player,message=state.hitboxApi.resolvePlayer(playerBox.Text)
+        if player then selectPlayer(player.Name)
+        else selectedName=nil; targetStatus.Text=message end
     end)
     local sizeRow=rowFrame(nextOrder(),30)
     create("TextLabel",{Size=UDim2.new(1,-85,1,0),BackgroundTransparency=1,Text="Size (1–1000 studs)",
@@ -5012,21 +5075,42 @@ do
     local _,_,setter=createToggle("Extend Selected Player Limb",nextOrder(),false,function(on)
         if syncing then return end
         if on then
-            local ok,message=state.hitboxApi.enable(selectedName or playerBox.Text)
+            -- Resolve the current field, never a stale previous selection.
+            local ok,message=state.hitboxApi.enable(playerBox.Text)
             if not ok then
+                targetStatus.Text=message
                 notifyLucid("Limb Extender",message,Color3.fromRGB(230,90,105))
-                task.defer(function() if screenGui.Parent then state.hitboxApi.disable() end end)
+                syncing=true; setExtenderToggle(false,true); syncing=false
             end
         else state.hitboxApi.disable() end
     end)
+    setExtenderToggle=setter
     state.refreshHitboxUi=function(target)
         syncing=true
         local enabled=target~=nil
         if activeFeatures["Extend Selected Player Limb"]~=enabled then setter(enabled,true) end
-        if target then selectedName=target; playerBox.Text=target end
-        sizeBox.Text=tostring(state.hitboxSizeValue)
+        if target then
+            selectedName=target
+            if not playerBox:IsFocused() then setPlayerText(target) end
+            targetStatus.Text="Extending: @"..target
+        elseif selectedName then
+            targetStatus.Text="Selected: @"..selectedName
+        elseif playerBox.Text=="" then
+            targetStatus.Text="Select a player — extender can stay off"
+        end
+        if not sizeBox:IsFocused() then sizeBox.Text=tostring(state.hitboxSizeValue) end
         syncing=false
     end
+    track(Players.PlayerRemoving:Connect(function(player)
+        if player.Name==selectedName then
+            selectedName=nil; suggestionGeneration+=1
+            setPlayerText(""); targetStatus.Text="Player left — select another player"
+        end
+        if menu.Visible then showSuggestions(playerBox.Text,player) end
+    end))
+    track(Players.PlayerAdded:Connect(function()
+        if menu.Visible then showSuggestions(playerBox.Text) end
+    end))
     local creditRow=rowFrame(nextOrder(),45)
     create("TextLabel",{Size=UDim2.fromScale(1,1),BackgroundTransparency=1,
         Text="Concept credit: AAPVdev / AXIOS LimbExtender\nLocal-only adaptation • server hits not guaranteed",
@@ -10586,7 +10670,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.16 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.17 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -11991,7 +12075,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.16] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.17] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.16] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.17] Loaded, but this executor does not expose queue_on_teleport")
 end
