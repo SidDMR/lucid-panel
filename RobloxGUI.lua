@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.13
+--// Lucid Panel v6.0.14
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -388,7 +388,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.13",
+    Text                   = "LUCID PANEL  •  v6.0.14",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -8305,7 +8305,7 @@ local function getProfilePath(profileOverride)
     if not profileOverride then profileNameBox.Text=safeName end
     return "LucidPanel/profile_"..safeName..".json",safeName
 end
-local function saveNamedProfile(button,profileOverride,silent)
+local function saveNamedProfile(button,profileOverride,silent,highlightsOnly)
     if not writefile then
         if button then button.Text="File API unavailable" end
         return false
@@ -8315,6 +8315,22 @@ local function saveNamedProfile(button,profileOverride,silent)
     -- updated. PlaceId isolation prevents coordinates leaking across games.
     local payload = {}
     local profilePath,savedName=getProfilePath(profileOverride)
+    if highlightsOnly then
+        -- Never replace movement, toggles, windows or numeric settings while
+        -- automatically persisting a highlight mutation.
+        if not readfile then return false,savedName end
+        local decodedOk,existing=pcall(function() return HttpService:JSONDecode(readfile(profilePath)) end)
+        if not decodedOk or type(existing)~="table" then return false,savedName end
+        existing.yellowHighlights=state.yellowHighlightApi.getNames()
+        existing.pinkHighlights=state.pinkHighlightApi.getNames()
+        existing.blackHighlights=state.blackHighlightApi.getNames()
+        existing.exploiterHighlights=state.orangeHighlightApi.getNames()
+        existing.highlightsSavedAt=os.time()
+        local encodedOk,encoded=pcall(function() return HttpService:JSONEncode(existing) end)
+        if not encodedOk then return false,savedName end
+        local ok=pcall(writefile,profilePath,encoded)
+        return ok,savedName
+    end
     if readfile and (not isfile or isfile(profilePath)) then
         pcall(function() payload=HttpService:JSONDecode(readfile(profilePath)) end)
     end
@@ -8389,7 +8405,7 @@ local function saveNamedProfile(button,profileOverride,silent)
     if button then task.delay(1.5,function() if button.Parent then button.Text="Save Named Profile" end end) end
     return ok,savedName
 end
-actionButton("Save Named Profile", function(button)
+local saveProfileButton=actionButton("Save Named Profile", function(button)
     local ok,savedName=saveNamedProfile(button,nil,false)
     if ok then activeProfileName=savedName end
 end)
@@ -8398,7 +8414,7 @@ state.saveNamedProfileCommand=function(requestedName)
     if name~="" and name:gsub("[^%w_%-]","")=="" then
         return false,"Use letters, numbers, _ or - in the profile name"
     end
-    local ok,savedName=saveNamedProfile(nil,name~="" and name or nil,true)
+    local ok,savedName=saveNamedProfile(saveProfileButton,name~="" and name or nil,true)
     if not ok then return false,writefile and "Profile save failed" or "File API unavailable" end
     activeProfileName=savedName
     profileNameBox.Text=savedName
@@ -8574,7 +8590,7 @@ loadNamedProfile = function(button)
 end
 state.persistHighlightChange=function(playerName,highlightType,removed)
     local profileName=activeProfileName
-    local saved=profileName and saveNamedProfile(nil,profileName,true) or false
+    local saved=profileName and saveNamedProfile(nil,profileName,true,true) or false
     local message=tostring(playerName)..(removed and " removed from " or " added to ")..tostring(highlightType).." highlights"
     if profileName then
         message=message..(saved and " • saved to " or " • could not save to ")..profileName
@@ -10464,7 +10480,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.13 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.14 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -11869,7 +11885,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.13] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.14] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.13] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.14] Loaded, but this executor does not expose queue_on_teleport")
 end
