@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.11
+--// Lucid Panel v6.0.13
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -388,7 +388,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.11",
+    Text                   = "LUCID PANEL  •  v6.0.13",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -4719,6 +4719,120 @@ local recoveryBtn = create("TextButton", {
     Font = Enum.Font.GothamSemibold, Parent = recoveryRow,
 })
 create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = recoveryBtn })
+do
+local function installRagdollRecovery()
+    local recoveryCharacter=nil
+    local movement={}
+    local observers={}
+    local ragdollRemote=nil
+    local nextLookup=0
+    local nextRequest=0
+    local pendingCharacter=nil
+    local function bindRecovery(character)
+        for _,connection in ipairs(observers) do connection:Disconnect() end
+        table.clear(observers)
+        recoveryCharacter=character; movement={}; nextRequest=0; pendingCharacter=nil
+        if not character then return end
+        task.spawn(function()
+            local humanoid=character:WaitForChild("Humanoid",10)
+            if not humanoid or recoveryCharacter~=character or not screenGui.Parent then return end
+            local function remember()
+                if pendingCharacter==character or character:FindFirstChild("Ragdoll")
+                    or humanoid.PlatformStand or humanoid.Health<=0 then return end
+                if humanoid.WalkSpeed>0 then movement.walkspeed=humanoid.WalkSpeed end
+                if humanoid.JumpPower>0 then movement.jumpPower=humanoid.JumpPower end
+                if humanoid.JumpHeight>0 then movement.jumpHeight=humanoid.JumpHeight end
+            end
+            remember()
+            for _,property in ipairs({"WalkSpeed","JumpPower","JumpHeight","PlatformStand"}) do
+                table.insert(observers,humanoid:GetPropertyChangedSignal(property):Connect(remember))
+            end
+        end)
+    end
+    track(LocalPlayer.CharacterAdded:Connect(bindRecovery))
+    bindRecovery(LocalPlayer.Character)
+    state.recoverRagdollState=function(character,humanoid)
+        if not humanoid or humanoid.Health<=0 then return false end
+        local remembered=recoveryCharacter==character and movement or {}
+        local speed=state.walkspeedLocked and state.walkspeedValue or remembered.walkspeed
+        local jumpPower,jumpHeight=remembered.jumpPower,remembered.jumpHeight
+        local ragdoll=character:FindFirstChild("Ragdoll")
+        if ragdoll and os.clock()>=nextRequest then
+            -- Match the supplied module's RemoteEvent; requests target only our character.
+            if not ragdollRemote or not ragdollRemote:IsDescendantOf(game) then
+                ragdollRemote=nil
+                if os.clock()>=nextLookup then
+                    nextLookup=os.clock()+5
+                    for _,container in ipairs({game:GetService("ReplicatedStorage"),character}) do
+                        for _,item in ipairs(container:GetDescendants()) do
+                            if item:IsA("ModuleScript") then
+                                local remote=item:FindFirstChild("onRagdolled")
+                                if remote and remote:IsA("RemoteEvent") then ragdollRemote=remote; break end
+                            end
+                        end
+                        if ragdollRemote then break end
+                    end
+                end
+            end
+            nextRequest=os.clock()+2
+            if ragdollRemote and pendingCharacter~=character then
+                pendingCharacter=character
+                pcall(function() ragdollRemote:FireServer(character,true) end)
+                task.spawn(function()
+                    local deadline=os.clock()+2
+                    repeat task.wait(0.1) until not screenGui.Parent or recoveryCharacter~=character
+                        or not ragdoll.Parent or os.clock()>=deadline
+                    if screenGui.Parent and recoveryCharacter==character and not character:FindFirstChild("Ragdoll")
+                        and humanoid.Parent and humanoid.Health>0 then
+                        humanoid.WalkSpeed=state.walkspeedLocked and state.walkspeedValue or speed or humanoid.WalkSpeed
+                        if state.jumpHeightLocked then
+                            humanoid.JumpHeight=state.jumpHeightValue
+                            if humanoid.UseJumpPower then humanoid.JumpPower=math.sqrt(2*workspace.Gravity*state.jumpHeightValue) end
+                        else
+                            if jumpPower then humanoid.JumpPower=jumpPower end
+                            if jumpHeight then humanoid.JumpHeight=jumpHeight end
+                        end
+                    end
+                    if pendingCharacter==character then pendingCharacter=nil end
+                end)
+            end
+        end
+        humanoid.Sit=false; humanoid.PlatformStand=false; humanoid.AutoRotate=true
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp,true)
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown,true)
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Running,true)
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping,true)
+        local playerGui=LocalPlayer:FindFirstChildOfClass("PlayerGui")
+        if playerGui then
+            for _,effect in ipairs(playerGui:GetChildren()) do
+                if effect.Name=="TaserSeizureEffect" and effect:IsA("ScreenGui") then effect:Destroy() end
+            end
+        end
+        if speed then humanoid.WalkSpeed=speed end
+        if state.jumpHeightLocked then
+            humanoid.JumpHeight=state.jumpHeightValue
+            if humanoid.UseJumpPower then humanoid.JumpPower=math.sqrt(2*workspace.Gravity*state.jumpHeightValue) end
+        else
+            if remembered.jumpPower then humanoid.JumpPower=remembered.jumpPower end
+            if remembered.jumpHeight then humanoid.JumpHeight=remembered.jumpHeight end
+        end
+        humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+        local camera=workspace.CurrentCamera
+        local head=character:FindFirstChild("Head")
+        if camera and camera.CameraType==Enum.CameraType.Custom and head and camera.CameraSubject==head then
+            camera.CameraSubject=humanoid
+        end
+        return ragdoll~=nil
+    end
+    addCleanup(function()
+        recoveryCharacter=nil
+        for _,connection in ipairs(observers) do connection:Disconnect() end
+        table.clear(observers)
+        state.recoverRagdollState=nil
+    end)
+end
+installRagdollRecovery()
+end
 state.recoverCharacter=function()
     if state.airWalkEnabled then fireAirWalk() end
     if state.noclipEnabled then fireNoclip() end
@@ -4733,19 +4847,17 @@ state.recoverCharacter=function()
         root.AssemblyAngularVelocity = Vector3.zero
     end
     if humanoid then
-        humanoid.Sit = false
-        humanoid.PlatformStand = false
+        state.recoverRagdollState(character,humanoid)
         humanoid.HipHeight = originalHipHeight
-        humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
     end
-    recoveryBtn.Text = "Recovered"
+    recoveryBtn.Text = character and character:FindFirstChild("Ragdoll") and "Recovery requested" or "Recovered"
     task.delay(1.2, function() if recoveryBtn.Parent then recoveryBtn.Text = "Recover Character" end end)
 end
 recoveryBtn.MouseButton1Click:Connect(state.recoverCharacter)
 do
     local _,_,setRecoveryLoop=createToggle("Character Recovery Loop",nextOrder(),false,function(on)
         state.characterRecoveryLoopEnabled=on
-        if on then state.recoverCharacter() end
+        -- The guarded loop handles recovery without interrupting normal flight.
     end)
     state.setCharacterRecoveryLoop=setRecoveryLoop
 end
@@ -4755,18 +4867,23 @@ task.spawn(function()
             local character=LocalPlayer.Character
             local humanoid=character and character:FindFirstChildOfClass("Humanoid")
             local root=character and character:FindFirstChild("HumanoidRootPart")
-            if root then
+            local torso=character and (character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso"))
+            local carpetFlying=torso and torso:FindFirstChild("FlightHold") and torso:FindFirstChild("FlightPower")
+            local intentionalPhysics=carpetFlying or state.flyEnabled or state.loopGotoEnabled
+            if root and not intentionalPhysics then
                 if root.Anchored then root.Anchored=false end
                 if root.AssemblyAngularVelocity.Magnitude>8 then root.AssemblyAngularVelocity=Vector3.zero end
                 if root.AssemblyLinearVelocity.Magnitude>300 then root.AssemblyLinearVelocity=Vector3.zero end
             end
             if humanoid then
-                if humanoid.PlatformStand then humanoid.PlatformStand=false end
                 local current=humanoid:GetState()
-                if current==Enum.HumanoidStateType.FallingDown
+                local taserLocked=not humanoid:GetStateEnabled(Enum.HumanoidStateType.Running)
+                    or not humanoid:GetStateEnabled(Enum.HumanoidStateType.Jumping)
+                if character:FindFirstChild("Ragdoll") or taserLocked or (not intentionalPhysics and (humanoid.PlatformStand
+                    or current==Enum.HumanoidStateType.FallingDown
                     or current==Enum.HumanoidStateType.Ragdoll
-                    or current==Enum.HumanoidStateType.Physics then
-                    humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+                    or current==Enum.HumanoidStateType.Physics)) then
+                    state.recoverRagdollState(character,humanoid)
                 end
             end
         end
@@ -5145,6 +5262,7 @@ end)
 local function setNoCameraShake(on)
     state.noCameraShake=on
     pcall(function() RunService:UnbindFromRenderStep("LucidNoCameraShake") end)
+    if state.setMonsterShakeWatcher then state.setMonsterShakeWatcher(on) end
     if on then
         RunService:BindToRenderStep("LucidNoCameraShake",Enum.RenderPriority.Last.Value,function()
             local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
@@ -5158,6 +5276,66 @@ local function setNoCameraShake(on)
         local humanoid=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
         if humanoid then humanoid.CameraOffset=Vector3.zero end
     end
+end
+do
+    -- Observe only the post-camera, translation-only monster jitter. Do not
+    -- unbind its callback: audio, tint and vibration must continue normally.
+    local cameraConnection=nil
+    local observedCamera=nil
+    local previous=nil
+    local latest=nil
+    local candidate=nil
+    local observing=false
+    local frameChanges=0
+    local function beginFrame()
+        observing=state.noCameraShake and game.PlaceId==136070094363960
+        candidate=nil; frameChanges=0
+        if not observing then return end
+        local camera=workspace.CurrentCamera
+        if camera~=observedCamera then
+            if cameraConnection then cameraConnection:Disconnect() end
+            observedCamera=camera
+            cameraConnection=camera and camera:GetPropertyChangedSignal("CFrame"):Connect(function()
+                previous=latest; latest=camera.CFrame
+                if observing and previous then
+                    frameChanges+=1; candidate={previous,latest}
+                end
+            end) or nil
+        end
+        latest=camera and camera.CFrame
+    end
+    local function endFrame()
+        observing=false
+        local fear=Lighting:FindFirstChild("MonsterFearCC")
+        if frameChanges<2 or not candidate or not fear or not fear:IsA("ColorCorrectionEffect")
+            or fear.TintColor==Color3.new(1,1,1) or workspace.CurrentCamera~=observedCamera then return end
+        local delta=candidate[1]:ToObjectSpace(candidate[2])
+        local _,angle=delta:ToAxisAngle()
+        if math.abs(angle)<0.00001 and math.abs(delta.Position.Z)<0.00001
+            and delta.Position.Magnitude<8 then
+            local strength=state.cameraShakeStrength
+            local removal=strength=="Light" and 0.35 or (strength=="Medium" and 0.7 or 1)
+            observedCamera.CFrame=candidate[2]:Lerp(candidate[1],removal)
+        end
+    end
+    state.setMonsterShakeWatcher=function(on)
+        observing=false; candidate=nil
+        RunService:UnbindFromRenderStep("LucidMonsterShakeBegin")
+        RunService:UnbindFromRenderStep("LucidMonsterShakeEnd")
+        if on and game.PlaceId==136070094363960 then
+            RunService:BindToRenderStep("LucidMonsterShakeBegin",Enum.RenderPriority.Camera.Value-1,beginFrame)
+            RunService:BindToRenderStep("LucidMonsterShakeEnd",Enum.RenderPriority.Camera.Value+2,endFrame)
+        elseif cameraConnection then
+            cameraConnection:Disconnect(); cameraConnection=nil; observedCamera=nil
+        end
+    end
+    addCleanup(function()
+        observing=false
+        if cameraConnection then cameraConnection:Disconnect() end
+        RunService:UnbindFromRenderStep("LucidMonsterShakeBegin")
+        RunService:UnbindFromRenderStep("LucidMonsterShakeEnd")
+        RunService:UnbindFromRenderStep("LucidNoCameraShake")
+    end)
 end
 local shakeStrengthButton=actionButton("Camera Shake Strength: Strong",function(button)
     local current=state.cameraShakeStrength
@@ -5960,6 +6138,62 @@ state.waypointApi={
 -- Lighting presets remain fully editable through the existing lighting values.
 useCategory("Lighting")
 sectionLabel("Comfort Presets", nextOrder())
+do
+    local saved={}
+    local observers={}
+    local enabled=false
+    local writing=false
+    local function enforce(object,property,value)
+        if enabled and object.Parent and object[property]~=value then
+            writing=true; object[property]=value; writing=false
+        end
+    end
+    local function watch(object,values)
+        if saved[object] then return end
+        saved[object]={}
+        for property,value in pairs(values) do
+            saved[object][property]=object[property]
+            table.insert(observers,object:GetPropertyChangedSignal(property):Connect(function()
+                if writing or not enabled then return end
+                -- Retain the game's latest requested value, including event tweens.
+                if object[property]~=value then saved[object][property]=object[property] end
+                enforce(object,property,value)
+            end))
+            enforce(object,property,value)
+        end
+    end
+    local function restore()
+        enabled=false; state.removeFogEnabled=false
+        for _,connection in ipairs(observers) do connection:Disconnect() end
+        table.clear(observers)
+        for object,values in pairs(saved) do
+            if object.Parent then
+                -- This game's event snapshot can contain our suppressed zeros.
+                -- Once the event ends, restore its documented normal atmosphere.
+                local activeEvent=workspace:GetAttribute("ActiveEvent")
+                if game.PlaceId==136070094363960 and object:IsA("Atmosphere")
+                    and (activeEvent==nil or activeEvent=="") then
+                    values.Density=0.437; values.Haze=1.46
+                end
+                for property,value in pairs(values) do pcall(function() object[property]=value end) end
+            end
+        end
+        table.clear(saved)
+    end
+    createToggle("Remove Fog",nextOrder(),false,function(on)
+        restore()
+        enabled=on; state.removeFogEnabled=on
+        if not on then return end
+        watch(Lighting,{FogStart=100000,FogEnd=100000})
+        for _,item in ipairs(Lighting:GetChildren()) do
+            if item:IsA("Atmosphere") then watch(item,{Density=0,Haze=0}) end
+        end
+        table.insert(observers,Lighting.ChildAdded:Connect(function(item)
+            if item:IsA("Atmosphere") then watch(item,{Density=0,Haze=0}) end
+        end))
+    end)
+    addCleanup(restore)
+end
 local originalComfort = { Brightness=Lighting.Brightness, Exposure=Lighting.ExposureCompensation,
     Ambient=Lighting.Ambient, OutdoorAmbient=Lighting.OutdoorAmbient, ClockTime=Lighting.ClockTime }
 local function setComfort(clock, brightness, exposure, ambient)
@@ -8102,7 +8336,7 @@ local function saveNamedProfile(button,profileOverride,silent)
     -- Emote favorites are global and saved independently of named profiles.
     payload.keybinds={}
     for name,key in pairs(shortcutKeys or {}) do payload.keybinds[name]=key and key.Name or "Unbound" end
-    for _,name in ipairs({"Fly","Noclip","Freecam","Migraine","Photo Mode","Character Recovery"}) do
+    for _,name in ipairs({"Fly","Noclip","Freecam","Migraine","Photo Mode","Character Recovery","Loop Go To"}) do
         if not shortcutKeys[name] then payload.keybinds[name]="Unbound" end
     end
     payload.interface={opacity=1-mainFrame.BackgroundTransparency,
@@ -8516,7 +8750,7 @@ local function findShortcutKey(text)
     if requested=="browserback" then return Enum.KeyCode.Backspace end
     return nil
 end
-for _, name in ipairs({"Fly","Noclip","Freecam","Unlock Mouse","Migraine","Photo Mode","Character Recovery"}) do
+for _, name in ipairs({"Fly","Noclip","Freecam","Unlock Mouse","Migraine","Photo Mode","Character Recovery","Loop Go To"}) do
     local shortcutRow = rowFrame(nextOrder(), 30)
     create("TextLabel", {
         Size=UDim2.new(0,72,1,0), BackgroundTransparency=1, Text=name,
@@ -10089,6 +10323,49 @@ end
 
 -- Live diagnostics and a copyable report.
 useCategory("Diagnostics")
+do
+    sectionLabel("Session Eliminations",nextOrder())
+    local row=rowFrame(nextOrder(),40)
+    local label=create("TextLabel",{Size=UDim2.fromScale(1,1),BackgroundTransparency=1,
+        Text="Eliminations: 0 | Waiting for KillConfirmed",TextSize=11,
+        TextColor3=Color3.fromRGB(210,210,220),Font=Enum.Font.Gotham,
+        TextWrapped=true,TextXAlignment=Enum.TextXAlignment.Left,Parent=row})
+    local session=sharedEnvironment.__LUCID_ELIMINATIONS
+    if type(session)~="table" or session.jobId~=game.JobId or session.placeId~=game.PlaceId then
+        session={jobId=game.JobId,placeId=game.PlaceId,count=0}
+        sharedEnvironment.__LUCID_ELIMINATIONS=session
+    end
+    local remote=nil
+    local remoteConnection=nil
+    local function refresh()
+        label.Text=string.format("Eliminations: %d | %s",session.count,
+            remote and "Tracking server confirmations" or "Waiting for KillConfirmed")
+    end
+    local function bind()
+        local remotes=game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
+        local found=remotes and remotes:FindFirstChild("KillConfirmed")
+        if found==remote then return end
+        if remoteConnection then remoteConnection:Disconnect(); remoteConnection=nil end
+        remote=found and found:IsA("RemoteEvent") and found or nil
+        if remote then
+            remoteConnection=remote.OnClientEvent:Connect(function()
+                session.count+=1; refresh()
+            end)
+        end
+        refresh()
+    end
+    bind(); refresh()
+    track(game:GetService("ReplicatedStorage").DescendantAdded:Connect(function(item)
+        if item.Name=="KillConfirmed" or item.Name=="Remotes" then bind() end
+    end))
+    track(game:GetService("ReplicatedStorage").DescendantRemoving:Connect(function(item)
+        if item==remote then
+            if remoteConnection then remoteConnection:Disconnect(); remoteConnection=nil end
+            remote=nil; refresh()
+        end
+    end))
+    addCleanup(function() if remoteConnection then remoteConnection:Disconnect() end end)
+end
 sectionLabel("Explorer", nextOrder())
 local function unloadDexPlusPlus()
     local containers={CoreGui,LocalPlayer:FindFirstChildOfClass("PlayerGui")}
@@ -10187,7 +10464,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.11 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.13 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -10323,6 +10600,7 @@ track(UserInputService.InputBegan:Connect(function(input, processed)
             if state.freecamEnabled then setFreecam(false) end
             fireFly()
         elseif input.KeyCode == shortcutKeys.Noclip then fireNoclip()
+        elseif input.KeyCode == shortcutKeys["Loop Go To"] then fireLoopGoto()
         elseif input.KeyCode == shortcutKeys.Freecam then fireFreecam()
         elseif input.KeyCode == shortcutKeys["Unlock Mouse"] and state.fireUnlockMouse then state.fireUnlockMouse()
         elseif input.KeyCode == shortcutKeys["Photo Mode"] and setPhotoModeToggle then
@@ -11591,7 +11869,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.11] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.13] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.11] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.13] Loaded, but this executor does not expose queue_on_teleport")
 end
