@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.14
+--// Lucid Panel v6.0.16
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -388,7 +388,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.14",
+    Text                   = "LUCID PANEL  •  v6.0.16",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -3161,88 +3161,100 @@ clearTargetButton.MouseButton1Click:Connect(clearTargetLock)
 gotoApi.setTarget=setTargetLock; gotoApi.clearTarget=clearTargetLock
 track(Players.PlayerRemoving:Connect(function(player) if player.Name==state.targetPlayerName then clearTargetLock() end end))
 
--- Single-target, local-only root hitbox extension. This can enlarge client
--- queries/visuals but cannot force server-validated hits to register.
+-- Single-target, local-only limb extension. Independently adapted from the
+-- size/proximity behavior of AAPVdev's AXIOS LimbExtender; no external loaders,
+-- property-spoofing hooks, ESP or separate UI are installed.
 do
+    state.hitboxSizeValue=15
+    state.hitboxShrinkEnabled=true
     local targetName=nil
-    local hitboxSize=10
-    local changedRoot=nil
+    local changedPart=nil
     local original=nil
-    local generation=0
-    local function restoreRoot()
-        if changedRoot and changedRoot.Parent and original then
+    local heartbeat=nil
+    local elapsed=0
+    local function refreshUi()
+        if state.refreshHitboxUi then state.refreshHitboxUi(targetName) end
+    end
+    local function restorePart()
+        if changedPart and changedPart.Parent and original then
             pcall(function()
-                changedRoot.Size=original.Size
-                changedRoot.Transparency=original.Transparency
-                changedRoot.Color=original.Color
-                changedRoot.CanTouch=original.CanTouch
-                changedRoot.CanQuery=true
-                changedRoot.CanCollide=original.CanCollide
-                changedRoot.CanQuery=original.CanQuery
+                for property,value in pairs(original) do changedPart[property]=value end
             end)
         end
-        changedRoot=nil; original=nil
+        changedPart=nil; original=nil
     end
-    local function applyRoot()
+    local function applyPart()
         local player=targetName and Players:FindFirstChild(targetName)
         local character=player and player.Character
-        local root=character and character:FindFirstChild("HumanoidRootPart")
-        if root~=changedRoot then
-            restoreRoot()
-            if root and root:IsA("BasePart") then
-                changedRoot=root
-                original={Size=root.Size,Transparency=root.Transparency,Color=root.Color,
-                    CanCollide=root.CanCollide,CanTouch=root.CanTouch,CanQuery=root.CanQuery}
+        local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+        local limb=character and character:FindFirstChild("HumanoidRootPart")
+        if humanoid and humanoid.Health<=0 then limb=nil end
+        if limb~=changedPart then
+            restorePart()
+            if limb and limb:IsA("BasePart") then
+                changedPart=limb
+                original={Size=limb.Size,Transparency=limb.Transparency,CanCollide=limb.CanCollide,
+                    Massless=limb.Massless,RootPriority=limb.RootPriority}
             end
         end
-        if changedRoot then
-            pcall(function()
-                changedRoot.CanCollide=false
-                changedRoot.CanTouch=false
-                changedRoot.CanQuery=true
-                changedRoot.Size=Vector3.new(hitboxSize,hitboxSize,hitboxSize)
-                changedRoot.Transparency=0.7
-                changedRoot.Color=Color3.fromRGB(255,75,75)
-            end)
+        if not changedPart then return end
+        local size=math.clamp(tonumber(state.hitboxSizeValue) or 15,1,1000)
+        local targetSize=Vector3.new(size,size,size)
+        local ourRoot=LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if state.hitboxShrinkEnabled and ourRoot then
+            local radius=size/2
+            local minSquared=(radius*0.1)^2
+            local maxSquared=(radius*1.5+5)^2
+            local offset=changedPart.Position-ourRoot.Position
+            local fraction=math.sqrt(math.clamp((offset:Dot(offset)-minSquared)/(maxSquared-minSquared),0,1))
+            targetSize=original.Size:Lerp(targetSize,fraction)
         end
+        pcall(function()
+            if (changedPart.Size-targetSize).Magnitude>0.01 then changedPart.Size=targetSize end
+            if changedPart.CanCollide then changedPart.CanCollide=false end
+            -- Preserve CanTouch/CanQuery; the old root extender disabled touch.
+            local massless=changedPart.Name~="HumanoidRootPart"
+            if changedPart.Massless~=massless then changedPart.Massless=massless end
+            if massless and changedPart.RootPriority~=-127 then changedPart.RootPriority=-127 end
+            if changedPart.Transparency~=0.7 then changedPart.Transparency=0.7 end
+        end)
     end
     local function disable()
-        generation+=1
         targetName=nil
-        restoreRoot()
+        if heartbeat then heartbeat:Disconnect(); heartbeat=nil end
+        restorePart(); refreshUi()
         return true,"Hitbox restored"
     end
     state.hitboxApi={
         enable=function(input)
             local query=tostring(input or ""):match("^%s*(.-)%s*$")
             if query:lower()=="off" then return disable() end
-            local player=findGotoPlayer(query)
-            local requestedSize=10
-            if not player then
-                local name,sizeText=query:match("^(.-)%s+(%d+%.?%d*)$")
-                if name then
-                    player=findGotoPlayer(name)
-                    requestedSize=tonumber(sizeText)
-                end
+            local name,sizeText=query:match("^(.-)%s+(%d+%.?%d*)$")
+            local player=findGotoPlayer(name or query)
+            local size=sizeText and tonumber(sizeText) or state.hitboxSizeValue
+            if not player or player==LocalPlayer then return false,"Select another online player" end
+            if not size or size~=size or size<1 or size>1000 then return false,"Size must be between 1 and 1000 studs" end
+            if targetName~=player.Name then restorePart() end
+            targetName=player.Name; state.hitboxSizeValue=size
+            applyPart()
+            if not heartbeat then
+                elapsed=0
+                heartbeat=RunService.Heartbeat:Connect(function(dt)
+                    elapsed+=dt
+                    if elapsed>=0.125 then elapsed=0; applyPart() end
+                end)
             end
-            if not player then return false,"Player not found; use !hitbox <user> [size]" end
-            if not requestedSize or requestedSize<4 or requestedSize>30 then
-                return false,"Size must be between 4 and 30 studs"
-            end
-            targetName=player.Name
-            hitboxSize=requestedSize
-            applyRoot()
-            generation+=1
-            local token=generation
-            task.spawn(function()
-                while targetName and generation==token and screenGui.Parent do
-                    task.wait(0.5)
-                    if targetName and generation==token then applyRoot() end
-                end
-            end)
-            return true,"Local hitbox: "..player.Name.." ("..requestedSize.." studs)"
+            refreshUi()
+            return true,"Local hitbox: "..player.Name.." ("..size.." studs)"
         end,
         disable=disable,
+        update=function()
+            local size=tonumber(state.hitboxSizeValue) or 15
+            state.hitboxSizeValue=math.clamp(size==size and size or 15,1,1000)
+            if targetName then applyPart() end
+            refreshUi()
+        end,
+        getTarget=function() return targetName end,
     }
     track(Players.PlayerRemoving:Connect(function(player)
         if player.Name==targetName then disable() end
@@ -4933,6 +4945,96 @@ end
 
 -- Fly uses camera-relative movement without inserting permanent character parts.
 useCategory("Player")
+do
+    sectionLabel("Selected Player Limb Extender",nextOrder())
+    local selectedName=nil
+    local syncing=false
+    local playerRow=rowFrame(nextOrder(),30)
+    local playerBox=styledBox(playerRow,{Size=UDim2.new(1,-38,0,26),
+        Position=UDim2.new(0,0,0.5,-13),Text="",PlaceholderText="Select / type username"})
+    local dropdown=create("TextButton",{Size=UDim2.new(0,32,0,26),Position=UDim2.new(1,-32,0.5,-13),
+        BackgroundColor3=Color3.fromRGB(62,52,92),BorderSizePixel=0,Text="▼",
+        TextColor3=Color3.fromRGB(235,230,245),TextSize=12,Font=Enum.Font.Gotham,Parent=playerRow})
+    create("UICorner",{CornerRadius=UDim.new(0,5),Parent=dropdown})
+    local menuRow=rowFrame(nextOrder(),0)
+    local menu=create("ScrollingFrame",{Size=UDim2.new(1,0,0,110),BackgroundColor3=Color3.fromRGB(35,32,45),
+        BorderSizePixel=0,ScrollBarThickness=4,CanvasSize=UDim2.new(),Visible=false,Parent=menuRow})
+    local function closeMenu() menu.Visible=false; menuRow.Size=UDim2.new(1,0,0,0) end
+    local function selectPlayer(name)
+        selectedName=name; playerBox.Text=name; closeMenu()
+        if state.hitboxApi.getTarget() then
+            local ok,message=state.hitboxApi.enable(name)
+            if not ok then notifyLucid("Limb Extender",message,Color3.fromRGB(230,90,105)) end
+        end
+    end
+    dropdown.MouseButton1Click:Connect(function()
+        if menu.Visible then closeMenu(); return end
+        for _,item in ipairs(menu:GetChildren()) do item:Destroy() end
+        local players=Players:GetPlayers()
+        table.sort(players,function(a,b) return a.Name:lower()<b.Name:lower() end)
+        local count=0
+        for _,player in ipairs(players) do
+            if player~=LocalPlayer then
+                local choice=create("TextButton",{Size=UDim2.new(1,-6,0,25),Position=UDim2.new(0,0,0,count*25),
+                    BackgroundTransparency=1,Text=player.DisplayName.." (@"..player.Name..")",
+                    TextColor3=Color3.fromRGB(225,220,240),TextSize=11,Font=Enum.Font.Gotham,
+                    TextTruncate=Enum.TextTruncate.AtEnd,Parent=menu})
+                choice.MouseButton1Click:Connect(function() selectPlayer(player.Name) end)
+                count+=1
+            end
+        end
+        menu.CanvasSize=UDim2.new(0,0,0,count*25); menu.CanvasPosition=Vector2.zero
+        menu.Visible=true; menuRow.Size=UDim2.new(1,0,0,114)
+    end)
+    playerBox.FocusLost:Connect(function()
+        local player=findGotoPlayer(playerBox.Text)
+        if player and player~=LocalPlayer then selectPlayer(player.Name)
+        else playerBox.Text=selectedName or "" end
+    end)
+    local sizeRow=rowFrame(nextOrder(),30)
+    create("TextLabel",{Size=UDim2.new(1,-85,1,0),BackgroundTransparency=1,Text="Size (1–1000 studs)",
+        TextColor3=Color3.fromRGB(210,210,220),TextSize=12,Font=Enum.Font.Gotham,
+        TextXAlignment=Enum.TextXAlignment.Left,Parent=sizeRow})
+    local sizeBox=styledBox(sizeRow,{Size=UDim2.new(0,75,0,26),Position=UDim2.new(1,-75,0.5,-13),
+        Text=tostring(state.hitboxSizeValue)})
+    sizeBox.FocusLost:Connect(function()
+        local size=tonumber(sizeBox.Text)
+        if size and size==size and size>=1 and size<=1000 then state.hitboxSizeValue=size end
+        sizeBox.Text=tostring(state.hitboxSizeValue); state.hitboxApi.update()
+    end)
+    local limbRow=rowFrame(nextOrder(),24)
+    create("TextLabel",{Size=UDim2.fromScale(1,1),BackgroundTransparency=1,Text="Target part: HumanoidRootPart",
+        TextColor3=Color3.fromRGB(180,175,195),TextSize=11,Font=Enum.Font.Gotham,
+        TextXAlignment=Enum.TextXAlignment.Left,Parent=limbRow})
+    createToggle("Limb Proximity Shrink",nextOrder(),true,function(on)
+        state.hitboxShrinkEnabled=on; state.hitboxApi.update()
+    end)
+    local _,_,setter=createToggle("Extend Selected Player Limb",nextOrder(),false,function(on)
+        if syncing then return end
+        if on then
+            local ok,message=state.hitboxApi.enable(selectedName or playerBox.Text)
+            if not ok then
+                notifyLucid("Limb Extender",message,Color3.fromRGB(230,90,105))
+                task.defer(function() if screenGui.Parent then state.hitboxApi.disable() end end)
+            end
+        else state.hitboxApi.disable() end
+    end)
+    state.refreshHitboxUi=function(target)
+        syncing=true
+        local enabled=target~=nil
+        if activeFeatures["Extend Selected Player Limb"]~=enabled then setter(enabled,true) end
+        if target then selectedName=target; playerBox.Text=target end
+        sizeBox.Text=tostring(state.hitboxSizeValue)
+        syncing=false
+    end
+    local creditRow=rowFrame(nextOrder(),45)
+    create("TextLabel",{Size=UDim2.fromScale(1,1),BackgroundTransparency=1,
+        Text="Concept credit: AAPVdev / AXIOS LimbExtender\nLocal-only adaptation • server hits not guaranteed",
+        TextWrapped=true,TextColor3=Color3.fromRGB(160,150,185),TextSize=10,
+        Font=Enum.Font.Gotham,Parent=creditRow})
+    state.refreshHitboxUi(state.hitboxApi.getTarget())
+    addCleanup(function() state.refreshHitboxUi=nil end)
+end
 sectionLabel("Movement+", nextOrder())
 local flySpeedRow = rowFrame(nextOrder())
 create("TextLabel", { Size = UDim2.new(0.65, 0, 1, 0), BackgroundTransparency = 1,
@@ -8387,6 +8489,9 @@ local function saveNamedProfile(button,profileOverride,silent,highlightsOnly)
     end
     payload.waypointsByPlace[tostring(game.PlaceId)]=savedWaypoints
     for name, enabled in pairs(activeFeatures) do payload.toggles[name]=enabled end
+    -- Target selection belongs to this session; never auto-extend an unrelated
+    -- player when a profile loads in another server.
+    payload.toggles["Extend Selected Player Limb"]=nil
     local encodedOk, encoded = pcall(function() return HttpService:JSONEncode(payload) end)
     if encodedOk and readfile and (not isfile or isfile(profilePath)) then
         local backupPath=profilePath:gsub("%.json$","_backup.json")
@@ -8444,6 +8549,7 @@ loadNamedProfile = function(button)
         end
     end
     if state.applyAccentTheme then state.applyAccentTheme(state.accentTheme) end
+    if state.hitboxApi then state.hitboxApi.update() end
     if state.yellowHighlightApi.refreshColor then state.yellowHighlightApi.refreshColor() end
     if state.pinkHighlightApi.refreshColor then state.pinkHighlightApi.refreshColor() end
     if state.blackHighlightApi.refreshColor then state.blackHighlightApi.refreshColor() end
@@ -10480,7 +10586,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.14 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.16 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -10873,7 +10979,7 @@ state.initializeCommandConsole=function()
             {command="!getmobilelink",description="Copy a direct Roblox-app link to this server"},
             {command="!getlinks",description="Copy HTTPS and mobile links to this server"},
             {command="!help",description="Show a compact command summary"},
-            {command="!hitbox <player> [size]",description="Locally extend one player's root hitbox (4-30 studs; default 10)"},
+            {command="!hitbox <player> [size]",description="Locally extend one player's HumanoidRootPart (1-1000 studs; default 15)"},
             {command="!unhitbox",description="Restore the original target hitbox"},
             {command="!hide <player>",description="Hide one player's character and name for this session only"},
             {command="!unhide <player>",description="Restore a player hidden with !hide"},
@@ -11885,7 +11991,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.14] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.16] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.14] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.16] Loaded, but this executor does not expose queue_on_teleport")
 end
