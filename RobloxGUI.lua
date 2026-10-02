@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.24
+--// Lucid Panel v6.0.25
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -388,7 +388,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.24",
+    Text                   = "LUCID PANEL  •  v6.0.25",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -2302,7 +2302,7 @@ end))
 do
     local binding="LucidCharacterSpin"
     local mode=nil
-    local speed=2 -- full turns per second; command range 0.5–10
+    local speed=2 -- full turns per second; command range 0.5–25
     local spinningHumanoid=nil
     local savedAutoRotate=nil
     local function restoreAutoRotate()
@@ -2344,8 +2344,8 @@ do
             if input:lower()=="off" then return stop() end
             if input~="" then
                 local parsed=tonumber(input)
-                if not parsed or parsed<0.5 or parsed>10 then
-                    return false,"Speed must be between 0.5 and 10 turns/second"
+                if not parsed or parsed<0.5 or parsed>25 then
+                    return false,"Speed must be between 0.5 and 25 turns/second"
                 end
                 speed=parsed
             end
@@ -11490,7 +11490,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.24 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.25 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -11903,8 +11903,8 @@ state.initializeCommandConsole=function()
             {command="!rj",description="Rejoin using the IY-style same-server routine"},
             {command="!save [profile name]",description="Save the current settings to the named profile"},
             {command="!saveprofile <name>",description="Save the current settings to this profile name (!svp also works)"},
-            {command="!spin [0.5-10]",description="Spin at adjustable speed, pausing during Shift Lock"},
-            {command="!spinsl [0.5-10]",description="Keep spinning even while Shift Lock is active"},
+            {command="!spin [0.5-25]",description="Spin at adjustable speed, pausing during Shift Lock"},
+            {command="!spinsl [0.5-25]",description="Keep spinning even while Shift Lock is active"},
             {command="!unspin",description="Stop either spin mode and restore AutoRotate"},
             {command="!reanim <on|off>",description="Control Local Reanimation for Custom keyframes"},
             {command="!sh <player>",description="Add a player to Special highlights"},
@@ -12900,7 +12900,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.24] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.25] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.24] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.25] Loaded, but this executor does not expose queue_on_teleport")
 end
