@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.25
+--// Lucid Panel v6.0.27
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -388,7 +388,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.25",
+    Text                   = "LUCID PANEL  •  v6.0.27",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -11161,7 +11161,7 @@ do
             Visible=false,Parent=screenGui})
         create("UICorner",{CornerRadius=UDim.new(0,9),Parent=browser})
         create("UIStroke",{Color=Color3.fromRGB(115,85,190),Thickness=1.3,Parent=browser})
-        makeResizableWindow(browser,360,260)
+        makeResizableWindow(browser,360,320)
         create("TextLabel",{Size=UDim2.new(1,-42,0,28),Position=UDim2.fromOffset(10,5),
             BackgroundTransparency=1,Text="Lucid Server Browser",TextColor3=Color3.fromRGB(230,220,245),
             TextSize=14,Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left,Parent=browser})
@@ -11175,11 +11175,13 @@ do
             TextColor3=Color3.fromRGB(175,200,220),TextSize=10,Font=Enum.Font.Gotham,
             TextXAlignment=Enum.TextXAlignment.Left,Parent=browser})
 
+        local publicHost=create("Frame",{Name="PublicServers",Size=UDim2.new(1,0,1,-32),
+            Position=UDim2.fromOffset(0,32),BackgroundTransparency=1,Parent=browser})
         local function browserFilter(label,x,value)
             create("TextLabel",{Size=UDim2.new(0.3,0,0,16),Position=UDim2.new(x,8,0,54),
                 BackgroundTransparency=1,Text=label,TextColor3=Color3.fromRGB(200,195,220),
-                TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=browser})
-            return styledBox(browser,{Size=UDim2.new(0.3,-4,0,24),Position=UDim2.new(x,8,0,72),
+                TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=publicHost})
+            return styledBox(publicHost,{Size=UDim2.new(0.3,-4,0,24),Position=UDim2.new(x,8,0,72),
                 Text=tostring(value),ClearTextOnFocus=false})
         end
         local browserPing=browserFilter("Max ping",0,filters.maxPing)
@@ -11187,24 +11189,268 @@ do
         local browserMax=browserFilter("Max players",0.66,filters.maxPlayers)
         local findBrowser=create("TextButton",{Size=UDim2.new(1,-20,0,25),Position=UDim2.fromOffset(10,102),
             BackgroundColor3=Color3.fromRGB(75,57,110),BorderSizePixel=0,Text="Find Servers",
-            TextColor3=Color3.new(1,1,1),TextSize=11,Font=Enum.Font.GothamSemibold,Parent=browser})
+            TextColor3=Color3.new(1,1,1),TextSize=11,Font=Enum.Font.GothamSemibold,Parent=publicHost})
         create("UICorner",{CornerRadius=UDim.new(0,5),Parent=findBrowser})
         local browserStatus=create("TextLabel",{Size=UDim2.new(1,-20,0,29),Position=UDim2.fromOffset(10,132),
             BackgroundTransparency=1,Text="List ping is an estimate, not your own RTT.",TextWrapped=true,
             TextColor3=Color3.fromRGB(180,175,200),TextSize=10,Font=Enum.Font.Gotham,
-            TextXAlignment=Enum.TextXAlignment.Left,Parent=browser})
+            TextXAlignment=Enum.TextXAlignment.Left,Parent=publicHost})
         local browserResults=create("ScrollingFrame",{Size=UDim2.new(1,-20,1,-208),
             Position=UDim2.fromOffset(10,164),BackgroundTransparency=1,BorderSizePixel=0,
             ScrollBarThickness=4,AutomaticCanvasSize=Enum.AutomaticSize.Y,
-            CanvasSize=UDim2.new(),Parent=browser})
+            CanvasSize=UDim2.new(),Parent=publicHost})
         create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,3),Parent=browserResults})
         local selectedLabel=create("TextLabel",{Size=UDim2.new(1,-160,0,20),Position=UDim2.new(0,10,1,-42),
             BackgroundTransparency=1,Text="Selected: none",TextColor3=Color3.fromRGB(205,200,225),
-            TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=browser})
+            TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=publicHost})
         local joinBrowser=create("TextButton",{Size=UDim2.new(0,135,0,27),Position=UDim2.new(1,-160,1,-37),
             BackgroundColor3=Color3.fromRGB(62,110,78),BorderSizePixel=0,Text="Join Selected",
-            TextColor3=Color3.new(1,1,1),TextSize=11,Font=Enum.Font.GothamSemibold,Parent=browser})
+            TextColor3=Color3.new(1,1,1),TextSize=11,Font=Enum.Font.GothamSemibold,Parent=publicHost})
         create("UICorner",{CornerRadius=UDim.new(0,5),Parent=joinBrowser})
+
+        -- Keep friend discovery/UI in its own scope; only fetch on demand.
+        local function initializeFriendServers()
+            local host=create("Frame",{Name="FriendServers",Size=UDim2.new(1,-20,1,-98),
+                Position=UDim2.fromOffset(10,86),BackgroundTransparency=1,Visible=false,Parent=browser})
+            local refresh=create("TextButton",{Size=UDim2.new(1,0,0,25),
+                BackgroundColor3=Color3.fromRGB(75,57,110),BorderSizePixel=0,Text="Refresh Friends",
+                TextColor3=Color3.new(1,1,1),TextSize=11,Font=Enum.Font.GothamSemibold,Parent=host})
+            create("UICorner",{CornerRadius=UDim.new(0,5),Parent=refresh})
+            local status=create("TextLabel",{Size=UDim2.new(1,0,0,34),Position=UDim2.fromOffset(0,29),
+                BackgroundTransparency=1,Text="Friends playing this place. Presence refreshes about every 30s.",
+                TextWrapped=true,TextColor3=Color3.fromRGB(180,175,200),TextSize=10,
+                Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=host})
+            local list=create("ScrollingFrame",{Size=UDim2.new(1,0,1,-117),Position=UDim2.fromOffset(0,66),
+                BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=4,
+                AutomaticCanvasSize=Enum.AutomaticSize.Y,CanvasSize=UDim2.new(),Parent=host})
+            create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,3),Parent=list})
+            local selection=create("TextLabel",{Size=UDim2.new(1,0,0,17),Position=UDim2.new(0,0,1,-47),
+                BackgroundTransparency=1,Text="Selected: none",TextColor3=Color3.fromRGB(205,200,225),
+                TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
+                TextTruncate=Enum.TextTruncate.AtEnd,Parent=host})
+            local join=create("TextButton",{Size=UDim2.fromOffset(135,27),Position=UDim2.new(1,-135,1,-27),
+                BackgroundColor3=Color3.fromRGB(62,110,78),BorderSizePixel=0,Text="Join Friend",
+                TextColor3=Color3.new(1,1,1),TextSize=11,Font=Enum.Font.GothamSemibold,Parent=host})
+            create("UICorner",{CornerRadius=UDim.new(0,5),Parent=join})
+            local friends={}
+            local selected=nil
+            local busy=false
+            local disposed=false
+            local lastFetch=nil
+            local hasLoaded=false
+            local joinPending=false
+            local function available(friend)
+                return type(friend.id)=="string" and friend.id~=""
+                    and friend.id~="00000000-0000-0000-0000-000000000000"
+            end
+            local function render()
+                for _,item in ipairs(list:GetChildren()) do
+                    if item:IsA("TextButton") then item:Destroy() end
+                end
+                selection.Text=selected and ("Selected: @"..selected.username) or "Selected: none"
+                join.Text=selected and selected.id==game.JobId and "Already Here" or "Join Friend"
+                for index,friend in ipairs(friends) do
+                    local location=not available(friend) and "Server unavailable"
+                        or (friend.id==game.JobId and "Already in this server" or "Join server")
+                    local row=create("TextButton",{Size=UDim2.new(1,-5,0,38),
+                        BackgroundColor3=friend==selected and Color3.fromRGB(62,105,80)
+                            or Color3.fromRGB(47,43,59),BorderSizePixel=0,
+                        Text=friend.displayName.." (@"..friend.username..")\n"..location,
+                        TextColor3=Color3.fromRGB(230,225,240),TextSize=10,Font=Enum.Font.Gotham,
+                        TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,
+                        LayoutOrder=index,Parent=list})
+                    create("UICorner",{CornerRadius=UDim.new(0,4),Parent=row})
+                    row.MouseButton1Click:Connect(function() selected=friend; render() end)
+                end
+            end
+            local function refreshFriends()
+                if disposed or busy then return end
+                if lastFetch and os.clock()-lastFetch<30 then
+                    status.Text="Roblox caches presence for 30s. Try again in "
+                        ..math.ceil(30-(os.clock()-lastFetch)).."s."
+                    return
+                end
+                busy=true; lastFetch=os.clock()
+                selected=nil; friends={}; render()
+                refresh.Text="Checking friends..."; status.Text="Finding friends playing this place..."
+                task.spawn(function()
+                    local ok,result=pcall(function() return LocalPlayer:GetFriendsOnlineAsync(200) end)
+                    if disposed or not host.Parent or not screenGui.Parent then return end
+                    busy=false; refresh.Text="Refresh Friends"
+                    if not ok or type(result)~="table" then
+                        lastFetch=nil
+                        status.Text="Friends lookup failed. Try Refresh again."
+                        warn("[Lucid Friends] Lookup failed: "..tostring(result))
+                        return
+                    end
+                    local seen={}
+                    for _,friend in pairs(result) do
+                        if type(friend)=="table" and friend.IsOnline==true
+                            and tonumber(friend.PlaceId)==game.PlaceId then
+                            local userId=tonumber(friend.VisitorId)
+                            if userId and userId~=LocalPlayer.UserId and not seen[userId] then
+                                seen[userId]=true
+                                local username=type(friend.UserName)=="string" and friend.UserName~=""
+                                    and friend.UserName or tostring(userId)
+                                table.insert(friends,{userId=userId,username=username,
+                                    displayName=type(friend.DisplayName)=="string" and friend.DisplayName~=""
+                                        and friend.DisplayName or username,
+                                    id=friend.GameId}) -- Presence GameId is a server JobId, not a universe ID.
+                            end
+                        end
+                    end
+                    table.sort(friends,function(a,b)
+                        if (a.id==game.JobId)~=(b.id==game.JobId) then return a.id==game.JobId end
+                        return a.username:lower()<b.username:lower()
+                    end)
+                    hasLoaded=true; list.CanvasPosition=Vector2.zero; render()
+                    status.Text=#friends>0 and (#friends.." friend(s) playing this place. Select one to join."
+                        .." Presence may lag by 30s; server access still applies.")
+                        or "No friends reported playing this place. Hidden locations cannot be listed."
+                end)
+            end
+            refresh.MouseButton1Click:Connect(refreshFriends)
+            join.MouseButton1Click:Connect(function()
+                if busy or joinPending then return end
+                if not selected then status.Text="Select a friend from the list first."; return end
+                if not available(selected) then
+                    status.Text="Roblox did not provide this friend's server. Joining is unavailable."; return
+                end
+                if selected.id==game.JobId then status.Text="You are already in this friend's server."; return end
+                if not lastFetch or os.clock()-lastFetch>=30 then
+                    refreshFriends()
+                    status.Text="Refreshing an older list. Select your friend again when it finishes."; return
+                end
+                joinPending=true; join.Text="Joining..."
+                status.Text="Joining @"..selected.username.."..."
+                local ok,err=pcall(function()
+                    TeleportService:TeleportToPlaceInstance(game.PlaceId,selected.id,LocalPlayer)
+                end)
+                if not ok and not disposed then
+                    joinPending=false; join.Text="Join Friend"
+                    status.Text="Join failed: "..tostring(err)
+                end
+            end)
+            local failed=TeleportService.TeleportInitFailed:Connect(function(player,_,message)
+                if player==LocalPlayer and joinPending and not disposed then
+                    joinPending=false; join.Text="Join Friend"
+                    status.Text="Join failed: "..tostring(message)..". Refresh to check their server."
+                end
+            end)
+            addCleanup(function() disposed=true; failed:Disconnect() end)
+            return function(visible)
+                host.Visible=visible
+                if visible and (not hasLoaded or not lastFetch or os.clock()-lastFetch>=30) then
+                    refreshFriends()
+                end
+            end
+        end
+        local showFriends=initializeFriendServers()
+        local function initializeUsernameSearch()
+            local host=create("Frame",{Name="UsernameProfileSearch",Size=UDim2.new(1,-20,1,-98),
+                Position=UDim2.fromOffset(10,86),BackgroundTransparency=1,Visible=false,Parent=browser})
+            create("TextLabel",{Size=UDim2.new(1,0,0,30),BackgroundTransparency=1,
+                Text="Find a Roblox profile by exact username (not display name).",TextWrapped=true,
+                TextColor3=Color3.fromRGB(210,200,230),TextSize=11,Font=Enum.Font.Gotham,
+                TextXAlignment=Enum.TextXAlignment.Left,Parent=host})
+            local input=styledBox(host,{Size=UDim2.new(1,-100,0,27),Position=UDim2.fromOffset(0,36),
+                Text="",PlaceholderText="Username or @username",ClearTextOnFocus=false})
+            local lookup=create("TextButton",{Size=UDim2.fromOffset(92,27),Position=UDim2.new(1,-92,0,36),
+                BackgroundColor3=Color3.fromRGB(75,57,110),BorderSizePixel=0,Text="Find Profile",
+                TextColor3=Color3.new(1,1,1),TextSize=11,Font=Enum.Font.GothamSemibold,Parent=host})
+            create("UICorner",{CornerRadius=UDim.new(0,5),Parent=lookup})
+            local status=create("TextLabel",{Size=UDim2.new(1,0,0,39),Position=UDim2.fromOffset(0,69),
+                BackgroundTransparency=1,Text="Enter a username and press Find Profile or Enter.",TextWrapped=true,
+                TextColor3=Color3.fromRGB(180,175,200),TextSize=10,Font=Enum.Font.Gotham,
+                TextXAlignment=Enum.TextXAlignment.Left,Parent=host})
+            local linkBox=styledBox(host,{Size=UDim2.new(1,0,0,27),Position=UDim2.fromOffset(0,114),
+                Text="",PlaceholderText="Profile link appears here",ClearTextOnFocus=false,TextEditable=false})
+            local copy=create("TextButton",{Size=UDim2.fromOffset(135,27),Position=UDim2.new(0.5,-67,0,149),
+                BackgroundColor3=Color3.fromRGB(62,110,78),BorderSizePixel=0,Text="Copy Profile Link",
+                TextColor3=Color3.new(1,1,1),TextSize=11,Font=Enum.Font.GothamSemibold,Parent=host})
+            create("UICorner",{CornerRadius=UDim.new(0,5),Parent=copy})
+            create("TextLabel",{Size=UDim2.new(1,0,0,40),Position=UDim2.fromOffset(0,182),
+                BackgroundTransparency=1,
+                Text="Open the link in your browser and use Roblox's Join button if offered."
+                    .." This does not locate their server or bypass join settings.",TextWrapped=true,
+                TextColor3=Color3.fromRGB(175,170,190),TextSize=10,Font=Enum.Font.Gotham,
+                TextXAlignment=Enum.TextXAlignment.Left,Parent=host})
+            local cache={}
+            local cacheOrder={}
+            local profileUrl=nil
+            local generation=0
+            local busy=false
+            local disposed=false
+            local function clearResult()
+                generation+=1; profileUrl=nil; linkBox.Text=""
+                status.Text="Enter a username and press Find Profile or Enter."
+            end
+            input:GetPropertyChangedSignal("Text"):Connect(clearResult)
+            local function findProfile()
+                if disposed or busy then return end
+                local username=input.Text:match("^%s*(.-)%s*$"):gsub("^@","")
+                if username=="" or not username:match("^[%w_]+$") then
+                    clearResult(); status.Text="Use an exact Roblox username, not a display name or URL."; return
+                end
+                clearResult()
+                local requestGeneration=generation
+                busy=true; lookup.Text="Finding..."; status.Text="Looking up @"..username.."..."
+                task.spawn(function()
+                    local key=username:lower()
+                    local ok,userId=pcall(function()
+                        return cache[key] or Players:GetUserIdFromNameAsync(username)
+                    end)
+                    if disposed or not host.Parent or not screenGui.Parent then return end
+                    busy=false; lookup.Text="Find Profile"
+                    if ok and type(userId)=="number" and userId>0 then
+                        if not cache[key] then
+                            if #cacheOrder>=20 then cache[table.remove(cacheOrder,1)]=nil end
+                            cache[key]=userId; table.insert(cacheOrder,key)
+                        end
+                        if requestGeneration~=generation then return end
+                        profileUrl="https://www.roblox.com/users/"..string.format("%.0f",userId).."/profile"
+                        linkBox.Text=profileUrl
+                        status.Text="Found @"..username.." • User ID: "..tostring(userId)
+                            ..". Copy the profile link below."
+                    elseif requestGeneration==generation then
+                        status.Text="Lookup failed: check the exact username, or try again later."
+                    end
+                end)
+            end
+            lookup.MouseButton1Click:Connect(findProfile)
+            input.FocusLost:Connect(function(enterPressed) if enterPressed then findProfile() end end)
+            copy.MouseButton1Click:Connect(function()
+                if not profileUrl then status.Text="Find a profile first."; return end
+                local ok=type(setclipboard)=="function" and pcall(setclipboard,profileUrl)
+                status.Text=ok and "Profile link copied. Paste it into your browser."
+                    or "Clipboard unavailable. Select and copy the link from the box manually."
+            end)
+            addCleanup(function() disposed=true; generation+=1 end)
+            return function(visible) host.Visible=visible end
+        end
+        local showUsername=initializeUsernameSearch()
+        local browserTab="public"
+        local tabButtons={}
+        local function setBrowserTab(tab)
+            browserTab=tab
+            publicHost.Visible=tab=="public"
+            showFriends(tab=="friends")
+            showUsername(tab=="username")
+            for name,button in pairs(tabButtons) do
+                button.BackgroundColor3=name==tab and Color3.fromRGB(92,68,137) or Color3.fromRGB(47,43,59)
+            end
+        end
+        for index,tab in ipairs({{key="public",label="Public Servers"},{key="friends",label="Friends"},
+            {key="username",label="Username"}}) do
+            local button=create("TextButton",{Size=UDim2.new(1/3,-12,0,25),
+                Position=UDim2.new((index-1)/3,10,0,54),BackgroundColor3=Color3.fromRGB(47,43,59),
+                BorderSizePixel=0,Text=tab.label,TextColor3=Color3.fromRGB(230,225,240),TextSize=11,
+                Font=Enum.Font.GothamSemibold,Parent=browser})
+            create("UICorner",{CornerRadius=UDim.new(0,5),Parent=button})
+            tabButtons[tab.key]=button
+            button.MouseButton1Click:Connect(function() setBrowserTab(tab.key) end)
+        end
+        setBrowserTab("public")
 
         local function setStatus(message)
             panelStatus.Text=message
@@ -11222,6 +11468,7 @@ do
             if state.refreshLucidDock then state.refreshLucidDock() end
             pingGeneration+=1
             if browser.Visible then
+                if browserTab=="friends" then showFriends(true) end
                 local generation=pingGeneration
                 task.spawn(function()
                     while browser.Visible and browser.Parent and generation==pingGeneration do
@@ -11339,6 +11586,7 @@ do
         end)
         joinBrowser.MouseButton1Click:Connect(joinSelected)
         scanFromPanel=function()
+            setBrowserTab("public")
             readFilters(panelPing,panelMin,panelMax)
             searchServers()
         end
@@ -11490,7 +11738,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.25 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.27 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -12900,7 +13148,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.25] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.27] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.25] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.27] Loaded, but this executor does not expose queue_on_teleport")
 end
