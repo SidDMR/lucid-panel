@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.22
+--// Lucid Panel v6.0.24
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -388,7 +388,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.22",
+    Text                   = "LUCID PANEL  •  v6.0.24",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -6536,6 +6536,17 @@ do
     end)
     addCleanup(restore)
 end
+if game.PlaceId==136070094363960 then
+    state.wormCleanLightingEnabled=false
+    createToggle("Clean Lighting (Always)",nextOrder(),false,function(on)
+        state.wormCleanLightingEnabled=on
+        if state.refreshWormEventProtection then state.refreshWormEventProtection() end
+        if not on and state.refreshFullbright then state.refreshFullbright() end
+    end)
+    create("TextLabel",{Size=UDim2.new(1,0,0,44),BackgroundTransparency=1,TextWrapped=true,
+        Text="Always clean, including between events: fog / haze / glare and visual effects zero. Save your profile to keep it enabled.",
+        TextColor3=Color3.fromRGB(160,150,185),TextSize=10,Font=Enum.Font.Gotham,LayoutOrder=nextOrder(),Parent=currentSection})
+end
 local originalComfort = { Brightness=Lighting.Brightness, Exposure=Lighting.ExposureCompensation,
     Ambient=Lighting.Ambient, OutdoorAmbient=Lighting.OutdoorAmbient, ClockTime=Lighting.ClockTime }
 local function setComfort(clock, brightness, exposure, ambient)
@@ -6613,6 +6624,7 @@ state.initializeFullbright=function()
     end
     local function processLightingEffect(item)
         if not state.fullbrightEnabled then return end
+        if state.wormCleanLightingEnabled then return end
         if state.wormEventLightingActive and item.Name=="EventCC" then return end
         if (item:IsA("BloomEffect") or item:IsA("ColorCorrectionEffect")) and not effectConnections[item] then
             effectConnections[item]=track(item.Changed:Connect(function()
@@ -6637,7 +6649,8 @@ state.initializeFullbright=function()
     end
     local function enforceLightingProperty(property)
         if not state.fullbrightEnabled or applying then return end
-        if state.wormEventLightingActive and (property=="Brightness" or property=="Ambient" or property=="OutdoorAmbient") then return end
+        if state.wormEventLightingActive and (property=="Brightness" or property=="Ambient" or property=="OutdoorAmbient"
+            or (state.wormCleanLightingEnabled and property=="ExposureCompensation")) then return end
         local target=targets[property]
         if target==nil then return end
         applying=true
@@ -6648,7 +6661,8 @@ state.initializeFullbright=function()
         if not state.fullbrightEnabled then return end
         applying=true
         for property,target in pairs(targets) do
-            if not state.wormEventLightingActive or (property~="Brightness" and property~="Ambient" and property~="OutdoorAmbient") then
+            if not state.wormEventLightingActive or (property~="Brightness" and property~="Ambient" and property~="OutdoorAmbient"
+                and not (state.wormCleanLightingEnabled and property=="ExposureCompensation")) then
                 pcall(function() if Lighting[property]~=target then Lighting[property]=target end end)
             end
         end
@@ -6679,6 +6693,11 @@ state.initializeFullbright=function()
                 savedLighting={Brightness=Lighting.Brightness,ExposureCompensation=Lighting.ExposureCompensation,
                     Ambient=Lighting.Ambient,OutdoorAmbient=Lighting.OutdoorAmbient,
                     EnvironmentDiffuseScale=Lighting.EnvironmentDiffuseScale}
+                if state.getWormLightingOriginal then
+                    for property in pairs(savedLighting) do
+                        savedLighting[property]=state.getWormLightingOriginal(Lighting,property)
+                    end
+                end
             end
             buildAdaptiveTargets()
             applyFullbright()
@@ -6688,7 +6707,8 @@ state.initializeFullbright=function()
     track(Lighting.DescendantAdded:Connect(function(item)
         if state.fullbrightEnabled then task.defer(processLightingEffect,item) end
     end))
-    addCleanup(function() state.fullbrightEnabled=false; restoreFullbright() end)
+    state.refreshFullbright=applyFullbright
+    addCleanup(function() state.fullbrightEnabled=false; restoreFullbright(); state.refreshFullbright=nil end)
 end
 state.initializeFullbright()
 local brightEffectState = {}
@@ -6697,7 +6717,11 @@ createToggle("Disable Bright Effects", nextOrder(), false, function(on)
         if effect:IsA("BloomEffect") or effect:IsA("SunRaysEffect") or effect:IsA("ColorCorrectionEffect")
             or effect:IsA("DepthOfFieldEffect") or effect:IsA("BlurEffect") then
             if on then
-                if brightEffectState[effect] == nil then brightEffectState[effect]=effect.Enabled end
+                if brightEffectState[effect] == nil then
+                    local originalEnabled=effect.Enabled
+                    if state.getWormLightingOriginal then originalEnabled=state.getWormLightingOriginal(effect,"Enabled") end
+                    brightEffectState[effect]=originalEnabled
+                end
                 effect.Enabled=false
             elseif brightEffectState[effect] ~= nil then
                 effect.Enabled=brightEffectState[effect]; brightEffectState[effect]=nil
@@ -9435,6 +9459,7 @@ if game.PlaceId==136070094363960 then
         local lightingRecords={}
         local lightingConnections={}
         local writingLighting=false
+        local cleanLightingMode=false
         local quakeTable,quakeOriginal=nil,nil
         local quakeFallback=false
         local beforeQuake=nil
@@ -9453,7 +9478,7 @@ if game.PlaceId==136070094363960 then
             Color=Color3.fromRGB(250,250,244),Decay=Color3.fromRGB(214,214,214)}
         local sunRays=Lighting:FindFirstChild("SunRays")
         local normalSunRays=not sunRays or sunRays.Enabled
-        local statusRow=rowFrame(nextOrder(),44)
+        local statusRow=rowFrame(nextOrder(),60)
         local status=create("TextLabel",{Size=UDim2.fromScale(1,1),BackgroundTransparency=1,Text="Event protections: off",
             TextWrapped=true,TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
             TextColor3=Color3.fromRGB(180,175,195),Parent=statusRow})
@@ -9481,10 +9506,109 @@ if game.PlaceId==136070094363960 then
             local quake=(state.wormEarthquakeProtection or state.noCameraShake)
                 and (eventName=="Earthquake" and (quakeTable and "amplitude zero" or "camera filter") or "ready") or "off"
             local text="Event: "..tostring(eventName or "None").." | Lighting: "
-                ..(state.wormEventLightingActive and "normal / fog zero" or (state.wormEventLightingEnabled and "ready" or "off"))
+                ..(state.wormCleanLightingEnabled and "clean / always on" or (state.wormEventLightingActive
+                    and "normal / fog zero" or (state.wormEventLightingEnabled and "ready" or "off")))
                 .."\nBounce: "..bounce.." | Earthquake: "..quake
+                .."\nParty: "..(state.wormPartyProtectionActive and "zoom / roll / tint blocked"
+                    or (state.wormPartyProtection and "ready" or "off"))
             if status.Text~=text then status.Text=text end
         end
+        local function initializePartyProtection()
+            -- EventPartyMode runs at Camera+3, multiplying only camera roll
+            -- and writing FOV/PartyModeCC. Bracket it without unbinding it.
+            state.wormPartyProtection=false
+            state.wormPartyProtectionActive=false
+            local normalFovs=setmetatable({},{__mode="k"})
+            local observedCamera,cameraFovConnection=nil,nil
+            local beforeParty=nil
+            local effects={}
+            local effectAdded=nil
+            local writingEffect=false
+            local function targetFov(camera)
+                if state.fovLocked then return state.fovValue end
+                return normalFovs[camera] or state.fovValue or 70
+            end
+            local function observeCamera()
+                if cameraFovConnection then cameraFovConnection:Disconnect(); cameraFovConnection=nil end
+                observedCamera=workspace.CurrentCamera
+                if not observedCamera then return end
+                local camera=observedCamera
+                if eventName~="PartyMode" then normalFovs[camera]=camera.FieldOfView end
+                cameraFovConnection=camera:GetPropertyChangedSignal("FieldOfView"):Connect(function()
+                    if not disposed and eventName~="PartyMode" then normalFovs[camera]=camera.FieldOfView end
+                end)
+            end
+            local function watchEffect(item)
+                if not item:IsA("ColorCorrectionEffect") or item.Name~="PartyModeCC" or effects[item] then return end
+                local record={enabled=item.Enabled}
+                effects[item]=record
+                record.connection=item:GetPropertyChangedSignal("Enabled"):Connect(function()
+                    if disposed or writingEffect or not state.wormPartyProtectionActive or not item.Parent then return end
+                    record.enabled=item.Enabled
+                    if item.Enabled then
+                        writingEffect=true; item.Enabled=false; writingEffect=false
+                    end
+                end)
+                if item.Enabled then writingEffect=true; item.Enabled=false; writingEffect=false end
+            end
+            local function stopParty()
+                if state.wormPartyProtectionActive then
+                    RunService:UnbindFromRenderStep("LucidPartyBefore")
+                    RunService:UnbindFromRenderStep("LucidPartyAfter")
+                    local camera=workspace.CurrentCamera
+                    if camera then camera.FieldOfView=targetFov(camera) end
+                end
+                state.wormPartyProtectionActive=false; beforeParty=nil
+                if effectAdded then effectAdded:Disconnect(); effectAdded=nil end
+                for item,record in pairs(effects) do
+                    record.connection:Disconnect()
+                    if item.Parent then pcall(function() item.Enabled=record.enabled end) end
+                end
+                table.clear(effects)
+            end
+            local function updateParty()
+                local wanted=not disposed and state.wormPartyProtection and eventName=="PartyMode"
+                if not wanted then stopParty(); return end
+                if state.wormPartyProtectionActive then return end
+                state.wormPartyProtectionActive=true
+                for _,item in ipairs(Lighting:GetChildren()) do watchEffect(item) end
+                effectAdded=Lighting.ChildAdded:Connect(function(item)
+                    if state.wormPartyProtectionActive then watchEffect(item) end
+                end)
+                local camera=workspace.CurrentCamera
+                if camera then camera.FieldOfView=targetFov(camera) end
+                RunService:BindToRenderStep("LucidPartyBefore",Enum.RenderPriority.Camera.Value+2,function()
+                    local current=workspace.CurrentCamera
+                    beforeParty=state.wormPartyProtectionActive and current and {current,current.CFrame} or nil
+                end)
+                RunService:BindToRenderStep("LucidPartyAfter",Enum.RenderPriority.Camera.Value+4,function()
+                    local saved=beforeParty; beforeParty=nil
+                    if not state.wormPartyProtectionActive or not saved or workspace.CurrentCamera~=saved[1] then return end
+                    local current=saved[1]
+                    local delta=saved[2]:ToObjectSpace(current.CFrame)
+                    local axis,angle=delta:ToAxisAngle()
+                    -- Preserve unrelated translation and yaw/pitch changes;
+                    -- undo only the known small local-Z Party rotation.
+                    if delta.Position.Magnitude<0.00001 and (math.abs(angle)<0.00001
+                        or (math.abs(axis.Z)>0.9999 and math.abs(angle)<=math.rad(15))) then
+                        current.CFrame=saved[2]
+                    end
+                    local fov=targetFov(current)
+                    if current.FieldOfView~=fov then current.FieldOfView=fov end
+                end)
+            end
+            observeCamera()
+            local cameraChanged=workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(observeCamera)
+            createToggle("Remove Party Mode Effects",nextOrder(),false,function(on)
+                state.wormPartyProtection=on; updateParty(); updateStatus()
+            end)
+            return updateParty,function()
+                state.wormPartyProtection=false; stopParty()
+                if cameraFovConnection then cameraFovConnection:Disconnect() end
+                cameraChanged:Disconnect()
+            end
+        end
+        local updateParty,cleanupParty=initializePartyProtection()
         local function watchLighting(object,targets)
             if lightingRecords[object] then return end
             local original={}
@@ -9506,12 +9630,26 @@ if game.PlaceId==136070094363960 then
         local function watchEventEffect(item)
             if item:IsA("Atmosphere") then
                 local values=table.clone(normalAtmosphere); values.Density=0; values.Haze=0; values.Glare=0
+                if cleanLightingMode then values.Offset=0 end
                 watchLighting(item,values)
-            elseif item:IsA("ColorCorrectionEffect") and item.Name=="EventCC" then
+            elseif item:IsA("ColorCorrectionEffect") and (item.Name=="EventCC" or cleanLightingMode) then
                 watchLighting(item,{Brightness=0,Contrast=0,Saturation=0,TintColor=Color3.new(1,1,1)})
             elseif item:IsA("SunRaysEffect") and item.Name=="SunRays" then
-                watchLighting(item,{Enabled=normalSunRays})
+                watchLighting(item,cleanLightingMode and {Enabled=false,Intensity=0} or {Enabled=normalSunRays})
+            elseif cleanLightingMode then
+                if item:IsA("BloomEffect") or item:IsA("SunRaysEffect") then
+                    watchLighting(item,{Enabled=false,Intensity=0})
+                elseif item:IsA("BlurEffect") then
+                    watchLighting(item,{Enabled=false,Size=0})
+                elseif item:IsA("DepthOfFieldEffect") then
+                    watchLighting(item,{Enabled=false,FarIntensity=0,NearIntensity=0})
+                end
             end
+        end
+        state.getWormLightingOriginal=function(object,property)
+            local record=lightingRecords[object]
+            if record and record.original[property]~=nil then return record.original[property] end
+            return object[property]
         end
         local function stopLighting(useNormal)
             for _,connection in ipairs(lightingConnections) do connection:Disconnect() end
@@ -9519,25 +9657,34 @@ if game.PlaceId==136070094363960 then
             state.wormEventLightingActive=false
             for object,record in pairs(lightingRecords) do
                 if object.Parent then
-                    local values=record.original
+                    local values=table.clone(record.original)
                     if useNormal then
-                        if object==Lighting then values=normalLighting
+                        if object==Lighting then
+                            for property,value in pairs(normalLighting) do values[property]=value end
                         elseif object:IsA("Atmosphere") then values=table.clone(normalAtmosphere)
                             if state.removeFogEnabled then values.Density=0; values.Haze=0 end
-                        elseif object:IsA("ColorCorrectionEffect") then values=record.targets
-                        elseif object:IsA("SunRaysEffect") then values={Enabled=normalSunRays} end
+                        elseif object:IsA("ColorCorrectionEffect") and object.Name=="EventCC" then values=record.targets
+                        elseif object:IsA("SunRaysEffect") and object.Name=="SunRays" then values.Enabled=normalSunRays end
                     end
+                    if not disposed and values.Enabled~=nil and activeFeatures["Disable Bright Effects"] then values.Enabled=false end
                     for property,value in pairs(values) do pcall(function() object[property]=value end) end
                 end
             end
             table.clear(lightingRecords)
+            cleanLightingMode=false
         end
         local function updateLighting()
             local eventUsesLighting=eventName=="LightsOut" or eventName=="Mist" or eventName=="Earthquake"
-            local wanted=state.wormEventLightingEnabled and eventUsesLighting and not disposed
+            local wanted=(state.wormCleanLightingEnabled or (state.wormEventLightingEnabled and eventUsesLighting)) and not disposed
+            if wanted and state.wormEventLightingActive and cleanLightingMode~=(state.wormCleanLightingEnabled==true) then
+                stopLighting(false)
+            end
             if wanted and not state.wormEventLightingActive then
+                cleanLightingMode=state.wormCleanLightingEnabled==true
                 state.wormEventLightingActive=true
-                watchLighting(Lighting,table.clone(normalLighting))
+                local values=table.clone(normalLighting)
+                if cleanLightingMode then values.ExposureCompensation=0; values.FogStart=100000; values.FogEnd=100000 end
+                watchLighting(Lighting,values)
                 for _,item in ipairs(Lighting:GetChildren()) do watchEventEffect(item) end
                 table.insert(lightingConnections,Lighting.ChildAdded:Connect(function(item)
                     if state.wormEventLightingActive then watchEventEffect(item) end
@@ -9677,7 +9824,7 @@ if game.PlaceId==136070094363960 then
         end
         reconcile=function()
             if disposed then return end
-            loadConfig(); updateLighting(); updateQuake(); updateBounce(); updateStatus()
+            loadConfig(); updateLighting(); updateQuake(); updateBounce(); updateParty(); updateStatus()
         end
         state.refreshWormEventProtection=reconcile
         local function scheduleReconcile()
@@ -9702,8 +9849,8 @@ if game.PlaceId==136070094363960 then
         createToggle("Remove Earthquake Shake",nextOrder(),false,function(on)
             state.wormEarthquakeProtection=on; reconcile()
         end)
-        create("TextLabel",{Size=UDim2.new(1,0,0,30),BackgroundTransparency=1,TextWrapped=true,
-            Text="Normal lighting: Lights Out / Mist / quake flicker. Kill counter: Settings > Diagnostics.",
+        create("TextLabel",{Size=UDim2.new(1,0,0,44),BackgroundTransparency=1,TextWrapped=true,
+            Text="Party: steady zoom / no roll or tint. Lighting: Lights Out / Mist / quake.\nKill counter: Settings > Diagnostics.",
             TextColor3=Color3.fromRGB(160,150,185),TextSize=10,Font=Enum.Font.Gotham,LayoutOrder=nextOrder(),Parent=currentSection})
         track(workspace:GetAttributeChangedSignal("ActiveEvent"):Connect(function()
             eventName=workspace:GetAttribute("ActiveEvent")
@@ -9722,10 +9869,12 @@ if game.PlaceId==136070094363960 then
         track(LocalPlayer.CharacterRemoving:Connect(function() restoreBounce(); watchBounceCharacter(nil) end))
         bindRemote(); reconcile()
         addCleanup(function()
-            disposed=true; state.wormEventLightingEnabled=false; state.wormBounceProtection=false; state.wormEarthquakeProtection=false
+            disposed=true; state.wormEventLightingEnabled=false; state.wormCleanLightingEnabled=false
+            state.wormBounceProtection=false; state.wormEarthquakeProtection=false
             if remoteConnection then remoteConnection:Disconnect() end
             stopLighting(eventName~= "LightsOut" and eventName~="Mist" and eventName~="Earthquake")
-            restoreQuake(); restoreBounce(); watchBounceCharacter(nil); state.refreshWormEventProtection=nil
+            cleanupParty(); restoreQuake(); restoreBounce(); watchBounceCharacter(nil)
+            state.refreshWormEventProtection=nil; state.getWormLightingOriginal=nil
         end)
     end
     initializeEventProtections()
@@ -11341,7 +11490,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.22 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.24 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -11657,7 +11806,7 @@ state.initializeCommandConsole=function()
     local toggleCommandAliases={
         esp="ESP All",ea="ESP All",headless="Local Headless",hl="Local Headless",noclip="Noclip",antifling="Enable Anti-Fling",airwalk="Enable Air Walk",freeze="Freeze Me",
         infjump="Enable Inf. Jump",shiftlock="Enable Shift Lock Option",clicktp="Left Alt + Click TP",
-        autoclick="Enable AutoClick",batmacro="Bat Click + Re-equip",spawnpoint="Return Where I Died",respawnondeath="Return Where I Died",rod="Return Where I Died",recovery="Character Recovery Loop",
+        autoclick="Enable AutoClick",batmacro="Bat Click + Re-equip",partycomfort="Remove Party Mode Effects",cleanlighting="Clean Lighting (Always)",spawnpoint="Return Where I Died",respawnondeath="Return Where I Died",rod="Return Where I Died",recovery="Character Recovery Loop",
         camerashake="Remove Camera Shake",unlockmouse="Unlock Mouse",photomode="Photo Mode — Clean Freecam",
         isolate="Photo Isolation — Hide Other Players",hideplayers="Hide Named Players",
         comfortlock="Lock Comfort Preset",brighteffects="Disable Bright Effects",
@@ -12567,7 +12716,7 @@ track(RunService.Heartbeat:Connect(function(dt)
     end
 
     -- Client-side FogEnd lock for games that continuously overwrite Lighting.
-    if state.fogEndLocked and Lighting.FogEnd ~= state.fogEndValue then
+    if state.fogEndLocked and not state.wormCleanLightingEnabled and Lighting.FogEnd ~= state.fogEndValue then
         Lighting.FogEnd = state.fogEndValue
     end
 
@@ -12751,7 +12900,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.22] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.24] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.22] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.24] Loaded, but this executor does not expose queue_on_teleport")
 end
