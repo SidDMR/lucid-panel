@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.19
+--// Lucid Panel v6.0.21
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -388,7 +388,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.19",
+    Text                   = "LUCID PANEL  •  v6.0.21",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -8699,7 +8699,7 @@ local function saveNamedProfile(button,profileOverride,silent,highlightsOnly)
     -- Emote favorites are global and saved independently of named profiles.
     payload.keybinds={}
     for name,key in pairs(shortcutKeys or {}) do payload.keybinds[name]=key and key.Name or "Unbound" end
-    for _,name in ipairs({"Fly","Noclip","Freecam","Migraine","Photo Mode","Character Recovery","Loop Go To"}) do
+    for _,name in ipairs({"Fly","Noclip","Freecam","Migraine","Photo Mode","Character Recovery","Loop Go To","Bat Macro"}) do
         if not shortcutKeys[name] then payload.keybinds[name]="Unbound" end
     end
     payload.interface={opacity=1-mainFrame.BackgroundTransparency,
@@ -8738,6 +8738,7 @@ local function saveNamedProfile(button,profileOverride,silent,highlightsOnly)
     -- player when a profile loads in another server.
     payload.toggles["Extend Selected Player Limb"]=nil
     payload.toggles["Extend All Players"]=nil
+    payload.toggles["Bat Click + Re-equip"]=nil -- Never start attacks from a saved profile.
     local encodedOk, encoded = pcall(function() return HttpService:JSONEncode(payload) end)
     if encodedOk and readfile and (not isfile or isfile(profilePath)) then
         local backupPath=profilePath:gsub("%.json$","_backup.json")
@@ -8785,6 +8786,7 @@ loadNamedProfile = function(button)
         ok,payload=decodeProfile(profilePath:gsub("%.json$","_backup.json")); recovered=ok and type(payload)=="table"
     end
     if not ok or type(payload)~="table" then button.Text="Profile invalid/missing"; notifyLucid("Profile load failed",profileNameBox.Text,Color3.fromRGB(230,90,105)); return end
+    if state.wormBatMacroApi then state.wormBatMacroApi.stop("Profile loaded") end
     local profileVersion=tonumber(payload.version or 0)
     for key,value in pairs(payload.values or {}) do
         local legacyExploiterColor=profileVersion<6 and key=="exploiterHighlightColor"
@@ -8823,6 +8825,7 @@ loadNamedProfile = function(button)
     updateText(clockBox,state.nightClockTime); updateText(lightRangeBox,state.playerLightRange)
     updateText(lightPowerBox,state.playerLightPower); updateText(spawnDelayBox,state.spawnpointDelay)
     if state.refreshTowerDoorIntervalBox then state.refreshTowerDoorIntervalBox() end
+    if state.wormBatMacroApi then state.wormBatMacroApi.refreshInterval() end
     if antiPushStrengthButton and antiPushStrengthButton.Parent then
         antiPushStrengthButton.Text="Anti Push Strength: "..tostring(state.antiPushStrength)
     end
@@ -8848,7 +8851,14 @@ loadNamedProfile = function(button)
     for name,value in pairs(payload.keybinds or {}) do
         local legacyDefault=tonumber(payload.version or 0)<4 and ((name=="Fly" and value=="F")
             or (name=="Noclip" and value=="N") or (name=="Freecam" and value=="P"))
-        local key=not legacyDefault and value~="Unbound" and Enum.KeyCode[value] or nil
+        local key=nil
+        if name=="Bat Macro" and (value=="MouseButton1" or value=="MouseButton2" or value=="MouseButton3") then
+            key=Enum.UserInputType[value]
+        else
+            key=not legacyDefault and value~="Unbound" and Enum.KeyCode[value] or nil
+        end
+        if name=="Bat Macro" and (key==Enum.KeyCode.Escape or key==Enum.KeyCode.End
+            or key==Enum.KeyCode.RightAlt or key==Enum.KeyCode.Unknown) then key=nil end
         shortcutKeys[name]=key
         if shortcutBoxes and shortcutBoxes[name] then shortcutBoxes[name].Text=key and key.Name or "" end
     end
@@ -8908,6 +8918,7 @@ loadNamedProfile = function(button)
     table.sort(toggleNames)
     for _,name in ipairs(toggleNames) do
         local savedToggle=(payload.toggles or {})[name]
+        if name=="Bat Click + Re-equip" then savedToggle=nil end
         if savedToggle==nil and name=="Noclip" then
             savedToggle=(payload.toggles or {})["Enable Noclip"]
         end
@@ -9106,9 +9117,15 @@ actionButton("Undo Last Change",function(button)
     button.Text=message; task.delay(1.2,function() if button.Parent then button.Text="Undo Last Change" end end)
 end)
 sectionLabel("Quick Keybinds", nextOrder())
-local function findShortcutKey(text)
+local function findShortcutKey(text,allowMouse)
     local requested=tostring(text or ""):match("^%s*(.-)%s*$"):lower():gsub("[%s_%-]","")
     if requested=="" then return nil end
+    if allowMouse then
+        local mouseAliases={mouse1="MouseButton1",mousebutton1="MouseButton1",leftclick="MouseButton1",
+            mouse2="MouseButton2",mousebutton2="MouseButton2",rightclick="MouseButton2",
+            mouse3="MouseButton3",mousebutton3="MouseButton3",middleclick="MouseButton3"}
+        if mouseAliases[requested] then return Enum.UserInputType[mouseAliases[requested]] end
+    end
     local aliases={pgup="pageup",pgdn="pagedown",del="delete",ins="insert",
         back="browserback",backwards="browserback",forward="browserforward",forwards="browserforward"}
     requested=aliases[requested] or requested
@@ -9118,7 +9135,8 @@ local function findShortcutKey(text)
     if requested=="browserback" then return Enum.KeyCode.Backspace end
     return nil
 end
-for _, name in ipairs({"Fly","Noclip","Freecam","Unlock Mouse","Migraine","Photo Mode","Character Recovery","Loop Go To"}) do
+for _, name in ipairs({"Fly","Noclip","Freecam","Unlock Mouse","Migraine","Photo Mode","Character Recovery","Loop Go To","Bat Macro"}) do
+    if name~="Bat Macro" or game.PlaceId==136070094363960 then
     local shortcutRow = rowFrame(nextOrder(), 30)
     create("TextLabel", {
         Size=UDim2.new(0,72,1,0), BackgroundTransparency=1, Text=name,
@@ -9142,24 +9160,35 @@ for _, name in ipairs({"Fly","Noclip","Freecam","Unlock Mouse","Migraine","Photo
     box.Focused:Connect(function()
         state.shortcutListeningName=name
         state.shortcutListeningBox=box
-        box.Text="Press a key..."
+        box.Text=name=="Bat Macro" and "Key or mouse..." or "Press a key..."
     end)
     box.FocusLost:Connect(function()
         if state.shortcutListeningName==name then
             state.shortcutListeningName=nil
             state.shortcutListeningBox=nil
         end
-        local key=findShortcutKey(box.Text)
-        if key and key ~= Enum.KeyCode.Unknown and key ~= Enum.KeyCode.RightAlt and key ~= Enum.KeyCode.End then
+        local key=findShortcutKey(box.Text,name=="Bat Macro")
+        if key and key ~= Enum.KeyCode.Unknown and key ~= Enum.KeyCode.RightAlt and key ~= Enum.KeyCode.End
+            and not (name=="Bat Macro" and key==Enum.KeyCode.Escape) then
             shortcutKeys[name]=key
         end
         box.Text=shortcutKeys[name] and shortcutKeys[name].Name or ""
     end)
+    if name=="Bat Macro" then
+        create("TextLabel",{Size=UDim2.new(1,0,0,34),BackgroundTransparency=1,
+            Text="Mouse1/2/3 supported. Side buttons: map to a key\n(e.g. F7) in your mouse software, then bind that key.",
+            TextWrapped=true,TextColor3=Color3.fromRGB(145,180,155),TextSize=10,Font=Enum.Font.Gotham,
+            LayoutOrder=nextOrder(),Parent=currentSection})
+    end
+    end
 end
-track(UserInputService.InputBegan:Connect(function(input)
+track(UserInputService.InputBegan:Connect(function(input,processed)
     if not state.shortcutListeningName or not state.shortcutListeningBox then return end
-    if input.UserInputType~=Enum.UserInputType.Keyboard then return end
-    local key=input.KeyCode
+    local mouseBind=state.shortcutListeningName=="Bat Macro" and not processed
+        and (input.UserInputType==Enum.UserInputType.MouseButton1
+            or input.UserInputType==Enum.UserInputType.MouseButton2 or input.UserInputType==Enum.UserInputType.MouseButton3)
+    if input.UserInputType~=Enum.UserInputType.Keyboard and not mouseBind then return end
+    local key=mouseBind and input.UserInputType or input.KeyCode
     if key==Enum.KeyCode.Unknown then return end
     if key==Enum.KeyCode.Escape then
         state.shortcutListeningBox.Text=shortcutKeys[state.shortcutListeningName] and shortcutKeys[state.shortcutListeningName].Name or ""
@@ -9700,6 +9729,174 @@ if game.PlaceId==136070094363960 then
         end)
     end
     initializeEventProtections()
+    end
+    do
+    local function initializeBatMacro()
+        -- Combined normal tool actions, adapted from the tested standalone.
+        -- One owned worker: never force Enabled, edit Config, call hit remotes,
+        -- alter hitboxes, or create independent racing click/reequip loops.
+        sectionLabel("Bat Automation",nextOrder())
+        state.wormBatCycleInterval=0.01
+        state.wormBatMacroEnabled=false
+        local intervalRow=rowFrame(nextOrder(),30)
+        create("TextLabel",{Size=UDim2.new(1,-80,1,0),BackgroundTransparency=1,
+            Text="Cycle interval (0.01–1 s)",TextColor3=Color3.fromRGB(220,210,235),
+            TextSize=11,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=intervalRow})
+        local intervalBox=styledBox(intervalRow,{Size=UDim2.new(0,74,0,25),
+            Position=UDim2.new(1,-74,0.5,-12),Text="0.01"})
+        local disposed=false
+        local run=nil
+        local setter=nil
+        local synchronizing=false
+        local status=nil
+        local function refreshInterval()
+            local value=tonumber(state.wormBatCycleInterval)
+            if not value or value~=value or math.abs(value)==math.huge then value=0.01 end
+            state.wormBatCycleInterval=math.clamp(value,0.01,1)
+            if not disposed and intervalBox.Parent then intervalBox.Text=string.format("%.3g",state.wormBatCycleInterval) end
+        end
+        intervalBox.FocusLost:Connect(function()
+            state.wormBatCycleInterval=tonumber(intervalBox.Text) or state.wormBatCycleInterval
+            refreshInterval()
+        end)
+        local function show(text)
+            if not disposed and status and status.Parent and status.Text~=text then status.Text=text end
+        end
+        local function otherTool(current)
+            for _,item in ipairs(current.character:GetChildren()) do
+                if item:IsA("Tool") and item~=current.bat then return true end
+            end
+            return false
+        end
+        local function stop(reason,restore)
+            local current=run
+            run=nil; state.wormBatMacroEnabled=false -- Invalidate sleepers before tool events.
+            if current then
+                for _,connection in ipairs(current.connections) do connection:Disconnect() end
+                table.clear(current.connections)
+                if LocalPlayer.Character==current.character and current.humanoid.Parent==current.character then
+                    if current.bat.Parent==current.character then pcall(function() current.bat:Deactivate() end) end
+                    if restore~=false and current.humanoid.Health>0 and current.bat.Parent==current.backpack and not otherTool(current) then
+                        pcall(function() current.humanoid:EquipTool(current.bat) end)
+                    end
+                end
+            end
+            if setter and not disposed then
+                synchronizing=true; setter(false,true); synchronizing=false
+            end
+            show(reason or "Off — equip your Bat, then enable.")
+        end
+        local function valid(current)
+            if disposed or run~=current or not screenGui.Parent then return false end
+            if LocalPlayer.Character~=current.character or not current.character.Parent
+                or current.humanoid.Parent~=current.character or current.humanoid.Health<=0 then
+                stop("Stopped — character unavailable/dead.",false); return false
+            end
+            if LocalPlayer:FindFirstChildOfClass("Backpack")~=current.backpack
+                or (current.bat.Parent~=current.character and current.bat.Parent~=current.backpack) then
+                stop("Stopped — Bat/backpack unavailable.",false); return false
+            end
+            if otherTool(current) then stop("Stopped — another tool selected.",false); return false end
+            return true
+        end
+        local function start()
+            if disposed or run then return end
+            refreshInterval()
+            local character=LocalPlayer.Character
+            local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+            local backpack=LocalPlayer:FindFirstChildOfClass("Backpack")
+            if not humanoid or humanoid.Health<=0 or not backpack then
+                stop("Wait for your living character and Backpack.",false); return
+            end
+            local bat=nil
+            for _,item in ipairs(character:GetChildren()) do
+                if item:IsA("Tool") then
+                    if bat or item.Name:lower()~="bat" then stop("Equip only your Bat first.",false); return end
+                    bat=item
+                end
+            end
+            if not bat then stop("Equip your Bat first, then enable.",false); return end
+            -- Shut down a previous standalone macro so it cannot race this worker.
+            if type(sharedEnvironment.__LUCID_BAT_REEQUIP_STOP)=="function" then
+                pcall(sharedEnvironment.__LUCID_BAT_REEQUIP_STOP)
+            end
+            local current={character=character,humanoid=humanoid,backpack=backpack,bat=bat,
+                attempts=0,skips=0,connections={},nextStatus=0}
+            run=current; state.wormBatMacroEnabled=true
+            table.insert(current.connections,humanoid.Died:Connect(function()
+                if run==current then stop("Stopped — character died.",false) end
+            end))
+            table.insert(current.connections,bat.Destroying:Connect(function()
+                if run==current then stop("Stopped — Bat removed.",false) end
+            end))
+            show("Running — clicks + re-equips together. Escape stops.")
+            task.spawn(function()
+                local ok,message=pcall(function()
+                    while valid(current) do
+                        if bat.Parent~=character then stop("Stopped — Bat manually unequipped.",false); return end
+                        local period=state.wormBatCycleInterval -- Commit edits at the next complete cycle.
+                        if bat.Enabled then
+                            local now=os.clock()
+                            current.firstAttemptAt=current.firstAttemptAt or now
+                            current.lastAttemptAt=now; current.attempts+=1
+                            bat:Activate()
+                        else
+                            current.skips+=1 -- Respect game-disabled tools; do not force cooldown off.
+                        end
+                        if not valid(current) then return end
+                        if os.clock()>=current.nextStatus then
+                            current.nextStatus=os.clock()+0.25
+                            local gap=current.attempts>1 and string.format("%.3fs",(current.lastAttemptAt-current.firstAttemptAt)/(current.attempts-1)) or "waiting"
+                            show(string.format("Attempts %d | Disabled skips %d\nActual mean cycle: %s — not confirmed hits",current.attempts,current.skips,gap))
+                        end
+                        task.wait(period/2)
+                        if not valid(current) then return end
+                        if bat.Parent~=character then stop("Stopped — Bat manually unequipped.",false); return end
+                        bat:Deactivate()
+                        if not valid(current) then return end
+                        humanoid:UnequipTools()
+                        if not valid(current) then return end
+                        if bat.Parent~=backpack then stop("Stopped — unequip did not complete.",false); return end
+                        task.wait(period/2)
+                        if not valid(current) then return end
+                        humanoid:EquipTool(bat)
+                        if not valid(current) then return end
+                        if bat.Parent~=character then stop("Stopped — equip did not complete.",false); return end
+                    end
+                end)
+                if not ok and run==current then
+                    stop("Stopped — tool action failed.")
+                    warn("[Lucid Bat Macro] "..tostring(message))
+                end
+            end)
+        end
+        local _,_,setToggle=createToggle("Bat Click + Re-equip",nextOrder(),false,function(on)
+            if synchronizing then return end
+            if on then start() else stop("Off — equip your Bat, then enable.") end
+        end)
+        setter=setToggle
+        local statusRow=rowFrame(nextOrder(),34)
+        status=create("TextLabel",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,
+            Text="Off — equip your Bat, then enable.",TextWrapped=true,
+            TextColor3=Color3.fromRGB(170,155,200),TextSize=10,Font=Enum.Font.Gotham,
+            TextXAlignment=Enum.TextXAlignment.Left,Parent=statusRow})
+        create("TextLabel",{Size=UDim2.new(1,0,0,34),BackgroundTransparency=1,
+            Text="Runs until off. Escape stops. No extender required.\nTiming is requested; cooldown and hitboxes stay unchanged.",
+            TextWrapped=true,TextColor3=Color3.fromRGB(145,180,155),TextSize=10,Font=Enum.Font.Gotham,
+            LayoutOrder=nextOrder(),Parent=currentSection})
+        track(LocalPlayer.CharacterRemoving:Connect(function() if run then stop("Stopped — character removed.",false) end end))
+        track(LocalPlayer.CharacterAdded:Connect(function() if run then stop("Stopped — character replaced.",false) end end))
+        track(UserInputService.WindowFocusReleased:Connect(function() if run then stop("Stopped — window focus lost.") end end))
+        track(UserInputService.InputBegan:Connect(function(input)
+            if run and input.KeyCode==Enum.KeyCode.Escape then stop("Stopped with Escape.") end
+        end))
+        state.wormBatMacroApi={stop=stop,refreshInterval=refreshInterval}
+        addCleanup(function()
+            disposed=true; stop("Unloaded")
+            state.wormBatMacroApi=nil
+        end)
+    end
+    initializeBatMacro()
     end
     sectionLabel("Climb Scary Worm Tower 3",nextOrder())
     local removeBananaPeels=false
@@ -11144,7 +11341,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.19 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.21 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -11276,7 +11473,11 @@ track(UserInputService.InputBegan:Connect(function(input, processed)
     if input.KeyCode == Enum.KeyCode.End and not processed then panicReset(); return end
     if not processed and UserInputService:GetFocusedTextBox() == nil
         and os.clock()>=(state.shortcutCaptureUntil or 0) then
-        if input.KeyCode == shortcutKeys.Fly then
+        if shortcutKeys["Bat Macro"] and toggleRegistry["Bat Click + Re-equip"]
+            and (input.UserInputType==shortcutKeys["Bat Macro"] or (input.UserInputType==Enum.UserInputType.Keyboard
+                and input.KeyCode==shortcutKeys["Bat Macro"])) then
+            toggleRegistry["Bat Click + Re-equip"](not activeFeatures["Bat Click + Re-equip"])
+        elseif input.KeyCode == shortcutKeys.Fly then
             if state.freecamEnabled then setFreecam(false) end
             fireFly()
         elseif input.KeyCode == shortcutKeys.Noclip then fireNoclip()
@@ -11455,7 +11656,7 @@ state.initializeCommandConsole=function()
     local toggleCommandAliases={
         esp="ESP All",ea="ESP All",headless="Local Headless",hl="Local Headless",noclip="Noclip",antifling="Enable Anti-Fling",airwalk="Enable Air Walk",freeze="Freeze Me",
         infjump="Enable Inf. Jump",shiftlock="Enable Shift Lock Option",clicktp="Left Alt + Click TP",
-        autoclick="Enable AutoClick",spawnpoint="Return Where I Died",respawnondeath="Return Where I Died",rod="Return Where I Died",recovery="Character Recovery Loop",
+        autoclick="Enable AutoClick",batmacro="Bat Click + Re-equip",spawnpoint="Return Where I Died",respawnondeath="Return Where I Died",rod="Return Where I Died",recovery="Character Recovery Loop",
         camerashake="Remove Camera Shake",unlockmouse="Unlock Mouse",photomode="Photo Mode — Clean Freecam",
         isolate="Photo Isolation — Hide Other Players",hideplayers="Hide Named Players",
         comfortlock="Lock Comfort Preset",brighteffects="Disable Bright Effects",
@@ -12473,7 +12674,7 @@ state.sendAutoMouseClick=function(x,y,useExecutorCursor)
 end
 task.spawn(function()
     while screenGui.Parent do
-        if state.autoclickEnabled then
+        if state.autoclickEnabled and not state.wormBatMacroEnabled then
             local mode=state.autoclickMode or "Hybrid"
             if mode=="Tool" or mode=="Hybrid" then
                 local character=LocalPlayer.Character
@@ -12495,7 +12696,7 @@ task.spawn(function()
         end
         -- Stay dormant while disabled instead of waking at the configured
         -- 1 ms active interval for the entire lifetime of the panel.
-        task.wait(state.autoclickEnabled and state.autoclickInterval or 0.25)
+        task.wait(state.autoclickEnabled and not state.wormBatMacroEnabled and state.autoclickInterval or 0.25)
     end
 end)
 
@@ -12549,7 +12750,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.19] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.21] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.19] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.21] Loaded, but this executor does not expose queue_on_teleport")
 end
