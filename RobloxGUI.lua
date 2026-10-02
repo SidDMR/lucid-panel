@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.27
+--// Lucid Panel v6.0.28
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -388,7 +388,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.27",
+    Text                   = "LUCID PANEL  •  v6.0.28",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -9889,7 +9889,7 @@ if game.PlaceId==136070094363960 then
         state.wormBatMacroEnabled=false
         local intervalRow=rowFrame(nextOrder(),30)
         create("TextLabel",{Size=UDim2.new(1,-80,1,0),BackgroundTransparency=1,
-            Text="Cycle interval (0.01–1 s)",TextColor3=Color3.fromRGB(220,210,235),
+            Text="Cycle interval (0.001–1 s)",TextColor3=Color3.fromRGB(220,210,235),
             TextSize=11,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=intervalRow})
         local intervalBox=styledBox(intervalRow,{Size=UDim2.new(0,74,0,25),
             Position=UDim2.new(1,-74,0.5,-12),Text="0.01"})
@@ -9901,7 +9901,7 @@ if game.PlaceId==136070094363960 then
         local function refreshInterval()
             local value=tonumber(state.wormBatCycleInterval)
             if not value or value~=value or math.abs(value)==math.huge then value=0.01 end
-            state.wormBatCycleInterval=math.clamp(value,0.01,1)
+            state.wormBatCycleInterval=math.clamp(value,0.001,1)
             if not disposed and intervalBox.Parent then intervalBox.Text=string.format("%.3g",state.wormBatCycleInterval) end
         end
         intervalBox.FocusLost:Connect(function()
@@ -10030,7 +10030,7 @@ if game.PlaceId==136070094363960 then
             TextColor3=Color3.fromRGB(170,155,200),TextSize=10,Font=Enum.Font.Gotham,
             TextXAlignment=Enum.TextXAlignment.Left,Parent=statusRow})
         create("TextLabel",{Size=UDim2.new(1,0,0,34),BackgroundTransparency=1,
-            Text="Runs until off. Escape stops. No extender required.\nTiming is requested; cooldown and hitboxes stay unchanged.",
+            Text="Runs until off. Escape stops. No extender required.\nFrame-limited timing; cooldown and hitboxes stay unchanged.",
             TextWrapped=true,TextColor3=Color3.fromRGB(145,180,155),TextSize=10,Font=Enum.Font.Gotham,
             LayoutOrder=nextOrder(),Parent=currentSection})
         track(LocalPlayer.CharacterRemoving:Connect(function() if run then stop("Stopped — character removed.",false) end end))
@@ -11738,7 +11738,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.27 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.28 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -13148,7 +13148,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.27] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.28] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.27] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.28] Loaded, but this executor does not expose queue_on_teleport")
 end
