@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.28
+--// Lucid Panel v6.0.30
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -388,7 +388,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.28",
+    Text                   = "LUCID PANEL  •  v6.0.30",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -3171,6 +3171,7 @@ do
     state.hitboxTorsoEnabled=false
     state.hitboxRootEnabled=true
     local selectedPlayers={}
+    local excludedUserIds={} -- Session-only exceptions to All Players, retained across player rejoin.
     local onlinePlayers={}
     local allPlayers=false
     local enabled=false
@@ -3203,7 +3204,8 @@ do
                 if part and part:IsA("BasePart") then wanted[part]=true end
             end
             for player in pairs(allPlayers and onlinePlayers or selectedPlayers) do
-                local character=onlinePlayers[player] and player.Character
+                local character=onlinePlayers[player] and not (allPlayers and excludedUserIds[player.UserId])
+                    and player.Character
                 local humanoid=character and character:FindFirstChildOfClass("Humanoid")
                 if character and humanoid and humanoid.Health>0 then
                     if state.hitboxHeadEnabled then want(character,"Head") end
@@ -3292,6 +3294,29 @@ do
         clearTargets=function()
             table.clear(selectedPlayers); allPlayers=false; disable()
         end,
+        addExcluded=function(input)
+            local player,message=resolvePlayer(input)
+            if not player then return false,message end
+            excludedUserIds[player.UserId]=player.Name; reconcile()
+            return true,player.Name
+        end,
+        removeExcluded=function(input)
+            local query=tostring(input or ""):match("^%s*(.-)%s*$"):gsub("^@",""):lower()
+            for userId,name in pairs(excludedUserIds) do
+                if name:lower()==query then
+                    excludedUserIds[userId]=nil; reconcile()
+                    return true,name
+                end
+            end
+            return false,"Player is not in your exclusion list"
+        end,
+        clearExcluded=function() table.clear(excludedUserIds); reconcile() end,
+        getExcludedNames=function()
+            local names={}
+            for _,name in pairs(excludedUserIds) do table.insert(names,name) end
+            table.sort(names,function(a,b) return a:lower()<b:lower() end)
+            return names
+        end,
         setAll=function(value) allPlayers=value==true; reconcile() end,
         getAll=function() return allPlayers end,
         isEnabled=function() return enabled end,
@@ -3303,7 +3328,9 @@ do
         end,
         getTargetCount=function()
             local count=0
-            for _ in pairs(allPlayers and onlinePlayers or selectedPlayers) do count+=1 end
+            for player in pairs(allPlayers and onlinePlayers or selectedPlayers) do
+                if not allPlayers or not excludedUserIds[player.UserId] then count+=1 end
+            end
             return count
         end,
         enable=function(input)
@@ -5055,6 +5082,18 @@ do
         BackgroundColor3=Color3.fromRGB(62,52,92),BorderSizePixel=0,Text="▼",
         TextColor3=Color3.fromRGB(235,230,245),TextSize=12,Font=Enum.Font.Gotham,Parent=playerRow})
     create("UICorner",{CornerRadius=UDim.new(0,5),Parent=dropdown})
+    local excludeRow=rowFrame(nextOrder(),30)
+    local excludeBox=styledBox(excludeRow,{Size=UDim2.new(1,-74,0,26),
+        Position=UDim2.new(0,0,0.5,-13),Text="",PlaceholderText="Exclude from All: username"})
+    local excludeButton=create("TextButton",{Size=UDim2.new(0,30,0,26),Position=UDim2.new(1,-68,0.5,-13),
+        BackgroundColor3=Color3.fromRGB(92,62,72),BorderSizePixel=0,Text="+",
+        TextColor3=Color3.fromRGB(245,225,230),TextSize=18,Font=Enum.Font.GothamBold,Parent=excludeRow})
+    create("UICorner",{CornerRadius=UDim.new(0,5),Parent=excludeButton})
+    local excludeDropdown=create("TextButton",{Size=UDim2.new(0,32,0,26),Position=UDim2.new(1,-32,0.5,-13),
+        BackgroundColor3=Color3.fromRGB(62,52,92),BorderSizePixel=0,Text="▼",
+        TextColor3=Color3.fromRGB(235,230,245),TextSize=12,Font=Enum.Font.Gotham,Parent=excludeRow})
+    create("UICorner",{CornerRadius=UDim.new(0,5),Parent=excludeDropdown})
+    local menuDestination="target"
     local menuRow=rowFrame(nextOrder(),0)
     local menu=create("ScrollingFrame",{Size=UDim2.new(1,0,0,110),BackgroundColor3=Color3.fromRGB(35,32,45),
         BorderSizePixel=0,ScrollBarThickness=4,CanvasSize=UDim2.new(),Visible=false,Parent=menuRow})
@@ -5067,12 +5106,17 @@ do
     local function setPlayerText(text)
         updatingName=true; playerBox.Text=text; updatingName=false
     end
-    local function selectPlayer(name)
+    local function selectPlayer(name,destination)
         local player=Players:FindFirstChild(name)
         if not player or player==LocalPlayer then
             selectedName=nil; targetStatus.Text="Player left — select another player"; return false
         end
         suggestionGeneration+=1
+        if destination=="exclude" then
+            updatingName=true; excludeBox.Text=player.Name; updatingName=false; closeMenu()
+            targetStatus.Text="Ready to exclude from All: @"..player.Name
+            return true
+        end
         selectedName=player.Name; setPlayerText(player.Name); closeMenu()
         targetStatus.Text="Ready to add: @"..player.Name
         return true
@@ -5084,7 +5128,15 @@ do
         else targetStatus.Text=message end
     end
     addButton.MouseButton1Click:Connect(addPlayer)
-    local function showSuggestions(input,excludedPlayer)
+    local function excludePlayer()
+        local ok,message=state.hitboxApi.addExcluded(excludeBox.Text)
+        if ok then
+            suggestionGeneration+=1; updatingName=true; excludeBox.Text=""; updatingName=false; closeMenu()
+        else targetStatus.Text=message end
+    end
+    excludeButton.MouseButton1Click:Connect(excludePlayer)
+    local function showSuggestions(input,excludedPlayer,destination)
+        destination=destination or "target"; menuDestination=destination
         for _,item in ipairs(menu:GetChildren()) do item:Destroy() end
         local query=tostring(input or ""):match("^%s*(.-)%s*$"):gsub("^@",""):lower()
         local players=Players:GetPlayers()
@@ -5097,7 +5149,7 @@ do
                     BackgroundTransparency=1,Text=player.DisplayName.." (@"..player.Name..")",
                     TextColor3=Color3.fromRGB(225,220,240),TextSize=11,Font=Enum.Font.Gotham,
                     TextTruncate=Enum.TextTruncate.AtEnd,Parent=menu})
-                choice.MouseButton1Click:Connect(function() selectPlayer(player.Name) end)
+                choice.MouseButton1Click:Connect(function() selectPlayer(player.Name,destination) end)
                 count+=1
             end
         end
@@ -5107,7 +5159,11 @@ do
     end
     dropdown.MouseButton1Click:Connect(function()
         suggestionGeneration+=1
-        if menu.Visible then closeMenu() else showSuggestions("") end
+        if menu.Visible and menuDestination=="target" then closeMenu() else showSuggestions("") end
+    end)
+    excludeDropdown.MouseButton1Click:Connect(function()
+        suggestionGeneration+=1
+        if menu.Visible and menuDestination=="exclude" then closeMenu() else showSuggestions("",nil,"exclude") end
     end)
     track(playerBox:GetPropertyChangedSignal("Text"):Connect(function()
         if updatingName or not playerBox:IsFocused() then return end
@@ -5124,7 +5180,7 @@ do
         suggestionGeneration+=1
         -- Let a clicked suggestion win; completing on mouse-down would hide
         -- the list before that button receives its mouse-up/click event.
-        if not enterPressed and menu.Visible and input and (input.UserInputType==Enum.UserInputType.MouseButton1
+        if not enterPressed and menu.Visible and menuDestination=="target" and input and (input.UserInputType==Enum.UserInputType.MouseButton1
             or input.UserInputType==Enum.UserInputType.Touch) then
             local pointer=input.UserInputType==Enum.UserInputType.Touch and input.Position
                 or UserInputService:GetMouseLocation()
@@ -5137,6 +5193,33 @@ do
             selectPlayer(player.Name)
             if enterPressed then addPlayer() end
         else selectedName=nil; targetStatus.Text=message end
+    end)
+    track(excludeBox:GetPropertyChangedSignal("Text"):Connect(function()
+        if updatingName or not excludeBox:IsFocused() then return end
+        suggestionGeneration+=1
+        local generation=suggestionGeneration
+        task.delay(0.15,function()
+            if generation==suggestionGeneration and excludeBox.Parent and excludeBox:IsFocused() then
+                showSuggestions(excludeBox.Text,nil,"exclude")
+            end
+        end)
+    end))
+    excludeBox.FocusLost:Connect(function(enterPressed,input)
+        suggestionGeneration+=1
+        if not enterPressed and menu.Visible and menuDestination=="exclude" and input
+            and (input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch) then
+            local pointer=input.UserInputType==Enum.UserInputType.Touch and input.Position or UserInputService:GetMouseLocation()
+            local position,size=menu.AbsolutePosition,menu.AbsoluteSize
+            if pointer.X>=position.X and pointer.X<=position.X+size.X
+                and pointer.Y>=position.Y and pointer.Y<=position.Y+size.Y then return end
+        end
+        local query=excludeBox.Text:match("^%s*(.-)%s*$")
+        if query=="" then return end
+        local player,message=state.hitboxApi.resolvePlayer(query)
+        if player then
+            selectPlayer(player.Name,"exclude")
+            if enterPressed then excludePlayer() end
+        else targetStatus.Text=message end
     end)
     local rosterOpen=false
     local rosterRow=rowFrame(nextOrder(),26)
@@ -5183,6 +5266,55 @@ do
         selectedName=nil; suggestionGeneration+=1; setPlayerText(""); closeMenu()
         state.hitboxApi.clearTargets()
     end)
+    local function initializeExclusionRoster()
+        local open=false
+        local header=rowFrame(nextOrder(),26)
+        local expand=create("TextButton",{Size=UDim2.new(1,-56,0,24),BackgroundColor3=Color3.fromRGB(38,34,50),
+            BorderSizePixel=0,Text=">  Excluded from All (0)",TextColor3=Color3.fromRGB(235,190,205),
+            TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=header})
+        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=expand})
+        create("UIPadding",{PaddingLeft=UDim.new(0,8),Parent=expand})
+        local clear=create("TextButton",{Size=UDim2.new(0,50,0,24),Position=UDim2.new(1,-50,0,0),
+            BackgroundColor3=Color3.fromRGB(92,42,52),BorderSizePixel=0,Text="Clear",
+            TextColor3=Color3.fromRGB(245,225,230),TextSize=10,Font=Enum.Font.Gotham,Parent=header})
+        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=clear})
+        local container=rowFrame(nextOrder(),0)
+        local list=create("ScrollingFrame",{Size=UDim2.fromScale(1,1),BackgroundTransparency=1,
+            BorderSizePixel=0,ScrollBarThickness=3,CanvasSize=UDim2.new(),Visible=false,Parent=container})
+        local function refresh()
+            local names=state.hitboxApi.getExcludedNames()
+            expand.Text=(open and "v  " or ">  ").."Excluded from All ("..#names..")"
+            for _,child in ipairs(list:GetChildren()) do child:Destroy() end
+            list.Visible=open
+            container.Size=UDim2.new(1,0,0,open and math.min(150,math.max(25,#names*25)) or 0)
+            if not open then return end
+            list.CanvasSize=UDim2.new(0,0,0,math.max(25,#names*25))
+            if #names==0 then
+                create("TextLabel",{Size=UDim2.new(1,0,0,24),BackgroundTransparency=1,Text="No exclusions",
+                    TextColor3=Color3.fromRGB(180,175,195),TextSize=10,Font=Enum.Font.Gotham,Parent=list})
+            end
+            for index,name in ipairs(names) do
+                local row=create("Frame",{Size=UDim2.new(1,-4,0,24),Position=UDim2.new(0,0,0,(index-1)*25),
+                    BackgroundColor3=Color3.fromRGB(30,28,38),BorderSizePixel=0,Parent=list})
+                create("UICorner",{CornerRadius=UDim.new(0,5),Parent=row})
+                create("TextLabel",{Size=UDim2.new(1,-36,1,0),Position=UDim2.new(0,8,0,0),BackgroundTransparency=1,
+                    Text="• "..name,TextColor3=Color3.fromRGB(235,190,205),TextSize=10,Font=Enum.Font.Gotham,
+                    TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,Parent=row})
+                local remove=create("TextButton",{Size=UDim2.new(0,26,0,20),Position=UDim2.new(1,-28,0.5,-10),
+                    BackgroundColor3=Color3.fromRGB(92,42,52),BorderSizePixel=0,Text="-",
+                    TextColor3=Color3.fromRGB(245,225,230),TextSize=15,Font=Enum.Font.GothamBold,Parent=row})
+                create("UICorner",{CornerRadius=UDim.new(0,5),Parent=remove})
+                remove.MouseButton1Click:Connect(function() state.hitboxApi.removeExcluded(name) end)
+            end
+        end
+        expand.MouseButton1Click:Connect(function() open=not open; refresh() end)
+        clear.MouseButton1Click:Connect(function()
+            suggestionGeneration+=1; updatingName=true; excludeBox.Text=""; updatingName=false; closeMenu()
+            state.hitboxApi.clearExcluded()
+        end)
+        return refresh
+    end
+    local refreshExclusionRoster=initializeExclusionRoster()
     local _,_,setAllPlayersToggle=createToggle("Extend All Players",nextOrder(),false,function(on)
         if not syncing then state.hitboxApi.setAll(on) end
     end)
@@ -5248,12 +5380,13 @@ do
         local count=state.hitboxApi.getTargetCount()
         targetStatus.Text=(enabled and "Extending: " or "Ready (off): ")
             ..(all and "All players" or "Selected list").." ("..count..")"
-        if all then targetStatus.Text..=" — named list ignored" end
+        if all then targetStatus.Text..=" — exclusions applied; named list ignored" end
         if not state.hitboxHeadEnabled and not state.hitboxTorsoEnabled and not state.hitboxRootEnabled then
             targetStatus.Text="Choose at least one part to extend"
         end
         if not sizeBox:IsFocused() then sizeBox.Text=tostring(state.hitboxSizeValue) end
         refreshRoster()
+        refreshExclusionRoster()
         syncing=false
     end
     track(Players.PlayerRemoving:Connect(function(player)
@@ -5261,10 +5394,14 @@ do
             selectedName=nil; suggestionGeneration+=1
             setPlayerText(""); targetStatus.Text="Player left — add another player"
         end
-        if menu.Visible then showSuggestions(playerBox.Text,player) end
+        if menu.Visible then
+            showSuggestions(menuDestination=="exclude" and excludeBox.Text or playerBox.Text,player,menuDestination)
+        end
     end))
     track(Players.PlayerAdded:Connect(function()
-        if menu.Visible then showSuggestions(playerBox.Text) end
+        if menu.Visible then
+            showSuggestions(menuDestination=="exclude" and excludeBox.Text or playerBox.Text,nil,menuDestination)
+        end
     end))
     local creditRow=rowFrame(nextOrder(),45)
     create("TextLabel",{Size=UDim2.fromScale(1,1),BackgroundTransparency=1,
@@ -5321,14 +5458,15 @@ end)
 
 do
 local spectatingPlayer = nil
-local spectateWindow=create("Frame",{Name="LucidSpectatePreview",Size=UDim2.new(0,300,0,230),
-    Position=UDim2.new(0.5,180,0.5,-115),BackgroundColor3=Color3.fromRGB(18,18,24),
+local spectateWindow=create("Frame",{Name="LucidSpectatePreview",Size=UDim2.new(0,300,0,260),
+    Position=UDim2.new(0.5,180,0.5,-130),BackgroundColor3=Color3.fromRGB(18,18,24),
     BackgroundTransparency=0.05,BorderSizePixel=0,Active=true,Draggable=true,Visible=false,ZIndex=155,Parent=screenGui})
 create("UICorner",{CornerRadius=UDim.new(0,9),Parent=spectateWindow})
 create("UIStroke",{Color=Color3.fromRGB(105,80,170),Thickness=1.2,Transparency=0.15,Parent=spectateWindow})
 local spectateTitle=create("TextLabel",{Size=UDim2.new(1,-160,0,32),Position=UDim2.new(0,10,0,0),
     BackgroundTransparency=1,Text="Spectate Preview",TextColor3=Color3.fromRGB(225,215,245),TextSize=12,
-    Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=156,Parent=spectateWindow})
+    Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left,
+    TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=156,Parent=spectateWindow})
 local spectatePin=false
 local spectateFullButton=create("TextButton",{Size=UDim2.new(0,46,0,24),Position=UDim2.new(1,-151,0,4),
     BackgroundColor3=Color3.fromRGB(52,48,67),BorderSizePixel=0,Text="Full",
@@ -5346,7 +5484,18 @@ local spectateCloseButton=create("TextButton",{Size=UDim2.new(0,26,0,24),Positio
 for _,button in ipairs({spectateFullButton,spectatePinButton,spectateMinButton,spectateCloseButton}) do
     create("UICorner",{CornerRadius=UDim.new(0,5),Parent=button})
 end
-local spectateViewport=create("ViewportFrame",{Size=UDim2.new(1,-12,1,-40),Position=UDim2.new(0,6,0,34),
+local spectateControls=create("Frame",{Size=UDim2.new(1,-12,0,25),Position=UDim2.fromOffset(6,34),
+    BackgroundTransparency=1,ZIndex=156,Parent=spectateWindow})
+local spectateFollowButton=create("TextButton",{Size=UDim2.fromOffset(64,24),
+    BackgroundColor3=Color3.fromRGB(62,105,80),BorderSizePixel=0,Text="Follow",
+    TextColor3=Color3.fromRGB(220,215,230),TextSize=10,Font=Enum.Font.GothamSemibold,
+    ZIndex=157,Parent=spectateControls})
+create("UICorner",{CornerRadius=UDim.new(0,5),Parent=spectateFollowButton})
+create("TextLabel",{Size=UDim2.new(1,-70,1,0),Position=UDim2.fromOffset(70,0),
+    BackgroundTransparency=1,Text="RMB: orbit  •  Wheel: zoom",TextColor3=Color3.fromRGB(180,170,200),
+    TextSize=9,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
+    TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=156,Parent=spectateControls})
+local spectateViewport=create("ViewportFrame",{Size=UDim2.new(1,-12,1,-70),Position=UDim2.new(0,6,0,64),
     BackgroundColor3=Color3.fromRGB(32,34,42),BackgroundTransparency=0.05,BorderSizePixel=0,
     Ambient=Color3.fromRGB(185,185,195),LightColor=Color3.fromRGB(235,235,240),LightDirection=Vector3.new(-1,-1,-1),
     Active=true,ZIndex=156,Parent=spectateWindow})
@@ -5360,6 +5509,13 @@ local spectatePartPairs={}
 local spectateBackground={}
 local spectateBackgroundCenter=nil
 local spectateBackgroundAt=0
+local spectateCharacterConnections={}
+local spectateCloneDirty=false
+local spectateCloneAt=0
+local function disconnectSpectateCharacter()
+    for _,connection in ipairs(spectateCharacterConnections) do connection:Disconnect() end
+    table.clear(spectateCharacterConnections)
+end
 local function descendantKey(object,root)
     local pieces={}
     while object and object~=root do
@@ -5376,9 +5532,20 @@ local function descendantKey(object,root)
     return table.concat(pieces,"/")
 end
 local function rebuildSpectateClone(character)
+    disconnectSpectateCharacter()
     if spectateClone then spectateClone:Destroy(); spectateClone=nil end
     table.clear(spectatePartPairs); spectateSourceCharacter=character
+    spectateCloneDirty=false; spectateCloneAt=os.clock()
     if not character then return end
+    local function markAppearanceDirty(object)
+        if not object:FindFirstAncestorWhichIsA("Tool") and (object:IsA("BasePart")
+            or object:IsA("Accessory") or object:IsA("Clothing") or object:IsA("BodyColors")
+            or object:IsA("Decal") or object:IsA("SurfaceAppearance")) then
+            spectateCloneDirty=true
+        end
+    end
+    table.insert(spectateCharacterConnections,character.DescendantAdded:Connect(markAppearanceDirty))
+    table.insert(spectateCharacterConnections,character.DescendantRemoving:Connect(markAppearanceDirty))
     local wasArchivable=character.Archivable; character.Archivable=true
     local ok,clone=pcall(function() return character:Clone() end)
     character.Archivable=wasArchivable
@@ -5386,7 +5553,12 @@ local function rebuildSpectateClone(character)
     clone.Name="SpectateClone"
     for _,object in ipairs(clone:GetDescendants()) do
         if object:IsA("Script") or object:IsA("LocalScript") or object:IsA("Tool") then object:Destroy()
-        elseif object:IsA("BasePart") then object.Anchored=true; object.CanCollide=false; object.CastShadow=false end
+        elseif object:IsA("BasePart") then
+            object.Anchored=true; object.CanCollide=false; object.CanTouch=false; object.CanQuery=false
+            object.CastShadow=false; object.LocalTransparencyModifier=0
+        elseif object:IsA("Humanoid") then
+            object.DisplayDistanceType=Enum.HumanoidDisplayDistanceType.None
+        end
     end
     local cloneParts={}
     for _,object in ipairs(clone:GetDescendants()) do
@@ -5430,10 +5602,41 @@ end
 local spectateCameraState=nil
 local spectateFullScreen=false
 local spectateRightMouse=false
+local spectateMouseBehavior=nil
+local spectateFollow=true
+local spectateHeading=0
 local spectateYaw=0
 local spectatePitch=0.25
 local spectateDistance=9
+local function updateSpectateHeading(root)
+    if root then
+        local look=root.CFrame.LookVector
+        if look.X*look.X+look.Z*look.Z>0.0001 then spectateHeading=math.atan2(-look.X,-look.Z) end
+    end
+end
+local function setSpectateFollow(on)
+    on=on==true
+    if on==spectateFollow then return end
+    if on then
+        spectateYaw=0; spectatePitch=0.25
+    else
+        local root=spectatingPlayer and spectatingPlayer.Character
+            and spectatingPlayer.Character:FindFirstChild("HumanoidRootPart")
+        updateSpectateHeading(root)
+        spectateYaw=spectateHeading+spectateYaw -- Relative Follow yaw -> fixed world orbit yaw.
+    end
+    spectateFollow=on
+    spectateFollowButton.Text=on and "Follow" or "Orbit"
+    spectateFollowButton.BackgroundColor3=on and Color3.fromRGB(62,105,80) or Color3.fromRGB(52,48,67)
+end
+local function releaseSpectateMouse()
+    if spectateRightMouse and spectateMouseBehavior~=nil then
+        UserInputService.MouseBehavior=spectateMouseBehavior
+    end
+    spectateRightMouse=false; spectateMouseBehavior=nil
+end
 local function setSpectateFullScreen(on)
+    releaseSpectateMouse()
     spectateFullScreen=on==true
     spectateFullButton.Text=spectateFullScreen and "Small" or "Full"
     if spectateFullScreen then
@@ -5461,10 +5664,13 @@ local function setSpectateFullScreen(on)
         end
     end
 end
+local spectateExpandedSize=spectateWindow.Size
+local spectateExpanded=true
 local function stopSpectatePreview()
     spectatingPlayer=nil; spectateWindow.Visible=false; spectateTitle.Text="Spectate Preview"
-    spectateRightMouse=false
+    releaseSpectateMouse()
     setSpectateFullScreen(false)
+    disconnectSpectateCharacter(); spectateCloneDirty=false
     spectateSourceCharacter=nil; table.clear(spectatePartPairs)
     if spectateClone then spectateClone:Destroy(); spectateClone=nil end
     for _,clone in ipairs(spectateBackground) do clone:Destroy() end
@@ -5472,25 +5678,29 @@ local function stopSpectatePreview()
 end
 local function startSpectatePreview(target)
     if not target then return false end
-    spectatingPlayer=target; spectateWindow.Visible=true; spectateViewport.Visible=true
+    releaseSpectateMouse()
+    spectatingPlayer=target; spectateWindow.Visible=true
+    if not spectateExpanded then
+        spectateExpanded=true; spectateWindow.Size=spectateExpandedSize; spectateMinButton.Text="-"
+    end
+    spectateControls.Visible=true; spectateViewport.Visible=true
     spectateTitle.Text="Watching "..target.Name
     rebuildSpectateClone(target.Character)
     spectateBackgroundCenter=nil
     local root=target.Character and target.Character:FindFirstChild("HumanoidRootPart")
-    if root then
-        local look=root.CFrame.LookVector
-        spectateYaw=math.atan2(-look.X,-look.Z)
-    end
-    spectatePitch=0.25
+    updateSpectateHeading(root)
+    setSpectateFollow(true)
+    spectateYaw=0; spectatePitch=0.25; spectateDistance=9
     return true
 end
-local spectateExpandedSize=spectateWindow.Size
-local spectateExpanded=true
 spectateMinButton.MouseButton1Click:Connect(function()
+    releaseSpectateMouse()
     spectateExpanded=not spectateExpanded
-    if spectateExpanded then spectateWindow.Size=spectateExpandedSize; spectateViewport.Visible=true; spectateMinButton.Text="-"
-    else spectateExpandedSize=spectateWindow.Size; spectateWindow.Size=UDim2.new(0,spectateWindow.AbsoluteSize.X,0,32); spectateViewport.Visible=false; spectateMinButton.Text="+" end
+    spectateControls.Visible=spectateExpanded; spectateViewport.Visible=spectateExpanded
+    if spectateExpanded then spectateWindow.Size=spectateExpandedSize; spectateMinButton.Text="-"
+    else spectateExpandedSize=spectateWindow.Size; spectateWindow.Size=UDim2.new(0,spectateWindow.AbsoluteSize.X,0,32); spectateMinButton.Text="+" end
 end)
+spectateFollowButton.MouseButton1Click:Connect(function() setSpectateFollow(not spectateFollow) end)
 local function setSpectatePinned(value)
     spectatePin=value==true; spectatePinButton.Text=spectatePin and "ON" or "Pin"
     spectatePinButton.BackgroundColor3=spectatePin and Color3.fromRGB(145,108,45) or Color3.fromRGB(52,48,67)
@@ -5504,54 +5714,71 @@ spectateFullButton.MouseButton1Click:Connect(function()
     setSpectateFullScreen(not spectateFullScreen)
 end)
 spectateCloseButton.MouseButton1Click:Connect(stopSpectatePreview)
-makeResizableWindow(spectateWindow,210,140)
+makeResizableWindow(spectateWindow,210,170)
 registerDetachableWindow(spectateWindow,function() return spectatePin end,function() return spectatingPlayer~=nil end,
     setSpectatePinned,function(value) if value and spectatingPlayer then spectateWindow.Visible=true elseif not value then stopSpectatePreview() end end)
-track(UserInputService.InputBegan:Connect(function(input,processed)
+local function pointerOverSpectatePreview()
     local mouse=UserInputService:GetMouseLocation()
     local pos=spectateViewport.AbsolutePosition
     local size=spectateViewport.AbsoluteSize
-    local overPreview=mouse.X>=pos.X and mouse.X<=pos.X+size.X
+    return spectateWindow.Visible and spectateViewport.Visible
+        and mouse.X>=pos.X and mouse.X<=pos.X+size.X
         and mouse.Y>=pos.Y and mouse.Y<=pos.Y+size.Y
+end
+track(UserInputService.InputBegan:Connect(function(input,processed)
     if spectatingPlayer and input.UserInputType==Enum.UserInputType.MouseButton2
-        and (spectateFullScreen or (spectateWindow.Visible and spectateViewport.Visible and overPreview)) then
+        and not UserInputService:GetFocusedTextBox()
+        and (spectateFullScreen or pointerOverSpectatePreview()) then
+        if not spectateRightMouse then spectateMouseBehavior=UserInputService.MouseBehavior end
         spectateRightMouse=true
         UserInputService.MouseBehavior=Enum.MouseBehavior.LockCurrentPosition
     end
 end))
 track(UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType==Enum.UserInputType.MouseButton2 and spectateRightMouse then
-        spectateRightMouse=false
-        UserInputService.MouseBehavior=spectateCameraState and spectateCameraState.mouseBehavior
-            or Enum.MouseBehavior.Default
+        releaseSpectateMouse()
     end
 end))
+track(UserInputService.WindowFocusReleased:Connect(releaseSpectateMouse))
 track(UserInputService.InputChanged:Connect(function(input)
     if spectatingPlayer and spectateRightMouse and input.UserInputType==Enum.UserInputType.MouseMovement then
+        if input.Delta.X~=0 or input.Delta.Y~=0 then setSpectateFollow(false) end
         spectateYaw=spectateYaw-input.Delta.X*0.004
         spectatePitch=math.clamp(spectatePitch+input.Delta.Y*0.004,-1.15,1.15)
+    elseif spectatingPlayer and input.UserInputType==Enum.UserInputType.MouseWheel
+        and not UserInputService:GetFocusedTextBox()
+        and (spectateFullScreen or pointerOverSpectatePreview()) then
+        spectateDistance=math.clamp(spectateDistance-input.Position.Z*1.5,5,45)
     end
 end))
 local spectatePreviewElapsed=0
 track(RunService.RenderStepped:Connect(function(dt)
     if not spectatingPlayer then return end
     if not spectatingPlayer.Parent then stopSpectatePreview(); return end
+    if not spectateFullScreen and (not spectateWindow.Visible or not spectateViewport.Visible) then return end
     local character=spectatingPlayer.Character
     if character~=spectateSourceCharacter then rebuildSpectateClone(character); spectateBackgroundCenter=nil end
     local root=character and character:FindFirstChild("HumanoidRootPart")
     if not root then return end
+    updateSpectateHeading(root)
     spectatePreviewElapsed+=dt
-    if spectatePreviewElapsed<1/30 then return end
-    spectatePreviewElapsed=0
-    for _,pair in ipairs(spectatePartPairs) do
-        local source,clonePart=pair[1],pair[2]
-        if source.Parent and clonePart.Parent then
-            clonePart.CFrame=source.CFrame; clonePart.Transparency=source.Transparency
+    local refreshPreview=spectatePreviewElapsed>=1/30
+    if refreshPreview then
+        spectatePreviewElapsed=0
+        if spectateCloneDirty and os.clock()-spectateCloneAt>=0.25 then rebuildSpectateClone(character) end
+        for _,pair in ipairs(spectatePartPairs) do
+            local source,clonePart=pair[1],pair[2]
+            if source.Parent and clonePart.Parent then
+                clonePart.CFrame=source.CFrame; clonePart.Transparency=source.Transparency
+                if clonePart.LocalTransparencyModifier~=0 then clonePart.LocalTransparencyModifier=0 end
+            end
         end
     end
+    if not refreshPreview and not spectateFullScreen then return end
     local focus=root.Position+Vector3.new(0,1.5,0)
     local cp=math.cos(spectatePitch)
-    local offset=Vector3.new(math.sin(spectateYaw)*cp,math.sin(spectatePitch),math.cos(spectateYaw)*cp)*spectateDistance
+    local yaw=spectateFollow and (spectateHeading+spectateYaw) or spectateYaw
+    local offset=Vector3.new(math.sin(yaw)*cp,math.sin(spectatePitch),math.cos(yaw)*cp)*spectateDistance
     spectateCamera.CFrame=CFrame.lookAt(focus+offset,focus)
     if spectateFullScreen then
         local camera=workspace.CurrentCamera
@@ -11738,7 +11965,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.28 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.30 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -13148,7 +13375,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.28] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.30] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.28] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.30] Loaded, but this executor does not expose queue_on_teleport")
 end
