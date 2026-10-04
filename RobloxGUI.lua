@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.30
+--// Lucid Panel v6.0.31
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -388,7 +388,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.30",
+    Text                   = "LUCID PANEL  •  v6.0.31",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -641,6 +641,11 @@ local function createCategory(name, order, openByDefault)
         body = body,
         header = header,
         dock = dock,
+        revealDock = function()
+            if not dockExpanded then dock.Size=expandedSize end
+            dockExpanded=true; dockContent.Visible=true
+            collapseDockButton.Text="-"; dock.Visible=true
+        end,
         setDetached = setDetached,
         isOpen = function() return open end,
         setOpen = function(value)
@@ -3171,7 +3176,7 @@ do
     state.hitboxTorsoEnabled=false
     state.hitboxRootEnabled=true
     local selectedPlayers={}
-    local excludedUserIds={} -- Session-only exceptions to All Players, retained across player rejoin.
+    local excludedUserIds={} -- Profile-backed All Players exceptions, keyed by stable UserId.
     local onlinePlayers={}
     local allPlayers=false
     local enabled=false
@@ -3316,6 +3321,29 @@ do
             for _,name in pairs(excludedUserIds) do table.insert(names,name) end
             table.sort(names,function(a,b) return a:lower()<b:lower() end)
             return names
+        end,
+        getExcludedEntries=function()
+            local entries={}
+            for userId,name in pairs(excludedUserIds) do
+                table.insert(entries,{userId=userId,name=name})
+            end
+            table.sort(entries,function(a,b) return a.name:lower()<b.name:lower() end)
+            return entries
+        end,
+        setExcludedEntries=function(entries)
+            table.clear(excludedUserIds)
+            if type(entries)=="table" then
+                for _,entry in ipairs(entries) do
+                    if type(entry)=="table" then
+                        local userId,name=entry.userId,entry.name
+                        if type(userId)=="number" and userId>0 and userId<math.huge and userId%1==0
+                            and type(name)=="string" and #name>0 and #name<=20 and name:match("^[%w_]+$") then
+                            excludedUserIds[userId]=name
+                        end
+                    end
+                end
+            end
+            reconcile()
         end,
         setAll=function(value) allPlayers=value==true; reconcile() end,
         getAll=function() return allPlayers end,
@@ -5065,7 +5093,25 @@ end
 -- Fly uses camera-relative movement without inserting permanent character parts.
 useCategory("Player")
 do
-    sectionLabel("Player Limb Extender",nextOrder())
+    local hitboxHeading=sectionLabel("Player Limb Extender",nextOrder())
+    state.openHitboxOptions=function()
+        mainFrame.Visible=true
+        minimized=false; content.Visible=true; mainResizeHandle.Visible=true
+        mainFrame.Size=mainExpandedSize; minimizeBtn.Text="-"
+        searchBox.Text=""; state.mainNavigation.select("Player")
+        local meta=categoryMeta.Player
+        meta.setOpen(true)
+        local scroll=content
+        if meta.body.Parent~=meta.wrapper then
+            meta.revealDock(); scroll=meta.body.Parent
+        end
+        task.defer(function()
+            if not hitboxHeading.Parent or not scroll.Parent then return end
+            local offset=hitboxHeading.AbsolutePosition.Y-scroll.AbsolutePosition.Y+scroll.CanvasPosition.Y-6
+            scroll.CanvasPosition=Vector2.new(0,math.max(0,offset))
+        end)
+        if state.refreshLucidDock then state.refreshLucidDock() end
+    end
     local selectedName=nil
     local syncing=false
     local updatingName=false
@@ -5286,21 +5332,23 @@ do
             expand.Text=(open and "v  " or ">  ").."Excluded from All ("..#names..")"
             for _,child in ipairs(list:GetChildren()) do child:Destroy() end
             list.Visible=open
-            container.Size=UDim2.new(1,0,0,open and math.min(150,math.max(25,#names*25)) or 0)
+            local height=math.max(25,math.ceil(#names/3)*25)
+            container.Size=UDim2.new(1,0,0,open and math.min(150,height) or 0)
             if not open then return end
-            list.CanvasSize=UDim2.new(0,0,0,math.max(25,#names*25))
+            list.CanvasSize=UDim2.new(0,0,0,height)
             if #names==0 then
                 create("TextLabel",{Size=UDim2.new(1,0,0,24),BackgroundTransparency=1,Text="No exclusions",
                     TextColor3=Color3.fromRGB(180,175,195),TextSize=10,Font=Enum.Font.Gotham,Parent=list})
             end
             for index,name in ipairs(names) do
-                local row=create("Frame",{Size=UDim2.new(1,-4,0,24),Position=UDim2.new(0,0,0,(index-1)*25),
+                local row=create("Frame",{Size=UDim2.new(1/3,-4,0,24),
+                    Position=UDim2.new(((index-1)%3)/3,0,0,math.floor((index-1)/3)*25),
                     BackgroundColor3=Color3.fromRGB(30,28,38),BorderSizePixel=0,Parent=list})
                 create("UICorner",{CornerRadius=UDim.new(0,5),Parent=row})
-                create("TextLabel",{Size=UDim2.new(1,-36,1,0),Position=UDim2.new(0,8,0,0),BackgroundTransparency=1,
-                    Text="• "..name,TextColor3=Color3.fromRGB(235,190,205),TextSize=10,Font=Enum.Font.Gotham,
+                create("TextLabel",{Size=UDim2.new(1,-28,1,0),Position=UDim2.new(0,5,0,0),BackgroundTransparency=1,
+                    Text=name,TextColor3=Color3.fromRGB(235,190,205),TextSize=10,Font=Enum.Font.Gotham,
                     TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,Parent=row})
-                local remove=create("TextButton",{Size=UDim2.new(0,26,0,20),Position=UDim2.new(1,-28,0.5,-10),
+                local remove=create("TextButton",{Size=UDim2.new(0,18,0,20),Position=UDim2.new(1,-20,0.5,-10),
                     BackgroundColor3=Color3.fromRGB(92,42,52),BorderSizePixel=0,Text="-",
                     TextColor3=Color3.fromRGB(245,225,230),TextSize=15,Font=Enum.Font.GothamBold,Parent=row})
                 create("UICorner",{CornerRadius=UDim.new(0,5),Parent=remove})
@@ -5409,7 +5457,7 @@ do
         TextWrapped=true,TextColor3=Color3.fromRGB(160,150,185),TextSize=10,
         Font=Enum.Font.Gotham,Parent=creditRow})
     state.refreshHitboxUi()
-    addCleanup(function() state.refreshHitboxUi=nil end)
+    addCleanup(function() state.refreshHitboxUi=nil; state.openHitboxOptions=nil end)
 end
 sectionLabel("Movement+", nextOrder())
 local flySpeedRow = rowFrame(nextOrder())
@@ -8947,6 +8995,7 @@ local function saveNamedProfile(button,profileOverride,silent,highlightsOnly)
     payload.blackHighlights=state.blackHighlightApi.getNames and state.blackHighlightApi.getNames() or {}
     payload.exploiterHighlights=state.orangeHighlightApi.getNames and state.orangeHighlightApi.getNames() or {}
     payload.hiddenNamedPlayers=state.namedPlayerHiderApi and state.namedPlayerHiderApi.getNames and state.namedPlayerHiderApi.getNames() or {}
+    payload.hitboxExclusions=state.hitboxApi and state.hitboxApi.getExcludedEntries() or {}
     -- Emote favorites are global and saved independently of named profiles.
     payload.keybinds={}
     for name,key in pairs(shortcutKeys or {}) do payload.keybinds[name]=key and key.Name or "Unbound" end
@@ -9048,7 +9097,10 @@ loadNamedProfile = function(button)
         end
     end
     if state.applyAccentTheme then state.applyAccentTheme(state.accentTheme) end
-    if state.hitboxApi then state.hitboxApi.update() end
+    if state.hitboxApi then
+        state.hitboxApi.setExcludedEntries(payload.hitboxExclusions)
+        state.hitboxApi.update()
+    end
     if state.yellowHighlightApi.refreshColor then state.yellowHighlightApi.refreshColor() end
     if state.pinkHighlightApi.refreshColor then state.pinkHighlightApi.refreshColor() end
     if state.blackHighlightApi.refreshColor then state.blackHighlightApi.refreshColor() end
@@ -11965,7 +12017,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.30 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.31 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -12323,6 +12375,7 @@ state.initializeCommandConsole=function()
         sy="sync",dsy="desync",sem="stopemote",ssy="stopsync",us="unspec",em="emote",
         ra="reanim",fe="fogend",dx="dex",udx="undex",res="restore",ld="lgdir",gl="getlink",gml="getmobilelink",gls="getlinks",
         cf="camerafollow",ucf="unfixcamera",tgt="target",ut="untarget",rd="respawndelay",svp="saveprofile",ggi="getgameid",
+        hs="hitsize",
     }
     local function buildCommandCatalog()
         local catalog={
@@ -12364,6 +12417,7 @@ state.initializeCommandConsole=function()
             {command="!getlinks",description="Copy HTTPS and mobile links to this server"},
             {command="!help",description="Show a compact command summary"},
             {command="!hitbox <player|all> [size]",description="Add a target or select all; enable configured parts (1-1000 studs)"},
+            {command="!hitsize",description="Open all Hit Size options: targets, exclusions, size and parts (!hs)"},
             {command="!unhitbox",description="Disable extension and restore every changed part; keep the session target list"},
             {command="!hide <player>",description="Hide one player's character and name for this session only"},
             {command="!unhide <player>",description="Restore a player hidden with !hide"},
@@ -12588,6 +12642,8 @@ state.initializeCommandConsole=function()
                     ok and Color3.fromRGB(75,210,120) or Color3.fromRGB(230,90,105))
             end
             return
+        elseif command=="hitsize" then
+            state.openHitboxOptions(); finish(true,"Opened Hit Size options"); return
         elseif command=="hitbox" or command=="unhitbox" then
             local ok,message
             if command=="hitbox" then ok,message=state.hitboxApi.enable(rest)
@@ -13375,7 +13431,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.30] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.31] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.30] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.31] Loaded, but this executor does not expose queue_on_teleport")
 end
