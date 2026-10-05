@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.31
+--// Lucid Panel v6.0.33
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -388,7 +388,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.31",
+    Text                   = "LUCID PANEL  •  v6.0.33",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -716,7 +716,7 @@ state.initializeLucidDock=function()
         Amber={background=Color3.fromRGB(26,17,5),panel=Color3.fromRGB(43,29,9),surface=Color3.fromRGB(63,43,14),surface2=Color3.fromRGB(87,60,20),accent=Color3.fromRGB(245,165,25),text=Color3.fromRGB(240,240,245),muted=Color3.fromRGB(165,165,175)},
     }
     state.themeColors={}; for name,palette in pairs(state.themePalettes) do state.themeColors[name]=palette.accent end
-    local dock=create("Frame",{Name="LucidBottomDock",Size=UDim2.new(0,game.PlaceId==136070094363960 and 492 or 452,0,42),
+    local dock=create("Frame",{Name="LucidBottomDock",Size=UDim2.new(0,game.PlaceId==136070094363960 and 606 or 566,0,42),
         AnchorPoint=Vector2.new(0.5,1),Position=UDim2.new(0.5,0,1,-10),
         BackgroundColor3=Color3.fromRGB(17,17,22),BackgroundTransparency=0.12,
         BorderSizePixel=0,Active=true,Draggable=true,ZIndex=150,Parent=screenGui})
@@ -744,6 +744,7 @@ state.initializeLucidDock=function()
         {"rbxassetid://7733960981","Home"},{"rbxassetid://7743875962","Player"},
         {"rbxassetid://7743878358","Tools"},{"rbxassetid://7733954760","World"},
         {"rbxassetid://7733970318","Panel"},{"rbxassetid://7743872929","Command"},
+        {"rbxassetid://7743878358","Diagnostics"},
         {"rbxassetid://7734053495","Settings"},
     }
     if game.PlaceId==136070094363960 then
@@ -751,8 +752,28 @@ state.initializeLucidDock=function()
     end
     state.lucidDockButtons={}
     state.lucidDockIcons={}
+    local killButton=create("TextButton",{Name="LucidDockKillCount",Size=UDim2.fromOffset(66,28),
+        Position=UDim2.fromOffset(154,7),BackgroundColor3=Color3.fromRGB(28,27,34),
+        BackgroundTransparency=0.35,BorderSizePixel=0,Text="KILLS --",TextSize=10,
+        TextColor3=Color3.fromRGB(215,195,245),Font=Enum.Font.GothamSemibold,ZIndex=151,Parent=dock})
+    create("UICorner",{CornerRadius=UDim.new(0,6),Parent=killButton})
+    local killHint=create("TextLabel",{Size=UDim2.fromOffset(192,22),AnchorPoint=Vector2.new(0.5,1),
+        Position=UDim2.new(0.5,0,0,-4),BackgroundColor3=Color3.fromRGB(12,12,15),BorderSizePixel=0,
+        Text="Click to share kill count in chat",TextSize=9,TextColor3=Color3.fromRGB(235,225,245),
+        Font=Enum.Font.Gotham,Visible=false,ZIndex=160,Parent=killButton})
+    create("UICorner",{CornerRadius=UDim.new(0,5),Parent=killHint})
+    killButton.MouseEnter:Connect(function() killHint.Visible=true end)
+    killButton.MouseLeave:Connect(function() killHint.Visible=false end)
+    killButton.MouseButton1Click:Connect(function()
+        if state.announceKillCount then state.announceKillCount() end
+    end)
+    state.refreshDockKillCount=function(count,tracking)
+        local text=(tracking or count>0) and ("KILLS "..tostring(count)) or "KILLS --"
+        if killButton.Text~=text then killButton.Text=text end
+        killHint.Text=tracking and "Click to share kill count in chat" or "No active kill-confirmation feed"
+    end
     for index,item in ipairs(buttonData) do
-        local button=create("ImageButton",{Size=UDim2.new(0,34,0,30),Position=UDim2.new(0,154+(index-1)*40,0,6),
+        local button=create("ImageButton",{Size=UDim2.new(0,34,0,30),Position=UDim2.new(0,228+(index-1)*40,0,6),
             BackgroundColor3=Color3.fromRGB(28,27,34),BackgroundTransparency=1,BorderSizePixel=0,
             Image="",AutoButtonColor=false,ZIndex=151,Parent=dock})
         create("UICorner",{CornerRadius=UDim.new(0,6),Parent=button})
@@ -773,6 +794,8 @@ state.initializeLucidDock=function()
                 if state.toggleCommandConsole then state.toggleCommandConsole() end
             elseif item[2]=="Browser" then
                 if state.toggleServerBrowser then state.toggleServerBrowser() end
+            elseif item[2]=="Diagnostics" then
+                if state.toggleDiagnosticsDock then state.toggleDiagnosticsDock() end
             elseif item[2]=="Panel" then
                 mainFrame.Visible=not mainFrame.Visible
             else
@@ -788,6 +811,7 @@ state.initializeLucidDock=function()
             local selected=(name~="Panel" and name~="Command" and name==state.mainNavigation.active and mainFrame.Visible)
                 or (name=="Command" and state.commandConsole and state.commandConsole.Visible)
                 or (name=="Browser" and state.serverBrowserVisible)
+                or (name=="Diagnostics" and categoryMeta.Diagnostics.dock.Visible)
             button.BackgroundTransparency=selected and 0.15 or 1
             local icon=state.lucidDockIcons[name]
             if icon then icon.ImageColor3=(selected or (name=="Panel" and mainFrame.Visible)) and accent
@@ -11893,7 +11917,37 @@ do
     local function refresh()
         label.Text=string.format("Eliminations: %d | %s",session.count,
             remote and "Tracking server confirmations" or "Waiting for KillConfirmed")
+        if state.refreshDockKillCount then state.refreshDockKillCount(session.count,remote~=nil) end
     end
+    local sending=false
+    local lastSend=-math.huge
+    state.killCounterApi={
+        getCount=function() return session.count end,
+        announce=function(language)
+            if not remote and session.count==0 then return false,"No server kill-confirmation feed is available" end
+            if sending or os.clock()-lastSend<5 then return false,"Wait a few seconds before sharing again" end
+            local channels=TextChatService:FindFirstChild("TextChannels")
+            local channel=channels and channels:FindFirstChild("RBXGeneral")
+            if not channel or not channel:IsA("TextChannel") then return false,"Public chat is unavailable" end
+            local text=(language=="pt" and "numero de kills pegas nesse server "
+                or "kill count in this server ")..tostring(session.count)
+            sending=true; lastSend=os.clock()
+            local ok,result=pcall(function() return channel:SendAsync(text) end)
+            sending=false
+            if not ok then return false,"Chat could not send the kill count: "..tostring(result) end
+            if not result or result.Status~=Enum.TextChatMessageStatus.Success then
+                return false,"Chat did not confirm delivery; check your chat permissions"
+            end
+            return true,text
+        end,
+    }
+    state.announceKillCount=function(language)
+        local ok,message=state.killCounterApi.announce(language)
+        notifyLucid(ok and "Kill count shared" or "Kill count not sent",message,
+            ok and Color3.fromRGB(75,210,120) or Color3.fromRGB(230,90,105))
+        return ok,message
+    end
+    actionButton("Share Kill Count in Chat",function() state.announceKillCount() end)
     local function bind()
         local remotes=game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
         local found=remotes and remotes:FindFirstChild("KillConfirmed")
@@ -11917,7 +11971,24 @@ do
             remote=nil; refresh()
         end
     end))
-    addCleanup(function() if remoteConnection then remoteConnection:Disconnect() end end)
+    addCleanup(function()
+        if remoteConnection then remoteConnection:Disconnect() end
+        state.refreshDockKillCount=nil; state.announceKillCount=nil; state.killCounterApi=nil
+    end)
+end
+do
+    local meta=categoryMeta.Diagnostics
+    state.toggleDiagnosticsDock=function(force)
+        local showing=meta.body.Parent~=meta.wrapper and meta.dock.Visible
+        local show=force==nil and not showing or force==true
+        meta.setDetached(show)
+        if show then meta.revealDock() end
+        if state.refreshLucidDock then state.refreshLucidDock() end
+    end
+    track(meta.dock:GetPropertyChangedSignal("Visible"):Connect(function()
+        if state.refreshLucidDock then state.refreshLucidDock() end
+    end))
+    addCleanup(function() state.toggleDiagnosticsDock=nil end)
 end
 sectionLabel("Explorer", nextOrder())
 local function unloadDexPlusPlus()
@@ -12017,7 +12088,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.31 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.33 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -12375,7 +12446,7 @@ state.initializeCommandConsole=function()
         sy="sync",dsy="desync",sem="stopemote",ssy="stopsync",us="unspec",em="emote",
         ra="reanim",fe="fogend",dx="dex",udx="undex",res="restore",ld="lgdir",gl="getlink",gml="getmobilelink",gls="getlinks",
         cf="camerafollow",ucf="unfixcamera",tgt="target",ut="untarget",rd="respawndelay",svp="saveprofile",ggi="getgameid",
-        hs="hitsize",
+        hs="hitsize",kc="killcount",kcc="killcount",diag="diagnostics",
     }
     local function buildCommandCatalog()
         local catalog={
@@ -12416,6 +12487,10 @@ state.initializeCommandConsole=function()
             {command="!getmobilelink",description="Copy a direct Roblox-app link to this server"},
             {command="!getlinks",description="Copy HTTPS and mobile links to this server"},
             {command="!help",description="Show a compact command summary"},
+            {command="!killcount",description="Share this session's confirmed kill count in public chat (!kc / !kcc)"},
+            {command="!kcc",description="Send: kill count in this server <count>"},
+            {command="!kcpt",description="Send: numero de kills pegas nesse server <count>"},
+            {command="!diagnostics",description="Toggle the independent Diagnostics window (!diag)"},
             {command="!hitbox <player|all> [size]",description="Add a target or select all; enable configured parts (1-1000 studs)"},
             {command="!hitsize",description="Open all Hit Size options: targets, exclusions, size and parts (!hs)"},
             {command="!unhitbox",description="Disable extension and restore every changed part; keep the session target list"},
@@ -12642,6 +12717,11 @@ state.initializeCommandConsole=function()
                     ok and Color3.fromRGB(75,210,120) or Color3.fromRGB(230,90,105))
             end
             return
+        elseif command=="killcount" or command=="kcpt" then
+            local ok,message=state.announceKillCount(command=="kcpt" and "pt" or "en")
+            finish(ok,message); return
+        elseif command=="diagnostics" then
+            state.toggleDiagnosticsDock(); finish(true,"Diagnostics window toggled"); return
         elseif command=="hitsize" then
             state.openHitboxOptions(); finish(true,"Opened Hit Size options"); return
         elseif command=="hitbox" or command=="unhitbox" then
@@ -12992,7 +13072,8 @@ task.spawn(function()
     while screenGui.Parent do
         if diagnosticsFailed then break end
         local diagnosticsVisible=(mainFrame.Visible and state.mainNavigation.active=="Settings" and categoryMeta.Diagnostics.isOpen())
-            or (categoryMeta.Diagnostics.dock and categoryMeta.Diagnostics.dock.Visible)
+            or (categoryMeta.Diagnostics.dock and categoryMeta.Diagnostics.dock.Visible
+                and categoryMeta.Diagnostics.body.Parent.Visible)
         local ok, err=true,nil
         if diagnosticsVisible then ok,err=pcall(function()
             local char=LocalPlayer.Character; local h=char and char:FindFirstChildOfClass("Humanoid")
@@ -13002,8 +13083,9 @@ task.spawn(function()
             local speed=root and math.floor(root.AssemblyLinearVelocity.Magnitude+0.5) or 0
             local activeCount=0; for _,enabled in pairs(activeFeatures) do if enabled then activeCount=activeCount+1 end end
             local detachedCount=0; for _,item in ipairs(detachableWindows) do if item.isDetached() then detachedCount=detachedCount+1 end end
-            local text=string.format("Place: %s\nRig: %s | State: %s\nWalkSpeed: %s | HipHeight: %s | Velocity: %s\nLucid: %d connections | %d active | %d detached | %s\nActive: %s",
-                tostring(game.PlaceId), rig, humanoidState, h and tostring(h.WalkSpeed) or "-",
+            local text=string.format("Place: %s | Kills: %d\nRig: %s | State: %s\nWalkSpeed: %s | HipHeight: %s | Velocity: %s\nLucid: %d connections | %d active | %d detached | %s\nActive: %s",
+                tostring(game.PlaceId),state.killCounterApi and state.killCounterApi.getCount() or 0,
+                rig, humanoidState, h and tostring(h.WalkSpeed) or "-",
                 h and string.format("%.2f",h.HipHeight) or "-", speed,#connections,activeCount,detachedCount,
                 state.lowPerformanceMode and "LOW PERF" or "NORMAL",statusLabelRef and statusLabelRef.Text or "Anti-AFK")
             if diagnosticsLabel.Text~=text then diagnosticsLabel.Text=text end
@@ -13389,7 +13471,9 @@ track(UserInputService.InputBegan:Connect(function(input, processed)
         mainFrame.Visible = not mainFrame.Visible
         for _,detachable in ipairs(detachableWindows) do
             if detachable.window and detachable.window.Parent and detachable.isDetached() then
-                detachable.window.Visible=not state.photoModeEnabled and (detachable.isPinned() or mainFrame.Visible)
+                if detachable.window~=categoryMeta.Diagnostics.dock then
+                    detachable.window.Visible=not state.photoModeEnabled and (detachable.isPinned() or mainFrame.Visible)
+                end
             end
         end
     end
@@ -13431,7 +13515,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.31] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.33] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.31] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.33] Loaded, but this executor does not expose queue_on_teleport")
 end
