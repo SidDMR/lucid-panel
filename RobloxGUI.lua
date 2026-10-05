@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.33
+--// Lucid Panel v6.0.35
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -388,7 +388,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.33",
+    Text                   = "LUCID PANEL  •  v6.0.35",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -11248,28 +11248,67 @@ do
 
         local doorDetectorCache={}
         local doorRetryAt={}
-        local function clickTowerOpen(targetX,targetY,label,silent)
+        local level1DoorPosition=Vector3.new(-173.103455,80.5182037,-126.127045)
+        local doorStreamBusy=false
+        local doorStreamNextAt=0
+        local doorStreamError=nil
+        local function findTowerDetector(targetX,targetY,targetZ)
+            local selected,score
+            for _,item in ipairs(workspace:GetDescendants()) do
+                if item.Name=="Open" and item:IsA("BasePart") then
+                    local dx=math.abs(item.Position.X-targetX)
+                    local dy=math.abs(item.Position.Y-targetY)
+                    local dz=targetZ and math.abs(item.Position.Z-targetZ) or 0
+                    if dx<2 and dy<2 and dz<2 and (not score or dx+dy+dz<score) then
+                        selected=item; score=dx+dy+dz
+                    end
+                end
+            end
+            return selected and selected:FindFirstChildWhichIsA("ClickDetector",true),selected
+        end
+        local function clickTowerOpen(targetX,targetY,label,silent,targetZ,isCurrent)
+            if not screenGui.Parent or (isCurrent and not isCurrent()) then return end
             local detector=doorDetectorCache[label]
             if not detector or not detector:IsDescendantOf(workspace) then
                 doorDetectorCache[label]=nil
                 if silent and os.clock()<(doorRetryAt[label] or 0) then return end
-                local selected,score
-                for _,item in ipairs(workspace:GetDescendants()) do
-                    if item.Name=="Open" and item:IsA("BasePart") then
-                        local dx=math.abs(item.Position.X-targetX)
-                        local dy=math.abs(item.Position.Y-targetY)
-                        if dx<2 and dy<2 and (not score or dx+dy<score) then
-                            selected=item; score=dx+dy
+                local selected
+                detector,selected=findTowerDetector(targetX,targetY,targetZ)
+                if not detector and targetZ and workspace.StreamingEnabled and not doorStreamError
+                    and not doorStreamBusy and os.clock()>=doorStreamNextAt then
+                    doorStreamBusy=true; doorStreamNextAt=os.clock()+15
+                    if not silent then
+                        notifyLucid(label,"Requesting the Level 1 button area...",Color3.fromRGB(160,190,245))
+                    end
+                    -- Bounded prefetch only: no teleport, replication-focus
+                    -- changes, copies, or promise that this region stays loaded.
+                    local ok,err=pcall(function()
+                        LocalPlayer:RequestStreamAroundAsync(Vector3.new(targetX,targetY,targetZ),3)
+                    end)
+                    doorStreamBusy=false
+                    if not ok then
+                        -- Do not repeatedly retry a rejected streaming API call.
+                        doorStreamError=tostring(err)
+                        warn("[Lucid Panel] Level 1 streaming request failed: "..doorStreamError)
+                        if screenGui.Parent then
+                            notifyLucid("Level 1 streaming unavailable",doorStreamError,Color3.fromRGB(220,125,95))
                         end
                     end
+                    if not screenGui.Parent or (isCurrent and not isCurrent()) then return end
+                    detector,selected=findTowerDetector(targetX,targetY,targetZ)
                 end
-                detector=selected and selected:FindFirstChildWhichIsA("ClickDetector",true)
                 if detector then
                     doorDetectorCache[label]=detector
                 else
                     doorRetryAt[label]=os.clock()+5
                     if not silent then
-                        notifyLucid(label,selected and "No ClickDetector found" or "Open part is not loaded/found",Color3.fromRGB(220,125,95))
+                        local message=selected and "No ClickDetector found" or "Open part is not loaded/found"
+                        if targetZ and workspace.StreamingEnabled then
+                            message=doorStreamError and "Streaming request unavailable; button still not loaded"
+                                or (doorStreamBusy and "Area request in progress; try again shortly"
+                                    or "Button still not loaded; streaming is temporary and not guaranteed")
+                        end
+                        notifyLucid(label,message,Color3.fromRGB(220,125,95))
                     end
                     return
                 end
@@ -11307,7 +11346,7 @@ do
             clickTowerOpen(-180.928,454.5,"Level 3 Door")
         end)
         actionButton("Level 1 Open",function()
-            clickTowerOpen(-173.103,80.518,"Level 1 Open")
+            clickTowerOpen(level1DoorPosition.X,level1DoorPosition.Y,"Level 1 Open",false,level1DoorPosition.Z)
         end)
         state.towerDoorAutoInterval=math.clamp(tonumber(state.towerDoorAutoInterval) or 2.5,0.5,5)
         local intervalRow=rowFrame(nextOrder(),30)
@@ -11326,13 +11365,14 @@ do
             state.refreshTowerDoorIntervalBox()
         end)
         local doorLoopTokens={level3=0,level1=0}
-        local function setAutoDoor(key,on,x,y,label)
+        local function setAutoDoor(key,on,x,y,label,z)
             doorLoopTokens[key]=doorLoopTokens[key]+1
             local token=doorLoopTokens[key]
             if not on then return end
+            local function isCurrent() return doorLoopTokens[key]==token end
             task.spawn(function()
                 while screenGui.Parent and doorLoopTokens[key]==token do
-                    clickTowerOpen(x,y,label,true)
+                    clickTowerOpen(x,y,label,true,z,isCurrent)
                     task.wait(state.towerDoorAutoInterval)
                 end
             end)
@@ -11341,7 +11381,7 @@ do
             setAutoDoor("level3",on,-180.928,454.5,"Level 3 Door")
         end)
         createToggle("Auto Level 1 Open",nextOrder(),false,function(on)
-            setAutoDoor("level1",on,-173.103,80.518,"Level 1 Open")
+            setAutoDoor("level1",on,level1DoorPosition.X,level1DoorPosition.Y,"Level 1 Open",level1DoorPosition.Z)
         end)
         addCleanup(function()
             doorLoopTokens.level3=doorLoopTokens.level3+1
@@ -11901,6 +11941,65 @@ end
 -- Live diagnostics and a copyable report.
 useCategory("Diagnostics")
 do
+    -- Client time() starts with the local game instance, not with this script.
+    -- Anchor that elapsed value to a monotonic clock; never use server uptime.
+    local session=sharedEnvironment.__LUCID_SERVER_TIME
+    if type(session)~="table" or session.dataModel~=game or session.jobId~=game.JobId
+        or session.placeId~=game.PlaceId or session.userId~=LocalPlayer.UserId
+        or type(session.clockStart)~="number" or type(session.elapsedAtStart)~="number" then
+        local ok,elapsed=pcall(time)
+        local valid=ok and type(elapsed)=="number" and elapsed==elapsed and elapsed>=0 and elapsed<math.huge
+        session={dataModel=game,jobId=game.JobId,placeId=game.PlaceId,userId=LocalPlayer.UserId,
+            clockStart=os.clock(),elapsedAtStart=valid and elapsed or 0,fromClient=valid}
+        sharedEnvironment.__LUCID_SERVER_TIME=session
+    end
+    -- One shared, manual chat sender keeps both timer and kill announcements
+    -- single-flight and subject to the same five-second cooldown.
+    local sending=false
+    local lastSend=-math.huge
+    state.sendPublicChat=function(text)
+        if sending or os.clock()-lastSend<5 then return false,"Wait a few seconds before sharing again" end
+        local channels=TextChatService:FindFirstChild("TextChannels")
+        local channel=channels and channels:FindFirstChild("RBXGeneral")
+        if not channel or not channel:IsA("TextChannel") then return false,"Public chat is unavailable" end
+        sending=true; lastSend=os.clock()
+        local ok,result=pcall(function() return channel:SendAsync(text) end)
+        sending=false
+        if not ok then return false,"Chat could not send the message: "..tostring(result) end
+        if not result or result.Status~=Enum.TextChatMessageStatus.Success then
+            return false,"Chat did not confirm delivery; check your chat permissions"
+        end
+        return true,text
+    end
+    local function duration()
+        local seconds=math.floor(session.elapsedAtStart+math.max(0,os.clock()-session.clockStart))
+        return string.format("%02d:%02d:%02d",math.floor(seconds/3600),math.floor(seconds/60)%60,seconds%60)
+    end
+    state.serverTimeApi={
+        show=function()
+            local message="Time in this server: "..duration()
+                ..(session.fromClient and "" or " (since Lucid loaded)")
+            notifyLucid("Server time",message,Color3.fromRGB(160,190,245))
+            return true,message
+        end,
+        announce=function(language)
+            local text
+            if language=="pt" then
+                text=(session.fromClient and "Estou neste servidor há " or "Estou contando meu tempo neste servidor há ")
+                    ..duration()..(session.fromClient and "" or " (desde que o Lucid carregou)")
+            else
+                text=(session.fromClient and "I've been on this server for " or "I've been tracking time on this server for ")
+                    ..duration()..(session.fromClient and "" or " (since Lucid loaded)")
+            end
+            local ok,message=state.sendPublicChat(text)
+            notifyLucid(ok and "Server time shared" or "Server time not sent",message,
+                ok and Color3.fromRGB(75,210,120) or Color3.fromRGB(230,90,105))
+            return ok,message
+        end,
+    }
+    addCleanup(function() state.serverTimeApi=nil; state.sendPublicChat=nil end)
+end
+do
     sectionLabel("Session Eliminations",nextOrder())
     local row=rowFrame(nextOrder(),40)
     local label=create("TextLabel",{Size=UDim2.fromScale(1,1),BackgroundTransparency=1,
@@ -11919,26 +12018,13 @@ do
             remote and "Tracking server confirmations" or "Waiting for KillConfirmed")
         if state.refreshDockKillCount then state.refreshDockKillCount(session.count,remote~=nil) end
     end
-    local sending=false
-    local lastSend=-math.huge
     state.killCounterApi={
         getCount=function() return session.count end,
         announce=function(language)
             if not remote and session.count==0 then return false,"No server kill-confirmation feed is available" end
-            if sending or os.clock()-lastSend<5 then return false,"Wait a few seconds before sharing again" end
-            local channels=TextChatService:FindFirstChild("TextChannels")
-            local channel=channels and channels:FindFirstChild("RBXGeneral")
-            if not channel or not channel:IsA("TextChannel") then return false,"Public chat is unavailable" end
             local text=(language=="pt" and "numero de kills pegas nesse server "
                 or "kill count in this server ")..tostring(session.count)
-            sending=true; lastSend=os.clock()
-            local ok,result=pcall(function() return channel:SendAsync(text) end)
-            sending=false
-            if not ok then return false,"Chat could not send the kill count: "..tostring(result) end
-            if not result or result.Status~=Enum.TextChatMessageStatus.Success then
-                return false,"Chat did not confirm delivery; check your chat permissions"
-            end
-            return true,text
+            return state.sendPublicChat(text)
         end,
     }
     state.announceKillCount=function(language)
@@ -12088,7 +12174,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.33 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.35 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -12447,6 +12533,7 @@ state.initializeCommandConsole=function()
         ra="reanim",fe="fogend",dx="dex",udx="undex",res="restore",ld="lgdir",gl="getlink",gml="getmobilelink",gls="getlinks",
         cf="camerafollow",ucf="unfixcamera",tgt="target",ut="untarget",rd="respawndelay",svp="saveprofile",ggi="getgameid",
         hs="hitsize",kc="killcount",kcc="killcount",diag="diagnostics",
+        st="servertime",
     }
     local function buildCommandCatalog()
         local catalog={
@@ -12490,6 +12577,9 @@ state.initializeCommandConsole=function()
             {command="!killcount",description="Share this session's confirmed kill count in public chat (!kc / !kcc)"},
             {command="!kcc",description="Send: kill count in this server <count>"},
             {command="!kcpt",description="Send: numero de kills pegas nesse server <count>"},
+            {command="!servertime",description="Show your time in this server as HH:MM:SS (!st); no chat announcement"},
+            {command="!stc",description="Send in English: I've been on this server for HH:MM:SS"},
+            {command="!stpt",description="Send in Portuguese: Estou neste servidor há HH:MM:SS"},
             {command="!diagnostics",description="Toggle the independent Diagnostics window (!diag)"},
             {command="!hitbox <player|all> [size]",description="Add a target or select all; enable configured parts (1-1000 studs)"},
             {command="!hitsize",description="Open all Hit Size options: targets, exclusions, size and parts (!hs)"},
@@ -12717,6 +12807,11 @@ state.initializeCommandConsole=function()
                     ok and Color3.fromRGB(75,210,120) or Color3.fromRGB(230,90,105))
             end
             return
+        elseif command=="servertime" then
+            local ok,message=state.serverTimeApi.show(); finish(ok,message); return
+        elseif command=="stc" or command=="stpt" then
+            local ok,message=state.serverTimeApi.announce(command=="stpt" and "pt" or "en")
+            finish(ok,message); return
         elseif command=="killcount" or command=="kcpt" then
             local ok,message=state.announceKillCount(command=="kcpt" and "pt" or "en")
             finish(ok,message); return
@@ -13515,7 +13610,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.33] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.35] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.33] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.35] Loaded, but this executor does not expose queue_on_teleport")
 end
