@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.37
+--// Lucid Panel v6.0.38
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -389,7 +389,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.37",
+    Text                   = "LUCID PANEL  •  v6.0.38",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -6874,6 +6874,18 @@ do
     addCleanup(restore)
 end
 if game.PlaceId==136070094363960 then
+    -- Reuse the event protection's exact normal / fog-zero look even when
+    -- no event is running. Existing profiles without this option keep the
+    -- new default; explicitly saved on/off choices remain authoritative.
+    state.wormAlwaysEventLightingEnabled=true
+    createToggle("Lights Out Look (Always)",nextOrder(),true,function(on)
+        state.wormAlwaysEventLightingEnabled=on
+        if state.refreshWormEventProtection then state.refreshWormEventProtection() end
+        if not on and not state.wormEventLightingActive and state.refreshFullbright then state.refreshFullbright() end
+    end)
+    create("TextLabel",{Size=UDim2.new(1,0,0,36),BackgroundTransparency=1,TextWrapped=true,
+        Text="Default for this game: the same normal lighting / fog-zero look used during Lights Out, even between events.",
+        TextColor3=Color3.fromRGB(160,150,185),TextSize=10,Font=Enum.Font.Gotham,LayoutOrder=nextOrder(),Parent=currentSection})
     state.wormCleanLightingEnabled=false
     createToggle("Clean Lighting (Always)",nextOrder(),false,function(on)
         state.wormCleanLightingEnabled=on
@@ -10188,8 +10200,9 @@ if game.PlaceId==136070094363960 then
             local quake=(state.wormEarthquakeProtection or state.noCameraShake)
                 and (eventName=="Earthquake" and (quakeTable and "amplitude zero" or "camera filter") or "ready") or "off"
             local text="Event: "..tostring(eventName or "None").." | Lighting: "
-                ..(state.wormCleanLightingEnabled and "clean / always on" or (state.wormEventLightingActive
-                    and "normal / fog zero" or (state.wormEventLightingEnabled and "ready" or "off")))
+                ..(state.wormCleanLightingEnabled and "clean / always on" or (state.wormAlwaysEventLightingEnabled
+                    and "Lights Out look / always on" or (state.wormEventLightingActive
+                    and "normal / fog zero" or (state.wormEventLightingEnabled and "ready" or "off"))))
                 .."\nBounce: "..bounce.." | Earthquake: "..quake
                 .."\nParty: "..(state.wormPartyProtectionActive and "zoom / roll / tint blocked"
                     or (state.wormPartyProtection and "ready" or "off"))
@@ -10357,7 +10370,8 @@ if game.PlaceId==136070094363960 then
         end
         local function updateLighting()
             local eventUsesLighting=eventName=="LightsOut" or eventName=="Mist" or eventName=="Earthquake"
-            local wanted=(state.wormCleanLightingEnabled or (state.wormEventLightingEnabled and eventUsesLighting)) and not disposed
+            local wanted=(state.wormAlwaysEventLightingEnabled or state.wormCleanLightingEnabled
+                or (state.wormEventLightingEnabled and eventUsesLighting)) and not disposed
             if wanted and state.wormEventLightingActive and cleanLightingMode~=(state.wormCleanLightingEnabled==true) then
                 stopLighting(false)
             end
@@ -10532,7 +10546,7 @@ if game.PlaceId==136070094363960 then
             state.wormEarthquakeProtection=on; reconcile()
         end)
         create("TextLabel",{Size=UDim2.new(1,0,0,44),BackgroundTransparency=1,TextWrapped=true,
-            Text="Party: steady zoom / no roll or tint. Lighting: Lights Out / Mist / quake.\nKill counter: Settings > Diagnostics.",
+            Text="Party: steady zoom / no roll or tint. Lighting: Lights Out / Mist / quake.\nAlways-on look: Lighting > Lights Out Look (Always).",
             TextColor3=Color3.fromRGB(160,150,185),TextSize=10,Font=Enum.Font.Gotham,LayoutOrder=nextOrder(),Parent=currentSection})
         track(workspace:GetAttributeChangedSignal("ActiveEvent"):Connect(function()
             eventName=workspace:GetAttribute("ActiveEvent")
@@ -10552,6 +10566,7 @@ if game.PlaceId==136070094363960 then
         bindRemote(); reconcile()
         addCleanup(function()
             disposed=true; state.wormEventLightingEnabled=false; state.wormCleanLightingEnabled=false
+            state.wormAlwaysEventLightingEnabled=false
             state.wormBounceProtection=false; state.wormEarthquakeProtection=false
             if remoteConnection then remoteConnection:Disconnect() end
             stopLighting(eventName~= "LightsOut" and eventName~="Mist" and eventName~="Earthquake")
@@ -12553,7 +12568,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.37 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.38 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -13989,7 +14004,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.37] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.38] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.37] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.38] Loaded, but this executor does not expose queue_on_teleport")
 end
