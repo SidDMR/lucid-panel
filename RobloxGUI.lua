@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.38
+--// Lucid Panel v6.0.39
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -389,7 +389,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.38",
+    Text                   = "LUCID PANEL  •  v6.0.39",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -11642,67 +11642,28 @@ do
 
         local doorDetectorCache={}
         local doorRetryAt={}
-        local level1DoorPosition=Vector3.new(-173.103455,80.5182037,-126.127045)
-        local doorStreamBusy=false
-        local doorStreamNextAt=0
-        local doorStreamError=nil
-        local function findTowerDetector(targetX,targetY,targetZ)
-            local selected,score
-            for _,item in ipairs(workspace:GetDescendants()) do
-                if item.Name=="Open" and item:IsA("BasePart") then
-                    local dx=math.abs(item.Position.X-targetX)
-                    local dy=math.abs(item.Position.Y-targetY)
-                    local dz=targetZ and math.abs(item.Position.Z-targetZ) or 0
-                    if dx<2 and dy<2 and dz<2 and (not score or dx+dy+dz<score) then
-                        selected=item; score=dx+dy+dz
-                    end
-                end
-            end
-            return selected and selected:FindFirstChildWhichIsA("ClickDetector",true),selected
-        end
-        local function clickTowerOpen(targetX,targetY,label,silent,targetZ,isCurrent)
-            if not screenGui.Parent or (isCurrent and not isCurrent()) then return end
+        local function clickTowerOpen(targetX,targetY,label,silent)
             local detector=doorDetectorCache[label]
             if not detector or not detector:IsDescendantOf(workspace) then
                 doorDetectorCache[label]=nil
                 if silent and os.clock()<(doorRetryAt[label] or 0) then return end
-                local selected
-                detector,selected=findTowerDetector(targetX,targetY,targetZ)
-                if not detector and targetZ and workspace.StreamingEnabled and not doorStreamError
-                    and not doorStreamBusy and os.clock()>=doorStreamNextAt then
-                    doorStreamBusy=true; doorStreamNextAt=os.clock()+15
-                    if not silent then
-                        notifyLucid(label,"Requesting the Level 1 button area...",Color3.fromRGB(160,190,245))
-                    end
-                    -- Bounded prefetch only: no teleport, replication-focus
-                    -- changes, copies, or promise that this region stays loaded.
-                    local ok,err=pcall(function()
-                        LocalPlayer:RequestStreamAroundAsync(Vector3.new(targetX,targetY,targetZ),3)
-                    end)
-                    doorStreamBusy=false
-                    if not ok then
-                        -- Do not repeatedly retry a rejected streaming API call.
-                        doorStreamError=tostring(err)
-                        warn("[Lucid Panel] Level 1 streaming request failed: "..doorStreamError)
-                        if screenGui.Parent then
-                            notifyLucid("Level 1 streaming unavailable",doorStreamError,Color3.fromRGB(220,125,95))
+                local selected,score
+                for _,item in ipairs(workspace:GetDescendants()) do
+                    if item.Name=="Open" and item:IsA("BasePart") then
+                        local dx=math.abs(item.Position.X-targetX)
+                        local dy=math.abs(item.Position.Y-targetY)
+                        if dx<2 and dy<2 and (not score or dx+dy<score) then
+                            selected=item; score=dx+dy
                         end
                     end
-                    if not screenGui.Parent or (isCurrent and not isCurrent()) then return end
-                    detector,selected=findTowerDetector(targetX,targetY,targetZ)
                 end
+                detector=selected and selected:FindFirstChildWhichIsA("ClickDetector",true)
                 if detector then
                     doorDetectorCache[label]=detector
                 else
                     doorRetryAt[label]=os.clock()+5
                     if not silent then
-                        local message=selected and "No ClickDetector found" or "Open part is not loaded/found"
-                        if targetZ and workspace.StreamingEnabled then
-                            message=doorStreamError and "Streaming request unavailable; button still not loaded"
-                                or (doorStreamBusy and "Area request in progress; try again shortly"
-                                    or "Button still not loaded; streaming is temporary and not guaranteed")
-                        end
-                        notifyLucid(label,message,Color3.fromRGB(220,125,95))
+                        notifyLucid(label,selected and "No ClickDetector found" or "Open part is not loaded/found",Color3.fromRGB(220,125,95))
                     end
                     return
                 end
@@ -11740,7 +11701,7 @@ do
             clickTowerOpen(-180.928,454.5,"Level 3 Door")
         end)
         actionButton("Level 1 Open",function()
-            clickTowerOpen(level1DoorPosition.X,level1DoorPosition.Y,"Level 1 Open",false,level1DoorPosition.Z)
+            clickTowerOpen(-173.103,80.518,"Level 1 Open")
         end)
         state.towerDoorAutoInterval=math.clamp(tonumber(state.towerDoorAutoInterval) or 2.5,0.5,5)
         local intervalRow=rowFrame(nextOrder(),30)
@@ -11759,14 +11720,13 @@ do
             state.refreshTowerDoorIntervalBox()
         end)
         local doorLoopTokens={level3=0,level1=0}
-        local function setAutoDoor(key,on,x,y,label,z)
+        local function setAutoDoor(key,on,x,y,label)
             doorLoopTokens[key]=doorLoopTokens[key]+1
             local token=doorLoopTokens[key]
             if not on then return end
-            local function isCurrent() return doorLoopTokens[key]==token end
             task.spawn(function()
                 while screenGui.Parent and doorLoopTokens[key]==token do
-                    clickTowerOpen(x,y,label,true,z,isCurrent)
+                    clickTowerOpen(x,y,label,true)
                     task.wait(state.towerDoorAutoInterval)
                 end
             end)
@@ -11775,7 +11735,7 @@ do
             setAutoDoor("level3",on,-180.928,454.5,"Level 3 Door")
         end)
         createToggle("Auto Level 1 Open",nextOrder(),false,function(on)
-            setAutoDoor("level1",on,level1DoorPosition.X,level1DoorPosition.Y,"Level 1 Open",level1DoorPosition.Z)
+            setAutoDoor("level1",on,-173.103,80.518,"Level 1 Open")
         end)
         addCleanup(function()
             doorLoopTokens.level3=doorLoopTokens.level3+1
@@ -12568,7 +12528,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.38 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.39 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -14004,7 +13964,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.38] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.39] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.38] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.39] Loaded, but this executor does not expose queue_on_teleport")
 end
