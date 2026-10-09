@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.40
+--// Lucid Panel v6.0.39
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -62,9 +62,8 @@ local create
 local track
 
 local function registerDetachableWindow(window, isPinned, isDetached, setPinned, setDetached)
-    local entry={window=window, isPinned=isPinned, isDetached=isDetached,setPinned=setPinned,setDetached=setDetached}
-    table.insert(detachableWindows,entry)
-    if instanceToken.onWindowRegistered then instanceToken.onWindowRegistered(entry) end
+    table.insert(detachableWindows, {window=window, isPinned=isPinned, isDetached=isDetached,
+        setPinned=setPinned,setDetached=setDetached})
 end
 
 local function makeResizableWindow(window, minimumWidth, minimumHeight)
@@ -227,147 +226,6 @@ local state = {
     targetPlayerName = nil,
 }
 
--- Persistent settings are deliberately separate from transient timers, tool
--- state, player targets and other runtime data. Old profiles use this same
--- allowlist when migrated; unknown fields never overwrite live runtime state.
-do
-    local schema={}
-    local function numbers(minimum,maximum,names)
-        for name in names:gmatch("%S+") do schema[name]={kind="number",minimum=minimum,maximum=maximum} end
-    end
-    local function strings(names)
-        for name in names:gmatch("%S+") do schema[name]={kind="string"} end
-    end
-    numbers(0,100000,"walkspeedValue jumpHeightValue maxZoomValue flySpeed freecamSpeed playerLightRange playerLightPower antiFlingLinear antiFlingAngular")
-    numbers(-100000,100000,"gotoOffsetX gotoOffsetY gotoOffsetZ")
-    numbers(0,100000,"gotoForwardBackStuds fogEndValue")
-    numbers(0,24,"nightClockTime")
-    numbers(1,120,"fovValue")
-    numbers(1,1000,"hitboxSizeValue")
-    numbers(30,1000,"fpsCapValue")
-    numbers(0,1,"espTransparency")
-    numbers(25,100000,"espMaxDistance")
-    numbers(0,15,"emoteSpeed customEmoteSpeed")
-    numbers(0,60,"spawnpointDelay emoteSyncDelay emoteSyncTolerance")
-    numbers(1,10000,"emoteLoopCount emoteResultLimit emoteAutoInterval")
-    numbers(0.001,60,"autoclickInterval")
-    numbers(0.5,5,"towerDoorAutoInterval")
-    numbers(0.001,1,"wormBatCycleInterval")
-    strings("accentTheme comfortPreset antiPushStrength cameraShakeStrength autoclickMode espHighlightStyle loopGotoDirection notificationLevel emoteSyncMode emoteLoopMode emoteAutoMode emoteCategoryFilter emoteSortMode emoteHotkeyName")
-    for _,name in ipairs({"specialHighlightColor","superSpecialHighlightColor","exploiterHighlightColor","highPriorityHighlightColor"}) do
-        schema[name]={kind="color"}
-    end
-    local function validate(name,value)
-        local rule=schema[name]
-        if not rule then return nil end
-        if rule.kind=="number" then
-            if type(value)~="number" or value~=value or math.abs(value)==math.huge then return nil end
-            return math.clamp(value,rule.minimum,rule.maximum)
-        elseif rule.kind=="color" then
-            return type(value)=="string" and value:match("^#%x%x%x%x%x%x$") and value:upper() or nil
-        end
-        if type(value)~="string" or #value>128 or value:find("[%c]") then return nil end
-        return value
-    end
-    state.profileSchema={
-        finite=function(value) return type(value)=="number" and value==value and math.abs(value)~=math.huge end,
-        validate=validate,
-        capture=function()
-            local result={}
-            for name in pairs(schema) do
-                local value=validate(name,state[name])
-                if value~=nil then result[name]=value end
-            end
-            return result
-        end,
-        apply=function(values,version)
-            local changed,invalid=0,0
-            for key,value in pairs(type(values)=="table" and values or {}) do
-                local name=(version<6 and key=="exploiterHighlightColor") and "highPriorityHighlightColor" or key
-                if schema[name] and not (name=="accentTheme" and version<5) then
-                    local validated=validate(name,value)
-                    if validated==nil then invalid+=1
-                    elseif state[name]~=nil and state[name]~=validated then state[name]=validated; changed+=1 end
-                end
-            end
-            return changed,invalid
-        end,
-    }
-end
-
--- Opt-in timings. Recorded durations are elapsed wall time, not CPU time;
--- client frame spikes cannot be attributed to Lucid from FPS alone.
-do
-    local enabled=false
-    local metrics={}
-    local frame={count=0,total=0,worst=0,spikes=0}
-    local workers={}
-    local metricCount=0
-    local function record(label,start,items)
-        if not enabled or not start then return end
-        local metric=metrics[label]
-        if not metric then
-            if metricCount>=128 then return end
-            metric={calls=0,total=0,max=0,items=0}; metrics[label]=metric; metricCount+=1
-        end
-        local elapsed=math.max(0,os.clock()-start)
-        metric.calls+=1; metric.total+=elapsed; metric.max=math.max(metric.max,elapsed)
-        metric.items+=items or 0
-    end
-    state.perfApi={
-        begin=function() return enabled and os.clock() or nil end,
-        finish=record,
-        enabled=function() return enabled end,
-        setEnabled=function(on) enabled=on==true end,
-        reset=function() table.clear(metrics); metricCount=0; frame={count=0,total=0,worst=0,spikes=0} end,
-        worker=function(label,isActive) workers[label]=isActive end,
-        sampleFrame=function(dt)
-            if not enabled then return end
-            frame.count+=1; frame.total+=dt; frame.worst=math.max(frame.worst,dt)
-            if dt>0.05 then frame.spikes+=1 end
-        end,
-        report=function()
-            local lines={enabled and "Timing monitor: ON" or "Timing monitor: OFF",
-                string.format("Client frames: avg %.1f ms | worst %.1f ms | >50ms: %d",
-                    frame.count>0 and frame.total/frame.count*1000 or 0,frame.worst*1000,frame.spikes),
-                "Frame spikes are not automatically attributed to Lucid."}
-            local active={}
-            for label,isActive in pairs(workers) do
-                local ok,on=pcall(isActive)
-                if ok and on then table.insert(active,label) end
-            end
-            table.sort(active); table.insert(lines,"Monitored workers: "..(#active>0 and table.concat(active,", ") or "none"))
-            local sorted={}
-            for label,metric in pairs(metrics) do table.insert(sorted,{label=label,metric=metric}) end
-            table.sort(sorted,function(a,b) return a.metric.max>b.metric.max end)
-            for index=1,math.min(8,#sorted) do
-                local item=sorted[index]; local m=item.metric
-                table.insert(lines,string.format("%s: avg %.2f / max %.2f ms | %d calls | %d items",
-                    item.label,m.total/m.calls*1000,m.max*1000,m.calls,m.items))
-            end
-            table.insert(lines,"Elapsed wall time; async work and uninstrumented paths are not included.")
-            return table.concat(lines,"\n")
-        end,
-    }
-    state.scanWorkspace=function(label)
-        local started=state.perfApi.begin()
-        local objects=workspace:GetDescendants()
-        state.perfApi.finish(label or "Workspace scan",started,#objects)
-        return objects
-    end
-    state.liveConnectionCount=function()
-        local count=0
-        for _,connection in ipairs(connections) do if connection.Connected then count+=1 end end
-        return count
-    end
-    for label,key in pairs({Fly="flyEnabled",Freecam="freecamEnabled",Recovery="characterRecoveryLoopEnabled",
-        ["Loop Go To"]="loopGotoEnabled",["Bat automation"]="wormBatMacroEnabled"}) do
-        workers[label]=function() return state[key]==true end
-    end
-    workers.AutoClick=function() return state.autoclickEnabled and not state.wormBatMacroEnabled end
-    addCleanup(function() enabled=false; table.clear(workers) end)
-end
-
 function state.pushUndo(label,callback)
     if state.undoBusy or type(callback)~="function" then return end
     table.insert(state.undoStack,1,{label=tostring(label or "Change"),callback=callback})
@@ -396,7 +254,6 @@ create = function(className, props)
         inst.Parent = props.Parent
     end
     if state.themeNewInstance then pcall(state.themeNewInstance,inst) end
-    if state.controlUi then state.controlUi.tag(inst) end
     return inst
 end
 
@@ -532,7 +389,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.40",
+    Text                   = "LUCID PANEL  •  v6.0.39",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -1184,7 +1041,6 @@ searchBox:GetPropertyChangedSignal("Text"):Connect(function()
             result.MouseButton1Click:Connect(function()
                 local resultMeta=candidate.meta
                 local targetItem=candidate.target
-                if state.controlUi then state.controlUi.reveal(targetItem) end
                 state.mainNavigation.select(state.mainNavigation.categoryGroup[candidate.category] or "Home")
                 resultMeta.setOpen(true); searchBox.Text=""
                 task.defer(function()
@@ -1210,8 +1066,7 @@ end
 -- HELPERS
 -- ============================================================
 local function sectionLabel(text, order)
-    if state.controlUi then state.controlUi.section(currentSection,text) end
-    local heading=create("TextLabel", {
+    return create("TextLabel", {
         Size                   = UDim2.new(1, 0, 0, 18),
         BackgroundTransparency = 1,
         Text                   = text,
@@ -1222,8 +1077,6 @@ local function sectionLabel(text, order)
         LayoutOrder            = order,
         Parent                 = currentSection,
     })
-    if state.controlUi then state.controlUi.heading(heading,text) end
-    return heading
 end
 
 local function rowFrame(order, height)
@@ -1266,9 +1119,6 @@ local function styledBox(parent, props)
     box:SetAttribute("LucidThemeTextRole","text")
     local inputStroke=create("UIStroke", { Color=Color3.fromRGB(52,52,60),Transparency=0.25,Thickness=1,Parent=box })
     inputStroke:SetAttribute("LucidInputStroke",true)
-    box.FocusLost:Connect(function()
-        if state.profileTracker then task.defer(state.profileTracker.check) end
-    end)
     return box
 end
 
@@ -1410,7 +1260,6 @@ local registerFavorite = (function()
                 measuredWidth=game:GetService("TextService"):GetTextSize(measuredText,12,Enum.Font.GothamSemibold,Vector2.new(1000,24)).X
             end)
             if sourceControl then
-                measuredWidth=math.min(measuredWidth,math.max(0,sourceControl.Size.X.Offset-28))
                 star.Position=UDim2.new(0.5,measuredWidth/2+2,0.5,-12)
             elseif sourceRow:GetAttribute("LucidFavoriteStarRight") then
                 star.Position=UDim2.new(1,-82,0.5,-12)
@@ -1422,7 +1271,6 @@ local registerFavorite = (function()
         end
         refreshStarPosition()
         if sourceControl then track(sourceControl:GetPropertyChangedSignal("Text"):Connect(refreshStarPosition)) end
-        if sourceControl then track(sourceControl:GetPropertyChangedSignal("Size"):Connect(refreshStarPosition)) end
         local function setStar(value)
             if starred==value then return end
             starred=not starred
@@ -1462,163 +1310,6 @@ local registerFavorite = (function()
 end)()
 
 local toggleRegistry = {}
--- One shared help/context popup and an optional Basic view. Filtering is UI
--- only: advanced features keep running, and active advanced sections remain
--- visible so the user can always disable them. Full view is the default.
-do
-    local basic=false
-    local sections,records={},{}
-    local writing=false
-    local help={
-        ["Lights Out Look (Always)"]="Keeps the corrected Normal Event Lighting appearance outside events. This is the Lights Out fix, not the event's darkness. Clean Lighting takes priority when enabled.",
-        ["Normal Event Lighting"]="Restores normal brightness and removes fog/haze during Lights Out, Mist and Earthquake. Lights Out Look (Always) applies the same fix between events.",
-        ["Clean Lighting (Always)"]="Stronger than the event fix: also removes bloom, blur, depth of field and sun rays, and zeros atmosphere offset/exposure. Overrides the always-on event look.",
-        ["Fullbright"]="Raises visibility based on the original lighting. Event lighting owns brightness/ambient while its fix is active; Clean Lighting also owns exposure.",
-        ["Freeze Me"]="Anchors your character. Other movement protections may pause while frozen. Turn it off before testing movement behavior.",
-        ["Mobile Freeze / Anti Push"]="Rejects external movement while keeping your own movement. Pauses while seated, during Freeze Me, or while B is held.",
-        ["Loop Go To (uses player above)"]="Continuously follows the selected player in the chosen direction. Head Sit temporarily disables Freeze Me; stopping restores the prior freeze behavior.",
-        ["Local Headless"]="Hides only your own character's head on this client. Other players' heads and the server-side appearance are not changed.",
-        ["Low Performance Mode"]="Slows non-critical UI refreshes. It does not lower physics accuracy or secretly disable features.",
-        ["Save Named Profile"]="Manually saves settings, toggles, keybinds and window positions. The existing valid profile is backed up before replacement. Emote lists use their separate global library.",
-        ["Load Named Profile"]="Restores known settings only; runtime timers and session targets are ignored. Attack automation never starts automatically. A load summary reports changed settings and failures.",
-        ["Movement State Presets"]="Animation replacements for idle, walk, run, jump, fall, climb and swim. Save States captures those replacements; these are different from named emote lists.",
-        ["Named Emote Lists"]="Named collections such as Chill or Party. Use ... on an emote to assign it to one or more lists; selecting a list shows its emotes. Lists save globally, independently of named profiles.",
-        ["Auto Level 1 Open"]="Clicks the original door button only when it is already loaded. Does not request streaming, move you, or clone the button. Uses the shared 0.5–5 second interval.",
-        ["Auto Open Level 3 Door"]="Repeats the normal click on the loaded Level 3 button at your selected interval. Missing buttons are indexed without repeated full-workspace scans.",
-        ["Performance Timing Monitor"]="Optional elapsed-time measurements for instrumented Lucid work and client frame intervals. A client frame spike does not prove Lucid caused it; asynchronous work is not fully measured.",
-        ["Basic View"]="Hides selected advanced sections without removing functions. Active advanced sections stay visible. Search reveals hidden results by returning to full view.",
-        ["Counter Bouncy Floors"]="Only operates during Bouncy Floors. Avoids intentionally flying, jumping, sitting or using a platform; detection is client-side and may not override server behavior.",
-        ["Character Recovery Loop"]="Repeatedly attempts local character recovery. Server-controlled ragdoll effects may remain authoritative. Check diagnostics if recovery is being reapplied by the game.",
-    }
-    local advanced={}
-    for _,name in ipairs({"Player Limb Extender","Movement+","Photo Isolation","Clean Photo Mode","Explorer",
-        "Kill Part Inspector","Advanced Sync","Pose Hold / Timeline","Automation","Velocity Test","Bat Automation","Backup / Transfer"}) do advanced[name]=true end
-    local popup=create("Frame",{Name="LucidControlContext",Size=UDim2.fromOffset(300,228),Visible=false,
-        BackgroundColor3=Color3.fromRGB(24,22,34),BorderSizePixel=0,ZIndex=185,Parent=screenGui})
-    create("UICorner",{CornerRadius=UDim.new(0,8),Parent=popup})
-    create("UIStroke",{Color=Color3.fromRGB(105,85,145),Parent=popup})
-    local title=create("TextLabel",{Size=UDim2.new(1,-44,0,28),Position=UDim2.fromOffset(10,3),
-        BackgroundTransparency=1,Text="",TextSize=12,Font=Enum.Font.GothamSemibold,
-        TextColor3=Color3.fromRGB(230,220,245),TextTruncate=Enum.TextTruncate.AtEnd,
-        TextXAlignment=Enum.TextXAlignment.Left,ZIndex=186,Parent=popup})
-    local body=create("TextLabel",{Size=UDim2.new(1,-20,0,148),Position=UDim2.fromOffset(10,34),
-        BackgroundTransparency=1,Text="",TextWrapped=true,TextSize=11,Font=Enum.Font.Gotham,
-        TextColor3=Color3.fromRGB(200,195,215),TextXAlignment=Enum.TextXAlignment.Left,
-        TextYAlignment=Enum.TextYAlignment.Top,ZIndex=186,Parent=popup})
-    local function close() popup.Visible=false end
-    local closeButton=create("TextButton",{Size=UDim2.fromOffset(26,24),Position=UDim2.new(1,-31,0,4),
-        BackgroundTransparency=1,Text="X",TextColor3=Color3.fromRGB(225,210,235),TextSize=12,
-        Font=Enum.Font.GothamBold,ZIndex=186,Parent=popup})
-    closeButton.MouseButton1Click:Connect(close)
-    local favorite=create("TextButton",{Size=UDim2.new(1,-20,0,26),Position=UDim2.fromOffset(10,190),
-        BackgroundColor3=Color3.fromRGB(60,50,80),BorderSizePixel=0,Text="",
-        TextColor3=Color3.fromRGB(230,220,245),TextSize=11,Font=Enum.Font.Gotham,ZIndex=186,Parent=popup})
-    create("UICorner",{CornerRadius=UDim.new(0,5),Parent=favorite})
-    local selected
-    local function status(label)
-        if label=="Mobile Freeze / Anti Push" and state.freezeEnabled then return "Paused by Freeze Me" end
-        if label=="Loop Go To (uses player above)" and state.loopGotoEnabled and not state.targetPlayerName then return "Waiting for a target" end
-        if label=="Lights Out Look (Always)" and state.wormCleanLightingEnabled then return "Overridden by Clean Lighting" end
-        if label=="Fullbright" and state.wormEventLightingActive then return "Brightness / ambient owned by event lighting" end
-        if activeFeatures[label]~=nil then return activeFeatures[label] and "ON" or "OFF" end
-        return "Action / information"
-    end
-    local function show(label,anchor)
-        selected=label; title.Text=label
-        body.Text="Status: "..status(label).."\n\n"..(help[label] or "Use this control to change "..label..". Settings are saved manually in named profiles; ? opens help without activating the control.")
-        favorite.Visible=favoriteRegistry[label]~=nil
-        favorite.Text=state.favoriteNames[label] and "Unpin from Favorites" or "Pin to Favorites"
-        local viewport=workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(800,600)
-        local p=anchor.AbsolutePosition
-        popup.Position=UDim2.fromOffset(math.clamp(p.X,8,math.max(8,viewport.X-308)),math.clamp(p.Y+28,8,math.max(8,viewport.Y-236)))
-        popup.Visible=true
-    end
-    favorite.MouseButton1Click:Connect(function()
-        if selected and favoriteRegistry[selected] then favoriteRegistry[selected](not state.favoriteNames[selected]) end
-        if state.profileTracker then state.profileTracker.check() end
-        close()
-    end)
-    local function apply()
-        local activeSections={}
-        for _,record in ipairs(records) do
-            if record.label and activeFeatures[record.label] then activeSections[record.section]=true end
-        end
-        writing=true
-        for _,record in ipairs(records) do
-            if record.object.Parent then
-                record.filtered=basic and record.advanced and not activeSections[record.section]
-                record.object.Visible=not record.filtered and record.requested
-            end
-        end
-        writing=false
-        close()
-    end
-    state.controlUi={
-        section=function(parent,name) sections[parent]={name=name,advanced=advanced[name]==true} end,
-        tag=function(object)
-            local section=sections[object.Parent]
-            if not section or not object:IsA("GuiObject") then return end
-            local record={object=object,section=section,advanced=section.advanced,requested=object.Visible}
-            table.insert(records,record); object:SetAttribute("LucidAdvanced",record.advanced)
-            object:SetAttribute("LucidSection",section.name)
-            track(object:GetPropertyChangedSignal("Visible"):Connect(function()
-                if writing then return end
-                record.requested=object.Visible
-                if record.filtered and object.Visible then writing=true; object.Visible=false; writing=false end
-            end))
-        end,
-        register=function(row,label,source)
-            for _,record in ipairs(records) do if record.object==row then record.label=label; break end end
-            local question=create("TextButton",{Size=UDim2.fromOffset(20,20),
-                Position=source and UDim2.new(0,4,0.5,-10) or UDim2.new(1,-108,0.5,-10),
-                BackgroundTransparency=1,Text="?",TextSize=13,Font=Enum.Font.GothamBold,
-                TextColor3=Color3.fromRGB(155,145,185),ZIndex=9,Parent=row})
-            question.MouseButton1Click:Connect(function() show(label,question) end)
-            if source then source.MouseButton2Click:Connect(function() show(label,source) end) end
-            apply()
-        end,
-        heading=function(heading,label)
-            if advanced[label] then heading.Text=label.." · Advanced"; heading.TextTruncate=Enum.TextTruncate.AtEnd end
-            if help[label] then
-                create("UIPadding",{PaddingRight=UDim.new(0,24),Parent=heading})
-                local button=create("TextButton",{Size=UDim2.fromOffset(20,18),Position=UDim2.new(1,-20,0,0),
-                    BackgroundTransparency=1,Text="?",TextSize=12,Font=Enum.Font.GothamBold,
-                    TextColor3=Color3.fromRGB(175,155,205),Parent=heading})
-                button.MouseButton1Click:Connect(function() show(label,heading) end)
-            end
-        end,
-        apply=apply,
-        setBasic=function(on) basic=on==true; apply() end,
-        isBasic=function() return basic end,
-        reveal=function(object)
-            if not basic then return end
-            local current=object
-            while current and current~=screenGui do
-                if current:GetAttribute("LucidAdvanced") then
-                    local setter=toggleRegistry["Basic View"]
-                    if setter then setter(false,true) else basic=false; apply() end
-                    return
-                end
-                current=current.Parent
-            end
-        end,
-        show=show,
-    }
-    track(UserInputService.InputBegan:Connect(function(input)
-        if not popup.Visible then return end
-        if input.KeyCode==Enum.KeyCode.Escape then close(); return end
-        if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
-            local pointer=input.UserInputType==Enum.UserInputType.Touch and input.Position or UserInputService:GetMouseLocation()
-            if not screenGui.IgnoreGuiInset then
-                local inset=game:GetService("GuiService"):GetGuiInset(); pointer=Vector2.new(pointer.X-inset.X,pointer.Y-inset.Y)
-            end
-            local p,s=popup.AbsolutePosition,popup.AbsoluteSize
-            if pointer.X<p.X or pointer.Y<p.Y or pointer.X>p.X+s.X or pointer.Y>p.Y+s.Y then close() end
-        end
-    end))
-    track(mainFrame:GetPropertyChangedSignal("Visible"):Connect(close))
-    addCleanup(close)
-end
 local statusLabelRef = nil
 local function refreshFeatureStatus()
     if not statusLabelRef then return end
@@ -1641,7 +1332,7 @@ local function createToggle(labelText, order, default, callback)
     end
 
     create("TextLabel", {
-        Size                   = UDim2.new(1, -114, 1, 0),
+        Size                   = UDim2.new(1, -94, 1, 0),
         BackgroundTransparency = 1,
         Text                   = labelText,
         TextColor3             = Color3.fromRGB(210, 210, 220),
@@ -1687,14 +1378,7 @@ local function createToggle(labelText, order, default, callback)
         state.refreshNavigationCounts()
         if favoriteStatusRegistry[labelText] then favoriteStatusRegistry[labelText](enabled) end
         refreshFeatureStatus()
-        if callback then
-            local started=state.perfApi.begin(); callback(enabled)
-            state.perfApi.finish("Toggle: "..labelText,started)
-        end
-        if previous~=enabled then
-            state.controlUi.apply()
-            if state.profileTracker then state.profileTracker.check() end
-        end
+        if callback then callback(enabled) end
         if previous~=enabled and not silent then
             state.pushUndo(labelText,function() setToggle(previous,true) end)
             notifyLucid(labelText,enabled and "Enabled" or "Disabled",
@@ -1712,7 +1396,6 @@ local function createToggle(labelText, order, default, callback)
     toggleRegistry[labelText] = setToggle
     activeFeatures[labelText] = default == true
     state.refreshNavigationCounts()
-    state.controlUi.register(row,labelText)
     return function() return enabled end, fireToggle, setToggle
 end
 
@@ -3038,40 +2721,24 @@ create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = acClearBtn })
 local acBoundKey = nil         -- Enum.KeyCode or Enum.UserInputType value
 local acBoundType = nil        -- "key" or "mouse"
 local acListening = false      -- true while waiting for input
-state.autoClickBindingApi={
-    get=function() return acBoundKey end,
-    set=function(key)
-        acBoundKey=key
-        acBoundType=key and (key.EnumType==Enum.UserInputType and "mouse" or "key") or nil
-        acListening=false
-        acBindBtn.Text=key and ("[ "..key.Name.." ]") or "Click to bind"
-        acBindBtn.BackgroundColor3=Color3.fromRGB(55,50,80)
-        if state.keybindManager then state.keybindManager.refresh() end
-        if state.profileTracker then state.profileTracker.check() end
-    end,
-    isListening=function() return acListening end,
-    cancel=function()
-        acListening=false; acBindBtn.Text=acBoundKey and ("[ "..acBoundKey.Name.." ]") or "Click to bind"
-        acBindBtn.BackgroundColor3=Color3.fromRGB(55,50,80)
-    end,
-}
 
 acBindBtn.MouseButton1Click:Connect(function()
     acListening = true
-    state.shortcutCaptureUntil=math.huge
     acBindBtn.Text = "Press any key..."
     acBindBtn.BackgroundColor3 = Color3.fromRGB(90, 60, 180)
 end)
 
 acClearBtn.MouseButton1Click:Connect(function()
-    state.autoClickBindingApi.set(nil)
-    state.shortcutCaptureUntil=os.clock()+0.25
+    acBoundKey = nil
+    acBoundType = nil
+    acListening = false
+    acBindBtn.Text = "Click to bind"
+    acBindBtn.BackgroundColor3 = Color3.fromRGB(55, 50, 80)
 end)
 
 -- Listen for keybind assignment AND keybind press
 -- Binding capture accepts focused input; an active bind ignores processed input.
 track(UserInputService.InputBegan:Connect(function(input, processed)
-    if state.keybindManager and state.keybindManager.isListening() then return end
     local isKey = input.UserInputType == Enum.UserInputType.Keyboard
     local isMouse = input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.MouseButton2
@@ -3085,10 +2752,7 @@ track(UserInputService.InputBegan:Connect(function(input, processed)
     -- ── Listening mode: assign whatever was pressed ──
     if acListening then
         -- Don't let RightAlt be bound (used for GUI toggle)
-        if isKey and (input.KeyCode==Enum.KeyCode.RightAlt or input.KeyCode==Enum.KeyCode.End) then return end
-        if isKey and input.KeyCode==Enum.KeyCode.Escape then
-            state.autoClickBindingApi.cancel(); state.shortcutCaptureUntil=os.clock()+0.25; return
-        end
+        if isKey and input.KeyCode == Enum.KeyCode.RightAlt then return end
 
         if isKey then
             acBoundKey  = input.KeyCode
@@ -3106,15 +2770,12 @@ track(UserInputService.InputBegan:Connect(function(input, processed)
         end
 
         acListening = false
-        state.shortcutCaptureUntil=os.clock()+0.25
-        if state.keybindManager then state.keybindManager.refresh() end
-        if state.profileTracker then state.profileTracker.check() end
         acBindBtn.BackgroundColor3 = Color3.fromRGB(55, 50, 80)
         return
     end
 
     -- ── Trigger mode: fire toggle when bound input is pressed ──
-    if acBoundKey and os.clock()>=(state.shortcutCaptureUntil or 0) and UserInputService:GetFocusedTextBox()==nil then
+    if acBoundKey then
         if acBoundType == "key" and isKey and input.KeyCode == acBoundKey then
             acFireToggle()
         elseif acBoundType == "mouse" and isMouse and input.UserInputType == acBoundKey then
@@ -5436,26 +5097,19 @@ local function actionButton(textValue, callback, color)
         TextSize = 12, Font = Enum.Font.GothamSemibold, Parent = row,
     })
     local function resizeForCurrentText()
-        local width=math.min(220,math.max(64,52+#button.Text*6.6))
+        local width=math.min(260,math.max(64,52+#button.Text*6.6))
         pcall(function()
-            width=math.min(220,math.max(64,52+game:GetService("TextService"):GetTextSize(
+            width=math.min(260,math.max(64,52+game:GetService("TextService"):GetTextSize(
                 button.Text,button.TextSize,button.Font,Vector2.new(1000,28)).X))
         end)
-        if row.AbsoluteSize.X>0 then width=math.max(48,math.min(width,row.AbsoluteSize.X-72)) end
         button.Size=UDim2.new(0,width,0,28); button.Position=UDim2.new(0.5,-width/2,0,0)
-        button.TextTruncate=Enum.TextTruncate.AtEnd
     end
     resizeForCurrentText()
     track(button:GetPropertyChangedSignal("Text"):Connect(resizeForCurrentText))
-    track(row:GetPropertyChangedSignal("AbsoluteSize"):Connect(resizeForCurrentText))
     create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = button })
-    local function runAction()
-        local started=state.perfApi.begin(); callback(button); state.perfApi.finish("Action: "..textValue,started)
-        if state.profileTracker then state.profileTracker.check() end
-    end
+    local function runAction() callback(button) end
     button.MouseButton1Click:Connect(runAction)
     registerFavorite(textValue, runAction, row, button)
-    state.controlUi.register(row,textValue,button)
     state.commandActions=state.commandActions or {}
     state.commandActions[textValue]=runAction
     return button
@@ -5466,7 +5120,6 @@ useCategory("Player")
 do
     local hitboxHeading=sectionLabel("Player Limb Extender",nextOrder())
     state.openHitboxOptions=function()
-        state.controlUi.reveal(hitboxHeading)
         mainFrame.Visible=true
         minimized=false; content.Visible=true; mainResizeHandle.Visible=true
         mainFrame.Size=mainExpandedSize; minimizeBtn.Text="-"
@@ -7459,7 +7112,6 @@ create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6
 for _,name in ipairs({"player","custom","states","presets","legacy"}) do create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6),Parent=state.emoteModuleTabs[name]}) end
 state.emoteModuleTabs.set=function(tab)
     if state.closeEmoteContextMenu then state.closeEmoteContextMenu() end
-    if state.cancelCustomBindingCapture then state.cancelCustomBindingCapture() end
     state.emoteModuleTabs.active=tab
     state.emoteModuleTabs.main.Visible=tab=="All"; state.emoteModuleTabs.favorites.Visible=tab=="Favs"
     state.emoteModuleTabs.player.Visible=tab=="Player"
@@ -9066,8 +8718,6 @@ state.initializeEmoteStudio=function(api)
         end))
         speedBox.FocusLost:Connect(function() setSpeed(speedBox.Text,true) end)
         reset.MouseButton1Click:Connect(function() setSpeed(1,true) end)
-        state.refreshCustomEmoteSpeed=function() setSpeed(state.customEmoteSpeed,false) end
-        addCleanup(function() state.refreshCustomEmoteSpeed=nil end)
         setSpeed(state.customEmoteSpeed,false); updateCustomSpeedAccent()
     end
     initializeCustomSpeedControl()
@@ -9160,15 +8810,9 @@ state.initializeEmoteStudio=function(api)
             play.MouseButton1Click:Connect(function() playCustom(entry,1) end)
             reverse.MouseButton1Click:Connect(function() playCustom(entry,-1) end)
             favorite.MouseButton1Click:Connect(function() item.favorite=not item.favorite; saveGlobalEmoteFavorites(); refreshCustom() end)
-            bind.MouseButton1Click:Connect(function()
-                pendingCustomBind=entry; state.customBindingCaptureActive=true
-                state.shortcutCaptureUntil=math.huge; bind.Text="..."
-            end)
+            bind.MouseButton1Click:Connect(function() pendingCustomBind=entry; bind.Text="..." end)
             remove.MouseButton1Click:Connect(function()
                 if activeCustomKey==entry.key then stopEmote() end
-                if pendingCustomBind and pendingCustomBind.key==entry.key and state.cancelCustomBindingCapture then
-                    state.cancelCustomBindingCapture()
-                end
                 state.emoteCustoms[entry.key]=nil; saveGlobalEmoteFavorites(); refreshCustom()
             end)
         end
@@ -9191,28 +8835,16 @@ state.initializeEmoteStudio=function(api)
         customCodeAdd.Text="Added"; task.delay(1,function() if customCodeAdd.Parent then customCodeAdd.Text="Add Keyframes" end end)
     end)
     track(UserInputService.InputBegan:Connect(function(input,processed)
-        if state.keybindManager and state.keybindManager.isListening() then return end
         if pendingCustomBind then
             if input.UserInputType~=Enum.UserInputType.Keyboard or input.KeyCode==Enum.KeyCode.Unknown then return end
-            if input.KeyCode==Enum.KeyCode.RightAlt or input.KeyCode==Enum.KeyCode.End then return end
             pendingCustomBind.item.keybind=input.KeyCode==Enum.KeyCode.Escape and nil or input.KeyCode.Name
-            pendingCustomBind=nil; state.customBindingCaptureActive=false; state.shortcutCaptureUntil=os.clock()+0.25
-            saveGlobalEmoteFavorites(); refreshCustom()
-            if state.keybindManager then state.keybindManager.refresh() end
-            return
+            pendingCustomBind=nil; saveGlobalEmoteFavorites(); refreshCustom(); return
         end
-        if processed or UserInputService:GetFocusedTextBox() or os.clock()<(state.shortcutCaptureUntil or 0) then return end
+        if processed or UserInputService:GetFocusedTextBox() then return end
         for key,item in pairs(state.emoteCustoms) do
-            if item.keybind and input.KeyCode.Name==item.keybind then playCustom({key=key,item=item},1); break end
+            if item.keybind and input.KeyCode==Enum.KeyCode[item.keybind] then playCustom({key=key,item=item},1); break end
         end
     end))
-    state.refreshCustomEmoteLibrary=refreshCustom
-    state.cancelCustomBindingCapture=function()
-        if not pendingCustomBind then return end
-        pendingCustomBind=nil; state.customBindingCaptureActive=false
-        state.shortcutCaptureUntil=os.clock()+0.25; refreshCustom()
-    end
-    addCleanup(function() state.refreshCustomEmoteLibrary=nil; state.customBindingCaptureActive=false; state.cancelCustomBindingCapture=nil end)
     customSearch:GetPropertyChangedSignal("Text"):Connect(refreshCustom); refreshCustom()
 
     -- STATES
@@ -9490,10 +9122,7 @@ state.initializeAdvancedEmotes=function(api)
     local hotkeyRow=rowFrame(nextOrder(),28)
     local hotkeyBox=styledBox(hotkeyRow,{Size=UDim2.new(1,0,0,24),Text=state.emoteHotkeyName,PlaceholderText="Repeat-last key (example: H)"})
     hotkeyBox.FocusLost:Connect(function()
-        local key=state.keybindManager and state.keybindManager.parse(hotkeyBox.Text,false)
-        if key and key~=Enum.KeyCode.Unknown and key~=Enum.KeyCode.End and key~=Enum.KeyCode.RightAlt then state.emoteHotkeyName=key.Name end
-        hotkeyBox.Text=state.emoteHotkeyName
-        if state.keybindManager then state.keybindManager.refresh() end
+        local name=hotkeyBox.Text:match("^%s*(.-)%s*$"); if Enum.KeyCode[name] then state.emoteHotkeyName=name else hotkeyBox.Text=state.emoteHotkeyName end
     end)
     actionButton("Clear Repeat-Emote Hotkey",function(button)
         state.emoteHotkeyName="Unbound"; hotkeyBox.Text="Unbound"; button.Text="Emote hotkey cleared"
@@ -9559,7 +9188,7 @@ state.initializeAdvancedEmotes=function(api)
     end
     track(UserInputService.InputBegan:Connect(function(input,processed)
         if state.emoteHotkeyName~="Unbound" and not processed and UserInputService:GetFocusedTextBox()==nil
-            and os.clock()>=(state.shortcutCaptureUntil or 0) and input.KeyCode.Name==state.emoteHotkeyName then
+            and input.KeyCode==Enum.KeyCode[state.emoteHotkeyName] then
             local last=state.emoteLast; if last then api.play(last.id,last.name) end
         end
     end))
@@ -9679,7 +9308,7 @@ createToggle("Compact Panel",nextOrder(),false,function(on)
     if statusLabelRef then statusLabelRef.Visible=not on end
 end)
 create("TextLabel",{Size=UDim2.new(1,0,0,32),BackgroundTransparency=1,
-    Text="Manual saves with backup. Attack automation never starts from a profile; emote lists are saved separately.",
+    Text="Safety: intrusive toggles never auto-enable when a profile loads.",
     TextWrapped=true,TextColor3=Color3.fromRGB(145,180,155),TextSize=10,Font=Enum.Font.Gotham,
     LayoutOrder=nextOrder(),Parent=currentSection})
 local profileNameRow=rowFrame(nextOrder(),28)
@@ -9737,212 +9366,6 @@ local function getProfilePath(profileOverride)
     if not profileOverride then profileNameBox.Text=safeName end
     return "LucidPanel/profile_"..safeName..".json",safeName
 end
-state.initializeProfileSupport=function(api)
-    local baseline=nil
-    local baselineName=nil
-    local lastSavedAt=nil
-    local pending=false
-    local disposed=false
-    local summary="No profile loaded yet"
-    local indicator=create("TextLabel",{Size=UDim2.new(1,0,0,52),BackgroundColor3=Color3.fromRGB(28,26,38),
-        BorderSizePixel=0,Text="",TextSize=10,TextWrapped=true,TextXAlignment=Enum.TextXAlignment.Left,
-        TextColor3=Color3.fromRGB(180,175,200),Font=Enum.Font.Gotham,LayoutOrder=nextOrder(),Parent=currentSection})
-    create("UICorner",{CornerRadius=UDim.new(0,5),Parent=indicator})
-    create("UIPadding",{PaddingLeft=UDim.new(0,6),PaddingRight=UDim.new(0,6),Parent=indicator})
-    local function canonical(value)
-        local kind=type(value)
-        if kind=="table" then
-            local keys={}; for key in pairs(value) do table.insert(keys,key) end
-            table.sort(keys,function(a,b) return tostring(a)<tostring(b) end)
-            local pieces={"{"}
-            for _,key in ipairs(keys) do table.insert(pieces,canonical(key)..":"..canonical(value[key])..";") end
-            table.insert(pieces,"}"); return table.concat(pieces)
-        elseif kind=="number" then return string.format("%.17g",value)
-        elseif kind=="string" then return string.format("%q",value)
-        end
-        return tostring(value)
-    end
-    local function copy(value)
-        if type(value)~="table" then return value end
-        local result={}; for key,item in pairs(value) do result[key]=copy(item) end; return result
-    end
-    local function refresh()
-        if disposed or state.profileTracker.suspended or not state.toolkitInitializationOk then return end
-        local started=state.perfApi.begin()
-        local current=api.snapshot()
-        if not baseline then baseline=copy(current) end
-        local dirty=canonical(current)~=canonical(baseline)
-        local target=tostring(api.name())
-        local name=baselineName or "Session"
-        local saved=lastSavedAt and (" | last saved "..os.date("%H:%M:%S",lastSavedAt))
-            or (baselineName and " | saved time unavailable" or " | not saved yet")
-        local text=name..saved.."\n"..(dirty and "Unsaved changes" or "No unsaved changes")
-        if baselineName and target~=baselineName then text=text.." | save as: "..target end
-        indicator.Text=text.."\n"..summary
-        indicator.TextColor3=dirty and Color3.fromRGB(235,180,90) or Color3.fromRGB(175,205,190)
-        state.profileTracker.dirty=dirty
-        state.perfApi.finish("Profile status compare",started)
-    end
-    state.profileTracker={
-        suspended=false,dirty=false,
-        check=function()
-            if disposed or state.profileTracker.suspended or pending then return end
-            pending=true
-            task.delay(0.2,function()
-                pending=false
-                if disposed then return end
-                local ok,err=pcall(refresh)
-                if not ok then indicator.Text="Profile status unavailable: "..tostring(err):sub(1,100) end
-            end)
-        end,
-        checkpoint=function(name,savedAt,message)
-            baseline=copy(api.snapshot()); baselineName=name
-            lastSavedAt=state.profileSchema.finite(savedAt) and savedAt>=0 and savedAt<=4102444800 and savedAt or nil
-            summary=message or "Settings saved"; state.profileTracker.dirty=false
-            refresh()
-        end,
-        checkpointHighlights=function()
-            if not baseline then return end
-            local current=api.snapshot()
-            for _,key in ipairs({"yellowHighlights","pinkHighlights","blackHighlights","exploiterHighlights"}) do baseline[key]=copy(current[key]) end
-            state.profileTracker.check()
-        end,
-        report=function() return indicator.Text end,
-    }
-    state.profileStore={write=function(path,payload)
-        if not writefile then return false,"File API unavailable" end
-        local encodedOk,encoded=pcall(function() return HttpService:JSONEncode(payload) end)
-        if not encodedOk then return false,"Profile data invalid" end
-        local exists=isfile and isfile(path) or false
-        if readfile and (exists or not isfile) then
-            local readOk,raw=pcall(readfile,path)
-            if not readOk and exists then return false,"Cannot read existing profile; overwrite cancelled" end
-            if readOk then
-                local decodedOk,decoded=pcall(function() return HttpService:JSONDecode(raw) end)
-                -- An invalid primary must never overwrite the last valid backup.
-                if decodedOk and type(decoded)=="table" then
-                    local backup=path:gsub("%.json$","_backup.json")
-                    local backupOk=pcall(writefile,backup,raw)
-                    if not backupOk then return false,"Backup failed; overwrite cancelled" end
-                    local verifyOk,verify=pcall(readfile,backup)
-                    if not verifyOk or verify~=raw then return false,"Backup verification failed; overwrite cancelled" end
-                end
-            end
-        elseif exists then return false,"Backup requires readfile; overwrite cancelled" end
-        local writeOk=pcall(writefile,path,encoded)
-        if not writeOk then return false,"Write failed" end
-        if readfile then
-            local verifyOk,verify=pcall(readfile,path)
-            if not verifyOk then return true,"Written; read-back unavailable",false end
-            if verify~=encoded then return false,"Save verification failed; check the backup" end
-            return true,"Saved and verified",true
-        end
-        return true,"Written; verification unavailable",false
-    end}
-    -- Geometry preferences remember positions only. They do not turn on
-    -- features, reopen windows, or autosave a named profile.
-    local layoutPath="LucidPanel/window_layout.json"
-    local positions={}
-    local layoutPending=false
-    local layoutChangedAt=0
-    local layoutDisposed=false
-    local watched={}
-    if readfile and (not isfile or isfile(layoutPath)) then
-        local ok,data=pcall(function() return HttpService:JSONDecode(readfile(layoutPath)) end)
-        if ok and type(data)=="table" and type(data.positions)=="table" then positions=data.positions end
-    end
-    local function finite(value) return type(value)=="number" and value==value and math.abs(value)~=math.huge end
-    local function watchWindow(window)
-        if watched[window] then return end
-        watched[window]=true
-        local saved=positions[window.Name]
-        if type(saved)=="table" and finite(saved.xScale) and finite(saved.xOffset) and finite(saved.yScale) and finite(saved.yOffset) then
-            local viewport=workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280,720)
-            local width=window.AbsoluteSize.X>0 and window.AbsoluteSize.X or math.max(24,window.Size.X.Offset)
-            local height=window.AbsoluteSize.Y>0 and window.AbsoluteSize.Y or math.max(24,window.Size.Y.Offset)
-            local anchor=window.AnchorPoint
-            local desiredX=saved.xScale*viewport.X+saved.xOffset
-            local desiredY=saved.yScale*viewport.Y+saved.yOffset
-            local x=math.clamp(desiredX,24-width+width*anchor.X,viewport.X-24+width*anchor.X)
-            local y=math.clamp(desiredY,height*anchor.Y,viewport.Y-24+height*anchor.Y)
-            window.Position=(x==desiredX and y==desiredY)
-                and UDim2.new(saved.xScale,saved.xOffset,saved.yScale,saved.yOffset) or UDim2.fromOffset(x,y)
-        end
-        local function changed()
-            if layoutDisposed then return end
-            local p=window.Position
-            positions[window.Name]={xScale=p.X.Scale,xOffset=p.X.Offset,yScale=p.Y.Scale,yOffset=p.Y.Offset}
-            if state.profileTracker then state.profileTracker.check() end
-            layoutChangedAt=os.clock()
-            if layoutPending or not writefile then return end
-            layoutPending=true
-            task.spawn(function()
-                repeat task.wait(0.5) until layoutDisposed or os.clock()-layoutChangedAt>=1
-                layoutPending=false
-                if layoutDisposed then return end
-                local ok=pcall(function()
-                    if makefolder and (not isfolder or not isfolder("LucidPanel")) then pcall(makefolder,"LucidPanel") end
-                    writefile(layoutPath,HttpService:JSONEncode({version=1,positions=positions}))
-                end)
-                if not ok then summary="Window position changed; preferences could not be saved"; state.profileTracker.check() end
-            end)
-        end
-        track(window:GetPropertyChangedSignal("Position"):Connect(changed))
-        track(window:GetPropertyChangedSignal("Size"):Connect(function() state.profileTracker.check() end))
-        track(window:GetPropertyChangedSignal("Visible"):Connect(function() state.profileTracker.check() end))
-    end
-    watchWindow(mainFrame)
-    if state.lucidDock then watchWindow(state.lucidDock) end
-    for _,entry in ipairs(detachableWindows) do watchWindow(entry.window) end
-    instanceToken.onWindowRegistered=function(entry) watchWindow(entry.window) end
-    -- Catch inline controls, star buttons and window pins without polling all
-    -- settings. Snapshot work is coalesced and only follows interaction.
-    track(UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType~=Enum.UserInputType.MouseButton1 and input.UserInputType~=Enum.UserInputType.Touch then return end
-        local pointer=input.UserInputType==Enum.UserInputType.Touch and input.Position or UserInputService:GetMouseLocation()
-        if not screenGui.IgnoreGuiInset then
-            local inset=game:GetService("GuiService"):GetGuiInset(); pointer=Vector2.new(pointer.X-inset.X,pointer.Y-inset.Y)
-        end
-        for window in pairs(watched) do
-            local p,s=window.AbsolutePosition,window.AbsoluteSize
-            if window.Parent and window.Visible and pointer.X>=p.X and pointer.X<=p.X+s.X and pointer.Y>=p.Y and pointer.Y<=p.Y+s.Y then
-                state.profileTracker.check(); return
-            end
-        end
-    end))
-    state.perfApi.worker("profile status",function() return pending end)
-    state.perfApi.worker("window layout save",function() return layoutPending end)
-    task.defer(function() if not disposed then refresh() end end)
-    addCleanup(function()
-        disposed=true; layoutDisposed=true; instanceToken.onWindowRegistered=nil
-    end)
-end
-state.initializeProfileSupport({name=function() return profileNameBox.Text end,snapshot=function()
-    local snapshot={values=state.profileSchema.capture(),toggles={},keybinds={},favorites={},windows={},categories={},waypoints={}}
-    for name,on in pairs(activeFeatures) do
-        if name~="Bat Click + Re-equip" and name~="Extend Selected Player Limb" and name~="Extend All Players" and name~="Performance Timing Monitor" then snapshot.toggles[name]=on end
-    end
-    for name,key in pairs(shortcutKeys) do snapshot.keybinds[name]=key.Name end
-    snapshot.keybinds.AutoClick=acBoundKey and acBoundKey.Name or "Unbound"
-    for name,on in pairs(state.favoriteNames) do if on then snapshot.favorites[name]=true end end
-    for name,meta in pairs(categoryMeta) do snapshot.categories[name]=meta.isOpen() end
-    for _,entry in ipairs(detachableWindows) do
-        local w=entry.window
-        snapshot.windows[w.Name]={x=w.Position.X.Scale,xo=w.Position.X.Offset,y=w.Position.Y.Scale,yo=w.Position.Y.Offset,
-            width=w.Size.X.Offset,height=w.Size.Y.Offset,pinned=entry.isPinned(),detached=entry.isDetached()}
-    end
-    local p=mainFrame.Position
-    snapshot.interface={x=p.X.Scale,xo=p.X.Offset,y=p.Y.Scale,yo=p.Y.Offset,opacity=mainFrame.BackgroundTransparency,
-        width=mainExpandedSize.X.Offset,height=mainExpandedSize.Y.Offset,minimized=minimized}
-    for name,point in pairs(waypoints) do snapshot.waypoints[name]={point:GetComponents()} end
-    snapshot.yellowHighlights=state.yellowHighlightApi.getNames()
-    snapshot.pinkHighlights=state.pinkHighlightApi.getNames()
-    snapshot.blackHighlights=state.blackHighlightApi.getNames()
-    snapshot.exploiterHighlights=state.orangeHighlightApi.getNames()
-    snapshot.hiddenNames=state.namedPlayerHiderApi and state.namedPlayerHiderApi.getNames() or {}
-    snapshot.exclusions=state.hitboxApi and state.hitboxApi.getExcludedEntries() or {}
-    return snapshot
-end})
 local function saveNamedProfile(button,profileOverride,silent,highlightsOnly)
     if not writefile then
         if button then button.Text="File API unavailable" end
@@ -9964,17 +9387,21 @@ local function saveNamedProfile(button,profileOverride,silent,highlightsOnly)
         existing.blackHighlights=state.blackHighlightApi.getNames()
         existing.exploiterHighlights=state.orangeHighlightApi.getNames()
         existing.highlightsSavedAt=os.time()
-        local ok=state.profileStore.write(profilePath,existing)
-        if ok then state.profileTracker.checkpointHighlights() end
+        local encodedOk,encoded=pcall(function() return HttpService:JSONEncode(existing) end)
+        if not encodedOk then return false,savedName end
+        local ok=pcall(writefile,profilePath,encoded)
         return ok,savedName
     end
     if readfile and (not isfile or isfile(profilePath)) then
         pcall(function() payload=HttpService:JSONDecode(readfile(profilePath)) end)
     end
     if type(payload)~="table" then payload={} end
-    payload.version=7
+    payload.version=6
     payload.savedAt=os.time()
-    payload.values=state.profileSchema.capture()
+    payload.values={}
+    for key,value in pairs(state) do
+        if type(value)=="number" or type(value)=="string" then payload.values[key]=value end
+    end
     payload.toggles={}
     payload.favorites={}
     for name in pairs(state.favoriteNames or {}) do payload.favorites[name]=true end
@@ -9986,9 +9413,8 @@ local function saveNamedProfile(button,profileOverride,silent,highlightsOnly)
     payload.hitboxExclusions=state.hitboxApi and state.hitboxApi.getExcludedEntries() or {}
     -- Emote favorites are global and saved independently of named profiles.
     payload.keybinds={}
-    payload.keybinds.AutoClick=acBoundKey and acBoundKey.Name or "Unbound"
     for name,key in pairs(shortcutKeys or {}) do payload.keybinds[name]=key and key.Name or "Unbound" end
-    for _,name in ipairs({"Fly","Noclip","Freecam","Unlock Mouse","Migraine","Photo Mode","Character Recovery","Loop Go To","Bat Macro"}) do
+    for _,name in ipairs({"Fly","Noclip","Freecam","Migraine","Photo Mode","Character Recovery","Loop Go To","Bat Macro"}) do
         if not shortcutKeys[name] then payload.keybinds[name]="Unbound" end
     end
     payload.interface={opacity=1-mainFrame.BackgroundTransparency,
@@ -10016,7 +9442,7 @@ local function saveNamedProfile(button,profileOverride,silent,highlightsOnly)
     for name,meta in pairs(categoryMeta) do
         if meta.isOpen then payload.categories[name]=meta.isOpen() end
     end
-    payload.waypointsByPlace=type(payload.waypointsByPlace)=="table" and payload.waypointsByPlace or {}
+    payload.waypointsByPlace=payload.waypointsByPlace or {}
     local savedWaypoints={}
     for name, point in pairs(waypoints) do
         savedWaypoints[name]={point:GetComponents()}
@@ -10028,16 +9454,23 @@ local function saveNamedProfile(button,profileOverride,silent,highlightsOnly)
     payload.toggles["Extend Selected Player Limb"]=nil
     payload.toggles["Extend All Players"]=nil
     payload.toggles["Bat Click + Re-equip"]=nil -- Never start attacks from a saved profile.
-    payload.toggles["Performance Timing Monitor"]=nil -- Timings are always opt-in for this execution.
-    local ok,message,verified=state.profileStore.write(profilePath,payload)
-    local resultText=ok and (verified and "Profile saved" or "Saved — unverified") or message
-    if ok then state.profileTracker.checkpoint(savedName,payload.savedAt,message) end
+    local encodedOk, encoded = pcall(function() return HttpService:JSONEncode(payload) end)
+    if encodedOk and readfile and (not isfile or isfile(profilePath)) then
+        local backupPath=profilePath:gsub("%.json$","_backup.json")
+        pcall(function()
+            local existing=readfile(profilePath)
+            local decoded=HttpService:JSONDecode(existing)
+            if type(decoded)=="table" then writefile(backupPath,existing) end
+        end)
+    end
+    local ok = encodedOk and pcall(writefile, profilePath, encoded)
+    local resultText=ok and "Profile saved" or (encodedOk and "Write failed" or "Profile data invalid")
     if button then button.Text=resultText end
     if not silent then notifyLucid(ok and "Profile saved" or "Profile save failed",
-        ok and (savedName.." • "..message) or resultText,ok and Color3.fromRGB(75,210,120) or Color3.fromRGB(230,90,105)) end
+        ok and savedName or resultText,ok and Color3.fromRGB(75,210,120) or Color3.fromRGB(230,90,105)) end
     if ok and profileListOpen then refreshProfileList() end
     if button then task.delay(1.5,function() if button.Parent then button.Text="Save Named Profile" end end) end
-    return ok,savedName,message
+    return ok,savedName
 end
 local saveProfileButton=actionButton("Save Named Profile", function(button)
     local ok,savedName=saveNamedProfile(button,nil,false)
@@ -10048,17 +9481,13 @@ state.saveNamedProfileCommand=function(requestedName)
     if name~="" and name:gsub("[^%w_%-]","")=="" then
         return false,"Use letters, numbers, _ or - in the profile name"
     end
-    local ok,savedName,message=saveNamedProfile(saveProfileButton,name~="" and name or nil,true)
-    if not ok then return false,message or "Profile save failed" end
+    local ok,savedName=saveNamedProfile(saveProfileButton,name~="" and name or nil,true)
+    if not ok then return false,writefile and "Profile save failed" or "File API unavailable" end
     activeProfileName=savedName
     profileNameBox.Text=savedName
-    state.profileTracker.check()
     return true,savedName
 end
-loadNamedProfile = function(button,forceBackup)
-    state.profileTracker.suspended=true
-    local applied=false
-    local ran,loadError=pcall(function()
+loadNamedProfile = function(button)
     local originalButtonText=button.Text
     local profilePath=getProfilePath()
     if not readfile then button.Text="File API unavailable"; return end
@@ -10066,19 +9495,22 @@ loadNamedProfile = function(button,forceBackup)
         if isfile and not isfile(path) then return false,nil end
         return pcall(function() return HttpService:JSONDecode(readfile(path)) end)
     end
-    local ok,payload=decodeProfile(forceBackup and profilePath:gsub("%.json$","_backup.json") or profilePath)
-    local recovered=forceBackup==true
+    local ok,payload=decodeProfile(profilePath)
+    local recovered=false
     if not ok or type(payload)~="table" then
         ok,payload=decodeProfile(profilePath:gsub("%.json$","_backup.json")); recovered=ok and type(payload)=="table"
     end
     if not ok or type(payload)~="table" then button.Text="Profile invalid/missing"; notifyLucid("Profile load failed",profileNameBox.Text,Color3.fromRGB(230,90,105)); return end
-    for _,key in ipairs({"values","keybinds","interface","windows","categories","toggles","waypointsByPlace","favorites"}) do
-        if type(payload[key])~="table" then payload[key]={} end
-    end
     if state.wormBatMacroApi then state.wormBatMacroApi.stop("Profile loaded") end
     local profileVersion=tonumber(payload.version or 0)
-    local changedValues,invalidValues=state.profileSchema.apply(payload.values,profileVersion)
-    local changedToggles,failedToggles=0,0
+    for key,value in pairs(payload.values or {}) do
+        local legacyExploiterColor=profileVersion<6 and key=="exploiterHighlightColor"
+        if legacyExploiterColor then
+            state.highPriorityHighlightColor=value
+        elseif state[key]~=nil and not (key=="accentTheme" and profileVersion<5) then
+            state[key]=value
+        end
+    end
     if state.applyAccentTheme then state.applyAccentTheme(state.accentTheme) end
     if state.hitboxApi then
         state.hitboxApi.setExcludedEntries(payload.hitboxExclusions)
@@ -10120,12 +9552,11 @@ loadNamedProfile = function(button,forceBackup)
         highlightStyleButton.Text="Highlight Style: "..state.espHighlightStyle
     end
     state.setEmotePlaybackSpeed(state.emoteSpeed)
-    if state.refreshCustomEmoteSpeed then state.refreshCustomEmoteSpeed() end
     updateText(emoteSyncToleranceBox,string.format("%.2f",state.emoteSyncTolerance))
     if gotoApi.setOffset then gotoApi.setOffset(state.gotoOffsetX,state.gotoOffsetY,state.gotoOffsetZ) end
     if gotoApi.setForwardBackStuds then gotoApi.setForwardBackStuds(state.gotoForwardBackStuds) end
     if gotoApi.setLoopDirection and state.loopGotoDirection then gotoApi.setLoopDirection(state.loopGotoDirection) end
-    -- Attack automation is never activated by loading a saved profile.
+    -- Safe startup: remembered toggle states are intentionally not activated.
     -- Import favorites from older profile files once, without replacing the
     -- global collection or tying it to this profile/place.
     mergeLegacyEmoteFavorites(payload.emoteFavorites)
@@ -10139,33 +9570,27 @@ loadNamedProfile = function(button,forceBackup)
         local legacyDefault=tonumber(payload.version or 0)<4 and ((name=="Fly" and value=="F")
             or (name=="Noclip" and value=="N") or (name=="Freecam" and value=="P"))
         local key=nil
-        if (name=="Bat Macro" or name=="AutoClick") and (value=="MouseButton1" or value=="MouseButton2" or value=="MouseButton3") then
+        if name=="Bat Macro" and (value=="MouseButton1" or value=="MouseButton2" or value=="MouseButton3") then
             key=Enum.UserInputType[value]
         else
-            if not legacyDefault and type(value)=="string" and value~="Unbound" then
-                local valid,found=pcall(function() return Enum.KeyCode[value] end)
-                if valid then key=found else invalidValues+=1 end
-            end
+            key=not legacyDefault and value~="Unbound" and Enum.KeyCode[value] or nil
         end
-        if key==Enum.KeyCode.Escape or key==Enum.KeyCode.End
-            or key==Enum.KeyCode.RightAlt or key==Enum.KeyCode.Unknown then key=nil end
-        if name=="AutoClick" then state.autoClickBindingApi.set(key)
-        elseif table.find({"Fly","Noclip","Freecam","Unlock Mouse","Migraine","Photo Mode","Character Recovery","Loop Go To","Bat Macro"},name) then
-            shortcutKeys[name]=key
-            if shortcutBoxes[name] then shortcutBoxes[name].Text=key and key.Name or "" end
-        end
+        if name=="Bat Macro" and (key==Enum.KeyCode.Escape or key==Enum.KeyCode.End
+            or key==Enum.KeyCode.RightAlt or key==Enum.KeyCode.Unknown) then key=nil end
+        shortcutKeys[name]=key
+        if shortcutBoxes and shortcutBoxes[name] then shortcutBoxes[name].Text=key and key.Name or "" end
     end
     local interface=payload.interface or {}
-    if state.profileSchema.finite(interface.opacity) then setOpacity(math.floor(math.clamp(interface.opacity,0,1)*100+0.5)) end
-    if state.profileSchema.finite(interface.xScale) and state.profileSchema.finite(interface.xOffset)
-        and state.profileSchema.finite(interface.yScale) and state.profileSchema.finite(interface.yOffset) then
+    if type(interface.opacity)=="number" then setOpacity(math.floor(math.clamp(interface.opacity,0,1)*100+0.5)) end
+    if type(interface.xScale)=="number" and type(interface.xOffset)=="number"
+        and type(interface.yScale)=="number" and type(interface.yOffset)=="number" then
         mainFrame.Position=UDim2.new(interface.xScale,interface.xOffset,interface.yScale,interface.yOffset)
     end
-    if state.lucidDock and state.profileSchema.finite(interface.dockXScale) and state.profileSchema.finite(interface.dockXOffset)
-        and state.profileSchema.finite(interface.dockYScale) and state.profileSchema.finite(interface.dockYOffset) then
+    if state.lucidDock and type(interface.dockXScale)=="number" and type(interface.dockXOffset)=="number"
+        and type(interface.dockYScale)=="number" and type(interface.dockYOffset)=="number" then
         state.lucidDock.Position=UDim2.new(interface.dockXScale,interface.dockXOffset,interface.dockYScale,interface.dockYOffset)
     end
-    if state.profileSchema.finite(interface.width) and state.profileSchema.finite(interface.height) then
+    if type(interface.width)=="number" and type(interface.height)=="number" then
         mainExpandedSize=UDim2.new(0,math.max(270,interface.width),0,math.max(180,interface.height))
         if not minimized then mainFrame.Size=mainExpandedSize end
     end
@@ -10181,11 +9606,11 @@ loadNamedProfile = function(button,forceBackup)
     for _,detachable in ipairs(detachableWindows or {}) do
         local saved=(payload.windows or {})[detachable.window.Name]
         if type(saved)=="table" then
-            if state.profileSchema.finite(saved.xScale) and state.profileSchema.finite(saved.xOffset)
-                and state.profileSchema.finite(saved.yScale) and state.profileSchema.finite(saved.yOffset) then
+            if type(saved.xScale)=="number" and type(saved.xOffset)=="number"
+                and type(saved.yScale)=="number" and type(saved.yOffset)=="number" then
                 detachable.window.Position=UDim2.new(saved.xScale,saved.xOffset,saved.yScale,saved.yOffset)
             end
-            if state.profileSchema.finite(saved.width) and state.profileSchema.finite(saved.height) then
+            if type(saved.width)=="number" and type(saved.height)=="number" then
                 detachable.window.Size=UDim2.new(0,math.max(210,saved.width),0,math.max(34,saved.height))
             end
             if detachable.setPinned then detachable.setPinned(saved.pinned==true) end
@@ -10193,13 +9618,12 @@ loadNamedProfile = function(button,forceBackup)
         end
     end
     table.clear(waypoints)
-    local savedWaypoints=payload.waypointsByPlace[tostring(game.PlaceId)]
-    if type(savedWaypoints)~="table" then savedWaypoints={} end
+    local savedWaypoints=(payload.waypointsByPlace or {})[tostring(game.PlaceId)] or {}
     for name, components in pairs(savedWaypoints) do
         if type(name)=="string" and type(components)=="table" and #components==12 then
             local valid=true
             for index=1,12 do
-                if not state.profileSchema.finite(components[index]) then valid=false; break end
+                if type(components[index])~="number" then valid=false; break end
             end
             if valid then waypoints[name]=CFrame.new(unpack(components)) end
         end
@@ -10212,27 +9636,22 @@ loadNamedProfile = function(button,forceBackup)
     table.sort(toggleNames)
     for _,name in ipairs(toggleNames) do
         local savedToggle=(payload.toggles or {})[name]
-        if name=="Bat Click + Re-equip" or name=="Performance Timing Monitor" then savedToggle=nil end
+        if name=="Bat Click + Re-equip" then savedToggle=nil end
         if savedToggle==nil and name=="Noclip" then
             savedToggle=(payload.toggles or {})["Enable Noclip"]
         end
-        if type(savedToggle)=="boolean" then
+        if savedToggle~=nil then
             local desired=savedToggle==true
-            if activeFeatures[name]~=desired then
-                local ok=pcall(toggleRegistry[name],desired,true)
-                if ok then changedToggles+=1 else failedToggles+=1 end
-            end
-        elseif savedToggle~=nil then invalidValues+=1
+            if activeFeatures[name]~=desired then pcall(toggleRegistry[name],desired,true) end
         end
     end
-    if state.setFPSCapValue then state.setFPSCapValue(state.fpsCapValue) end
     local savedLighting=payload.lighting
     if type(savedLighting)=="table" then pcall(function()
-        if state.profileSchema.finite(savedLighting.brightness) then Lighting.Brightness=savedLighting.brightness end
-        if state.profileSchema.finite(savedLighting.exposure) then Lighting.ExposureCompensation=savedLighting.exposure end
-        if state.profileSchema.finite(savedLighting.clockTime) then Lighting.ClockTime=savedLighting.clockTime end
-        if state.profileSchema.finite(savedLighting.fogStart) then Lighting.FogStart=savedLighting.fogStart end
-        if state.profileSchema.finite(savedLighting.fogEnd) then Lighting.FogEnd=savedLighting.fogEnd end
+        if type(savedLighting.brightness)=="number" then Lighting.Brightness=savedLighting.brightness end
+        if type(savedLighting.exposure)=="number" then Lighting.ExposureCompensation=savedLighting.exposure end
+        if type(savedLighting.clockTime)=="number" then Lighting.ClockTime=savedLighting.clockTime end
+        if type(savedLighting.fogStart)=="number" then Lighting.FogStart=savedLighting.fogStart end
+        if type(savedLighting.fogEnd)=="number" then Lighting.FogEnd=savedLighting.fogEnd end
         if type(savedLighting.ambient)=="table" and #savedLighting.ambient==3 then
             Lighting.Ambient=Color3.new(unpack(savedLighting.ambient))
         end
@@ -10244,24 +9663,11 @@ loadNamedProfile = function(button,forceBackup)
     if state.playerLightEnabled then applyPlayerLight() else removePlayerLight() end
     button.Text="Profile loaded — settings restored"
     activeProfileName=profileNameBox.Text
-    local result=string.format("Changed %d values / %d toggles; %d invalid skipped; %d callbacks failed",
-        changedValues,changedToggles,invalidValues,failedToggles)
-    state.profileTracker.suspended=false
-    state.profileTracker.checkpoint(activeProfileName,tonumber(payload.savedAt),result)
-    if state.keybindManager then state.keybindManager.refresh() end
-    applied=true
-    notifyLucid(recovered and "Profile recovered from backup" or "Profile loaded",profileNameBox.Text.." • "..result,
+    notifyLucid(recovered and "Profile recovered from backup" or "Profile loaded",profileNameBox.Text,
         recovered and Color3.fromRGB(235,175,70) or Color3.fromRGB(75,210,120))
     task.delay(1.5,function()
         if button.Parent and button.Text=="Profile loaded — settings restored" then button.Text=originalButtonText end
     end)
-    end)
-    state.profileTracker.suspended=false
-    if not ran then
-        button.Text="Profile load failed — review settings"
-        notifyLucid("Profile load failed",tostring(loadError):sub(1,160),Color3.fromRGB(230,90,105))
-    end
-    if not applied then state.profileTracker.check() end
 end
 state.persistHighlightChange=function(playerName,highlightType,removed)
     local profileName=activeProfileName
@@ -10275,7 +9681,6 @@ state.persistHighlightChange=function(playerName,highlightType,removed)
     notifyLucid(removed and "Highlight removed" or "Highlight added",message,saved and Color3.fromRGB(75,210,120) or Color3.fromRGB(235,175,70))
 end
 local loadProfileButton=actionButton("Load Named Profile", function(button) loadNamedProfile(button) end)
-actionButton("Load Profile Backup",function(button) loadNamedProfile(button,true) end,Color3.fromRGB(80,65,105))
 loadProfileButton.Name="LoadNamedProfileButton"
 local AUTO_PROFILE_PATH="LucidPanel/auto_profiles.json"
 local autoProfileStatus=create("TextLabel",{Size=UDim2.new(1,0,0,24),BackgroundTransparency=1,
@@ -10336,12 +9741,12 @@ end)
 actionButton("Import Profile from Text Box",function(button)
     if not writefile then button.Text="File API unavailable"; return end
     local text=profileNameBox.Text
-    local ok,payload=pcall(function() return HttpService:JSONDecode(text) end)
-    if not ok or type(payload)~="table" then button.Text="Paste valid profile JSON in name box"; return end
+    local ok=pcall(function() HttpService:JSONDecode(text) end)
+    if not ok then button.Text="Paste JSON in name box"; return end
     pcall(function() if makefolder and (not isfolder or not isfolder("LucidPanel")) then makefolder("LucidPanel") end end)
     local path="LucidPanel/profile_imported.json"
-    local wrote,message=state.profileStore.write(path,payload)
-    if wrote then profileNameBox.Text="imported"; button.Text="Imported; press Load" else button.Text="Import failed"; notifyLucid("Import failed",message,Color3.fromRGB(230,90,105)) end
+    local wrote=pcall(writefile,path,text)
+    if wrote then profileNameBox.Text="imported"; button.Text="Imported; press Load" else button.Text="Import failed" end
 end)
 actionButton("Delete Selected Profile",function(button)
     local path=getProfilePath()
@@ -10352,10 +9757,6 @@ actionButton("Delete Selected Profile",function(button)
 end,Color3.fromRGB(90,48,60))
 
 sectionLabel("Window & Performance Manager",nextOrder())
-createToggle("Basic View",nextOrder(),false,function(on) state.controlUi.setBasic(on) end)
-create("TextLabel",{Size=UDim2.new(1,0,0,36),BackgroundTransparency=1,TextWrapped=true,
-    Text="Full view is the default. Basic hides selected Advanced sections, keeps active ones visible, and never disables functions.",
-    TextSize=10,TextColor3=Color3.fromRGB(160,150,185),Font=Enum.Font.Gotham,LayoutOrder=nextOrder(),Parent=currentSection})
 createToggle("Low Performance Mode",nextOrder(),false,function(on)
     state.lowPerformanceMode=on
     notifyLucid("Performance mode",on and "Reduced update frequency enabled" or "Normal update frequency restored",
@@ -10433,175 +9834,92 @@ actionButton("Undo Last Change",function(button)
         ok and Color3.fromRGB(75,210,120) or Color3.fromRGB(235,175,70))
     button.Text=message; task.delay(1.2,function() if button.Parent then button.Text="Undo Last Change" end end)
 end)
--- One searchable keybind manager: shared shortcuts, AutoClick, repeat-last,
--- custom emotes and fixed panel keys. Duplicate bindings warn, not overwrite.
-state.initializeKeybindManager=function()
-    sectionLabel("Keybind Manager",nextOrder())
-    local searchRow=rowFrame(nextOrder(),30)
-    local search=styledBox(searchRow,{Size=UDim2.new(1,0,0,26),Text="",PlaceholderText="Search action, key or emote..."})
-    local status=create("TextLabel",{Size=UDim2.new(1,0,0,48),BackgroundTransparency=1,TextWrapped=true,
-        Text="",TextColor3=Color3.fromRGB(170,160,190),TextSize=10,Font=Enum.Font.Gotham,
-        TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=nextOrder(),Parent=currentSection})
-    local host=rowFrame(nextOrder(),285)
-    local list=create("ScrollingFrame",{Size=UDim2.fromScale(1,1),BackgroundTransparency=1,BorderSizePixel=0,
-        ScrollBarThickness=3,CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,Parent=host})
-    create("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder,Parent=list})
-    local listening=nil
-    local refresh
-    local function parse(text,allowMouse)
-        local requested=tostring(text or ""):lower():gsub("[%s_%-]","")
-        if allowMouse then
-            local aliases={mouse1="MouseButton1",mouse2="MouseButton2",mouse3="MouseButton3",
-                mousebutton1="MouseButton1",mousebutton2="MouseButton2",mousebutton3="MouseButton3",
-                leftclick="MouseButton1",rightclick="MouseButton2",middleclick="MouseButton3"}
-            if aliases[requested] then return Enum.UserInputType[aliases[requested]] end
-        end
-        for _,key in ipairs(Enum.KeyCode:GetEnumItems()) do
-            if key.Name:lower():gsub("[%s_%-]","")==requested then return key end
-        end
+sectionLabel("Quick Keybinds", nextOrder())
+local function findShortcutKey(text,allowMouse)
+    local requested=tostring(text or ""):match("^%s*(.-)%s*$"):lower():gsub("[%s_%-]","")
+    if requested=="" then return nil end
+    if allowMouse then
+        local mouseAliases={mouse1="MouseButton1",mousebutton1="MouseButton1",leftclick="MouseButton1",
+            mouse2="MouseButton2",mousebutton2="MouseButton2",rightclick="MouseButton2",
+            mouse3="MouseButton3",mousebutton3="MouseButton3",middleclick="MouseButton3"}
+        if mouseAliases[requested] then return Enum.UserInputType[mouseAliases[requested]] end
     end
-    local function descriptors()
-        local result={}
-        for _,name in ipairs({"Fly","Noclip","Freecam","Unlock Mouse","Migraine","Photo Mode","Character Recovery","Loop Go To","Bat Macro"}) do
-            if name~="Bat Macro" or game.PlaceId==136070094363960 then
-                table.insert(result,{id=name,label=name,mouse=name=="Bat Macro",get=function() return shortcutKeys[name] end,
-                    set=function(key) shortcutKeys[name]=key end})
-            end
-        end
-        table.insert(result,{id="AutoClick",label="AutoClick",mouse=true,
-            get=state.autoClickBindingApi.get,set=state.autoClickBindingApi.set})
-        table.insert(result,{id="Repeat Last Emote",label="Repeat Last Emote",
-            get=function() return parse(state.emoteHotkeyName,false) end,
-            set=function(key) state.emoteHotkeyName=key and key.Name or "Unbound"; if state.emoteAdvancedRefresh then state.emoteAdvancedRefresh() end end})
-        local customs={}
-        for key,item in pairs(state.emoteCustoms) do
-            if type(item)=="table" then table.insert(customs,{key=key,item=item}) end
-        end
-        table.sort(customs,function(a,b) return tostring(a.item.name):lower()<tostring(b.item.name):lower() end)
-        for _,entry in ipairs(customs) do
-            table.insert(result,{id="Custom:"..entry.key,label="Emote: "..tostring(entry.item.name),
-                get=function() return parse(entry.item.keybind,false) end,
-                set=function(key)
-                    local item=state.emoteCustoms[entry.key]
-                    if not item then return end
-                    item.keybind=key and key.Name or nil; saveGlobalEmoteFavorites()
-                    if state.refreshCustomEmoteLibrary then state.refreshCustomEmoteLibrary() end
-                end})
-        end
-        for _,entry in ipairs({{"Panel Toggle",Enum.KeyCode.RightAlt},{"Panic / Reset",Enum.KeyCode.End},{"Command Console",Enum.KeyCode.F6}}) do
-            table.insert(result,{id=entry[1],label=entry[1],fixed=true,get=function() return entry[2] end})
-        end
-        return result
+    local aliases={pgup="pageup",pgdn="pagedown",del="delete",ins="insert",
+        back="browserback",backwards="browserback",forward="browserforward",forwards="browserforward"}
+    requested=aliases[requested] or requested
+    for _,keyCode in ipairs(Enum.KeyCode:GetEnumItems()) do
+        if keyCode.Name:lower():gsub("[%s_%-]","")==requested then return keyCode end
     end
-    local function keyId(key)
-        return key and ((key.EnumType==Enum.UserInputType and "Mouse:" or "Key:")..key.Name) or nil
-    end
-    local function conflicts(entries)
-        local buckets={}
-        for _,entry in ipairs(entries) do
-            local id=keyId(entry.get())
-            if id then buckets[id]=buckets[id] or {}; table.insert(buckets[id],entry.label) end
+    if requested=="browserback" then return Enum.KeyCode.Backspace end
+    return nil
+end
+for _, name in ipairs({"Fly","Noclip","Freecam","Unlock Mouse","Migraine","Photo Mode","Character Recovery","Loop Go To","Bat Macro"}) do
+    if name~="Bat Macro" or game.PlaceId==136070094363960 then
+    local shortcutRow = rowFrame(nextOrder(), 30)
+    create("TextLabel", {
+        Size=UDim2.new(0,72,1,0), BackgroundTransparency=1, Text=name,
+        TextColor3=Color3.fromRGB(205,200,215), TextSize=11, Font=Enum.Font.Gotham,
+        TextXAlignment=Enum.TextXAlignment.Left, Parent=shortcutRow,
+    })
+    local box = styledBox(shortcutRow, { Size=UDim2.new(0,100,0,26), Position=UDim2.new(0,76,0.5,-13),
+        Text=shortcutKeys[name] and shortcutKeys[name].Name or "", PlaceholderText="Unbound" })
+    shortcutBoxes[name]=box
+    local clearButton=create("TextButton", {
+        Size=UDim2.new(0,60,0,24), Position=UDim2.new(1,-60,0.5,-12),
+        BackgroundColor3=Color3.fromRGB(75,48,62), BorderSizePixel=0, Text="Clear",
+        TextColor3=Color3.fromRGB(235,215,225), TextSize=10, Font=Enum.Font.GothamSemibold,
+        Parent=shortcutRow,
+    })
+    create("UICorner", { CornerRadius=UDim.new(0,5), Parent=clearButton })
+    clearButton.MouseButton1Click:Connect(function()
+        shortcutKeys[name]=nil
+        box.Text=""
+    end)
+    box.Focused:Connect(function()
+        state.shortcutListeningName=name
+        state.shortcutListeningBox=box
+        box.Text=name=="Bat Macro" and "Key or mouse..." or "Press a key..."
+    end)
+    box.FocusLost:Connect(function()
+        if state.shortcutListeningName==name then
+            state.shortcutListeningName=nil
+            state.shortcutListeningBox=nil
         end
-        return buckets
+        local key=findShortcutKey(box.Text,name=="Bat Macro")
+        if key and key ~= Enum.KeyCode.Unknown and key ~= Enum.KeyCode.RightAlt and key ~= Enum.KeyCode.End
+            and not (name=="Bat Macro" and key==Enum.KeyCode.Escape) then
+            shortcutKeys[name]=key
+        end
+        box.Text=shortcutKeys[name] and shortcutKeys[name].Name or ""
+    end)
+    if name=="Bat Macro" then
+        create("TextLabel",{Size=UDim2.new(1,0,0,34),BackgroundTransparency=1,
+            Text="Mouse1/2/3 supported. Side buttons: map to a key\n(e.g. F7) in your mouse software, then bind that key.",
+            TextWrapped=true,TextColor3=Color3.fromRGB(145,180,155),TextSize=10,Font=Enum.Font.Gotham,
+            LayoutOrder=nextOrder(),Parent=currentSection})
     end
-    local function cancel()
-        listening=nil; state.shortcutListeningName=nil; state.shortcutListeningBox=nil
+    end
+end
+track(UserInputService.InputBegan:Connect(function(input,processed)
+    if not state.shortcutListeningName or not state.shortcutListeningBox then return end
+    local mouseBind=state.shortcutListeningName=="Bat Macro" and not processed
+        and (input.UserInputType==Enum.UserInputType.MouseButton1
+            or input.UserInputType==Enum.UserInputType.MouseButton2 or input.UserInputType==Enum.UserInputType.MouseButton3)
+    if input.UserInputType~=Enum.UserInputType.Keyboard and not mouseBind then return end
+    local key=mouseBind and input.UserInputType or input.KeyCode
+    if key==Enum.KeyCode.Unknown then return end
+    if key==Enum.KeyCode.Escape then
+        state.shortcutListeningBox.Text=shortcutKeys[state.shortcutListeningName] and shortcutKeys[state.shortcutListeningName].Name or ""
+    elseif key~=Enum.KeyCode.RightAlt and key~=Enum.KeyCode.End then
+        shortcutKeys[state.shortcutListeningName]=key
+        state.shortcutListeningBox.Text=key.Name
         state.shortcutCaptureUntil=os.clock()+0.25
     end
-    state.keybindManager={
-        parse=parse,
-        isListening=function() return listening~=nil end,
-        assign=function(id,key)
-            for _,entry in ipairs(descriptors()) do
-                if entry.id==id and not entry.fixed then
-                    if key and (key==Enum.KeyCode.Unknown or key==Enum.KeyCode.RightAlt or key==Enum.KeyCode.End or key==Enum.KeyCode.Escape) then
-                        return false,"RightAlt / End are reserved; Escape cancels capture"
-                    end
-                    if key and key.EnumType==Enum.UserInputType and not entry.mouse then return false,"This action supports keyboard keys only" end
-                    entry.set(key)
-                    if state.profileTracker then state.profileTracker.check() end
-                    refresh()
-                    local shared=conflicts(descriptors())[keyId(key)]
-                    if shared and #shared>1 then
-                        notifyLucid("Shared keybind",table.concat(shared,", ")..": a shared key may activate only one action.",Color3.fromRGB(235,175,70))
-                    end
-                    return true
-                end
-            end
-            return false,"Binding no longer exists"
-        end,
-        refresh=function() if refresh then refresh() end end,
-        cancel=cancel,
-    }
-    refresh=function()
-        local entries=descriptors()
-        local buckets=conflicts(entries)
-        local shared={}
-        for id,names in pairs(buckets) do if #names>1 then table.insert(shared,id.." = "..table.concat(names," / ")) end end
-        table.sort(shared)
-        status.Text=listening and ("Listening: "..listening.." — Escape cancels")
-            or (#shared>0 and ("Shared bindings: "..table.concat(shared,"; ")) or "Click a binding to capture. Mouse1/2/3: AutoClick and Bat Macro. Side buttons: map to a keyboard key.")
-        status.TextColor3=#shared>0 and Color3.fromRGB(235,180,90) or Color3.fromRGB(170,160,190)
-        for _,child in ipairs(list:GetChildren()) do if child:IsA("GuiObject") then child:Destroy() end end
-        table.clear(shortcutBoxes)
-        local query=search.Text:lower()
-        local shown=0
-        for _,entry in ipairs(entries) do
-            local key=entry.get()
-            local text=key and ((key.EnumType==Enum.UserInputType and "Mouse: " or "Key: ")..key.Name) or "Unbound"
-            if query=="" or entry.label:lower():find(query,1,true) or text:lower():find(query,1,true) then
-                shown+=1
-                local row=create("Frame",{Size=UDim2.new(1,-4,0,30),BackgroundTransparency=1,LayoutOrder=shown,Parent=list})
-                create("TextLabel",{Size=UDim2.new(1,-154,1,0),BackgroundTransparency=1,Text=entry.label,
-                    TextSize=10,TextTruncate=Enum.TextTruncate.AtEnd,TextXAlignment=Enum.TextXAlignment.Left,
-                    Font=Enum.Font.Gotham,TextColor3=Color3.fromRGB(215,205,230),Parent=row})
-                local sharedKey=key and buckets[keyId(key)] and #buckets[keyId(key)]>1
-                local button=create("TextButton",{Size=UDim2.fromOffset(100,26),Position=UDim2.new(1,-150,0,2),
-                    BackgroundColor3=sharedKey and Color3.fromRGB(100,65,45) or Color3.fromRGB(45,40,62),
-                    BorderSizePixel=0,Text=listening==entry.id and "Press input..." or text,TextSize=10,
-                    TextTruncate=Enum.TextTruncate.AtEnd,Font=Enum.Font.Gotham,TextColor3=Color3.fromRGB(225,215,240),Parent=row})
-                create("UICorner",{CornerRadius=UDim.new(0,5),Parent=button})
-                if not entry.fixed then
-                    if shortcutKeys[entry.id]~=nil or table.find({"Fly","Noclip","Freecam","Unlock Mouse","Migraine","Photo Mode","Character Recovery","Loop Go To","Bat Macro"},entry.id) then shortcutBoxes[entry.id]=button end
-                    button.MouseButton1Click:Connect(function()
-                        state.autoClickBindingApi.cancel()
-                        if state.cancelCustomBindingCapture then state.cancelCustomBindingCapture() end
-                        listening=entry.id; state.shortcutListeningName=entry.id; state.shortcutListeningBox=button
-                        state.shortcutCaptureUntil=math.huge; refresh()
-                    end)
-                    local clear=create("TextButton",{Size=UDim2.fromOffset(46,26),Position=UDim2.new(1,-46,0,2),
-                        BackgroundColor3=Color3.fromRGB(75,45,60),BorderSizePixel=0,Text="Clear",
-                        TextSize=10,Font=Enum.Font.Gotham,TextColor3=Color3.fromRGB(230,210,220),Parent=row})
-                    create("UICorner",{CornerRadius=UDim.new(0,5),Parent=clear})
-                    clear.MouseButton1Click:Connect(function() cancel(); state.keybindManager.assign(entry.id,nil) end)
-                else
-                    create("TextLabel",{Size=UDim2.fromOffset(46,26),Position=UDim2.new(1,-46,0,2),BackgroundTransparency=1,
-                        Text="Fixed",TextSize=9,Font=Enum.Font.Gotham,TextColor3=Color3.fromRGB(150,140,165),Parent=row})
-                end
-            end
-        end
-        if shown==0 then create("TextLabel",{Size=UDim2.new(1,0,0,28),BackgroundTransparency=1,Text="No matching bindings",
-            TextSize=11,Font=Enum.Font.Gotham,TextColor3=Color3.fromRGB(170,160,185),Parent=list}) end
-    end
-    search:GetPropertyChangedSignal("Text"):Connect(refresh)
-    track(UserInputService.InputBegan:Connect(function(input,processed)
-        if not listening then return end
-        if input.KeyCode==Enum.KeyCode.Escape then cancel(); refresh(); return end
-        local key
-        if input.UserInputType==Enum.UserInputType.Keyboard then key=input.KeyCode
-        elseif not processed and (input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.MouseButton2 or input.UserInputType==Enum.UserInputType.MouseButton3) then key=input.UserInputType end
-        if not key then return end
-        local id=listening
-        local ok,message=state.keybindManager.assign(id,key)
-        if ok then cancel(); refresh() else status.Text=message.."; Escape cancels" end
-    end))
-    track(mainFrame:GetPropertyChangedSignal("Visible"):Connect(function()
-        if not mainFrame.Visible and not categoryMeta.Misc.dock.Visible then cancel(); refresh() end
-    end))
-    refresh()
-    addCleanup(function() cancel(); state.keybindManager=nil end)
-end
-state.initializeKeybindManager()
+    local capturedBox=state.shortcutListeningBox
+    state.shortcutListeningName=nil
+    state.shortcutListeningBox=nil
+    task.defer(function() if capturedBox and capturedBox.Parent then capturedBox:ReleaseFocus() end end)
+end))
 
 -- General dynamic backpack cleaner. Tools are discovered from the live
 -- Backpack/Character, so users never need to type internal tool names.
@@ -12089,7 +11407,7 @@ do
         if inspectorScanning then return end
         inspectorScanning=true
         task.spawn(function()
-            for index,object in ipairs(state.scanWorkspace("Kill part inspector scan")) do
+            for index,object in ipairs(workspace:GetDescendants()) do
                 if not inspectorOpen or not screenGui.Parent then break end
                 inspectKillPartCandidate(object)
                 if index%250==0 then refreshInspector(); task.wait() end
@@ -12324,32 +11642,14 @@ do
 
         local doorDetectorCache={}
         local doorRetryAt={}
-        local loadedDoorParts={}
-        local doorIndexReady=false
-        local function rememberDoorPart(item)
-            if item:IsA("BasePart") and item.Name=="Open" then loadedDoorParts[item]=true end
-        end
-        local function refreshLoadedDoorIndex()
-            table.clear(loadedDoorParts); table.clear(doorDetectorCache); table.clear(doorRetryAt)
-            for _,item in ipairs(state.scanWorkspace("Door index seed")) do rememberDoorPart(item) end
-        end
-        local function ensureLoadedDoorIndex()
-            if doorIndexReady then return end
-            doorIndexReady=true
-            track(workspace.DescendantAdded:Connect(rememberDoorPart))
-            track(workspace.DescendantRemoving:Connect(function(item) loadedDoorParts[item]=nil end))
-            refreshLoadedDoorIndex()
-        end
-        addCleanup(function() table.clear(loadedDoorParts); table.clear(doorDetectorCache) end)
         local function clickTowerOpen(targetX,targetY,label,silent)
-            ensureLoadedDoorIndex()
             local detector=doorDetectorCache[label]
             if not detector or not detector:IsDescendantOf(workspace) then
                 doorDetectorCache[label]=nil
                 if silent and os.clock()<(doorRetryAt[label] or 0) then return end
                 local selected,score
-                for item in pairs(loadedDoorParts) do
-                    if item.Parent and item.Name=="Open" then
+                for _,item in ipairs(workspace:GetDescendants()) do
+                    if item.Name=="Open" and item:IsA("BasePart") then
                         local dx=math.abs(item.Position.X-targetX)
                         local dy=math.abs(item.Position.Y-targetY)
                         if dx<2 and dy<2 and (not score or dx+dy<score) then
@@ -12403,10 +11703,6 @@ do
         actionButton("Level 1 Open",function()
             clickTowerOpen(-173.103,80.518,"Level 1 Open")
         end)
-        actionButton("Refresh Loaded Door Buttons",function(button)
-            if doorIndexReady then refreshLoadedDoorIndex() else ensureLoadedDoorIndex() end
-            button.Text="Loaded button index refreshed"
-        end)
         state.towerDoorAutoInterval=math.clamp(tonumber(state.towerDoorAutoInterval) or 2.5,0.5,5)
         local intervalRow=rowFrame(nextOrder(),30)
         create("TextLabel",{Size=UDim2.new(1,-83,1,0),BackgroundTransparency=1,
@@ -12441,8 +11737,6 @@ do
         createToggle("Auto Level 1 Open",nextOrder(),false,function(on)
             setAutoDoor("level1",on,-173.103,80.518,"Level 1 Open")
         end)
-        state.perfApi.worker("Level 1 auto-open",function() return activeFeatures["Auto Level 1 Open"] end)
-        state.perfApi.worker("Level 3 auto-open",function() return activeFeatures["Auto Open Level 3 Door"] end)
         addCleanup(function()
             doorLoopTokens.level3=doorLoopTokens.level3+1
             doorLoopTokens.level1=doorLoopTokens.level1+1
@@ -13234,50 +12528,13 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.40 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.39 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
     Font=Enum.Font.Code, TextWrapped=true, TextXAlignment=Enum.TextXAlignment.Left,
     TextYAlignment=Enum.TextYAlignment.Top, LayoutOrder=nextOrder(), Parent=currentSection })
 create("UICorner", { CornerRadius=UDim.new(0,6), Parent=diagnosticsLabel })
-do
-    sectionLabel("Panel Performance",nextOrder())
-    local host=rowFrame(nextOrder(),220)
-    local scroll=create("ScrollingFrame",{Size=UDim2.fromScale(1,1),BackgroundColor3=Color3.fromRGB(28,26,38),
-        BorderSizePixel=0,ScrollBarThickness=3,AutomaticCanvasSize=Enum.AutomaticSize.Y,CanvasSize=UDim2.new(),Parent=host})
-    local report=create("TextLabel",{Size=UDim2.new(1,-8,0,0),AutomaticSize=Enum.AutomaticSize.Y,BackgroundTransparency=1,
-        BorderSizePixel=0,Text="Timing monitor is off. Enable only while investigating a slowdown.",
-        TextSize=10,Font=Enum.Font.Code,TextColor3=Color3.fromRGB(200,190,215),TextWrapped=true,
-        TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,Parent=scroll})
-    create("UICorner",{CornerRadius=UDim.new(0,6),Parent=report})
-    local connection=nil
-    local elapsed=0
-    local function stop()
-        if connection then connection:Disconnect(); connection=nil end
-        state.perfApi.setEnabled(false)
-    end
-    createToggle("Performance Timing Monitor",nextOrder(),false,function(on)
-        stop()
-        if not on then report.Text=state.perfApi.report(); return end
-        state.perfApi.reset(); state.perfApi.setEnabled(true); elapsed=0
-        connection=track(RunService.Heartbeat:Connect(function(dt)
-            state.perfApi.sampleFrame(dt); elapsed+=dt
-            if elapsed<1 then return end
-            elapsed=0
-            local meta=categoryMeta.Diagnostics
-            if (mainFrame.Visible and meta.wrapper.Visible and meta.body.Visible)
-                or (meta.dock.Visible and meta.body.Parent.Visible) then report.Text=state.perfApi.report() end
-        end))
-        report.Text=state.perfApi.report()
-    end)
-    actionButton("Copy Performance Report",function(button)
-        if setclipboard then setclipboard(state.perfApi.report()); button.Text="Performance report copied"
-        else button.Text="Clipboard unavailable" end
-    end)
-    actionButton("Reset Performance Timings",function() state.perfApi.reset(); report.Text=state.perfApi.report() end)
-    addCleanup(stop)
-end
 actionButton("Copy Diagnostic Report", function(button)
     if setclipboard then setclipboard(diagnosticsLabel.Text); button.Text="Report copied" else button.Text="Clipboard unavailable" end
 end)
@@ -13400,7 +12657,7 @@ end,Color3.fromRGB(95,60,65))
 
 local flyKeys = { W=false, A=false, S=false, D=false, Space=false, LeftControl=false }
 track(UserInputService.InputBegan:Connect(function(input, processed)
-    if input.KeyCode==Enum.KeyCode.End and not processed and os.clock()>=(state.shortcutCaptureUntil or 0) then panicReset(); return end
+    if input.KeyCode == Enum.KeyCode.End and not processed then panicReset(); return end
     if not processed and UserInputService:GetFocusedTextBox() == nil
         and os.clock()>=(state.shortcutCaptureUntil or 0) then
         if shortcutKeys["Bat Macro"] and toggleRegistry["Bat Click + Re-equip"]
@@ -13424,7 +12681,7 @@ track(UserInputService.InputBegan:Connect(function(input, processed)
             notifyLucid("Migraine Comfort","Emergency lighting preset applied",Color3.fromRGB(105,180,220))
         end
     end
-    if flyKeys[input.KeyCode.Name] ~= nil and (not processed or state.freecamEnabled) and os.clock()>=(state.shortcutCaptureUntil or 0) then
+    if flyKeys[input.KeyCode.Name] ~= nil and (not processed or state.freecamEnabled) then
         flyKeys[input.KeyCode.Name]=true
     end
 end))
@@ -13816,7 +13073,6 @@ state.initializeCommandConsole=function()
         return not current
     end
     local function finish(ok,message)
-        if state.profileTracker then state.profileTracker.check() end
         commandHint.Text=ok and "Command complete" or "Command failed"
         commandHint.TextColor3=ok and Color3.fromRGB(105,220,145) or Color3.fromRGB(235,105,115)
         status.Text=tostring(message or (ok and "Command complete" or "Command failed"))
@@ -14255,8 +13511,7 @@ state.initializeCommandConsole=function()
         end
     end)
     track(UserInputService.InputBegan:Connect(function(event,processed)
-        if event.KeyCode==Enum.KeyCode.F6 and os.clock()>=(state.shortcutCaptureUntil or 0)
-            and (not processed or UserInputService:GetFocusedTextBox()==input) then state.toggleCommandConsole() end
+        if event.KeyCode==Enum.KeyCode.F6 and (not processed or UserInputService:GetFocusedTextBox()==input) then state.toggleCommandConsole() end
     end))
 end
 state.initializeCommandConsole()
@@ -14280,7 +13535,7 @@ task.spawn(function()
             local text=string.format("Place: %s | Kills: %d\nRig: %s | State: %s\nWalkSpeed: %s | HipHeight: %s | Velocity: %s\nLucid: %d connections | %d active | %d detached | %s\nActive: %s",
                 tostring(game.PlaceId),state.killCounterApi and state.killCounterApi.getCount() or 0,
                 rig, humanoidState, h and tostring(h.WalkSpeed) or "-",
-                h and string.format("%.2f",h.HipHeight) or "-", speed,state.liveConnectionCount(),activeCount,detachedCount,
+                h and string.format("%.2f",h.HipHeight) or "-", speed,#connections,activeCount,detachedCount,
                 state.lowPerformanceMode and "LOW PERF" or "NORMAL",statusLabelRef and statusLabelRef.Text or "Anti-AFK")
             if diagnosticsLabel.Text~=text then diagnosticsLabel.Text=text end
         end) end
@@ -14295,7 +13550,6 @@ end)
 end
 
 state.toolkitInitializationOk,state.toolkitInitializationError=pcall(initializeV4Toolkit)
-if state.profileTracker then state.profileTracker.check() end
 if not state.toolkitInitializationOk then
     warn("[Lucid Panel] Toolkit initialization failed: "..tostring(state.toolkitInitializationError))
     useCategory("Home")
@@ -14397,10 +13651,7 @@ track(RunService.Heartbeat:Connect(function(dt)
         or state.antiFlingEnabled or state.walkspeedLocked or state.jumpHeightLocked
         or state.noclipEnabled or state.airWalkEnabled
     local needsGlobalFrame=state.maxZoomLocked or state.fogEndLocked
-    local coordinateMeta=categoryMeta["Teleport & Coordinates"]
-    local needsCoordinateRefresh=coordinateMeta.body.Visible
-        and ((mainFrame.Visible and coordinateMeta.wrapper.Visible)
-            or (coordinateMeta.dock.Visible and coordinateMeta.body.Parent.Visible))
+    local needsCoordinateRefresh=mainFrame.Visible
     if not needsCharacterFrame and not needsGlobalFrame and not needsCoordinateRefresh then return end
 
     local char = LocalPlayer.Character
@@ -14411,7 +13662,6 @@ track(RunService.Heartbeat:Connect(function(dt)
 
     local h = char:FindFirstChildOfClass("Humanoid")
     local hrp = char:FindFirstChild("HumanoidRootPart")
-    local started=state.perfApi.begin()
 
     -- InputEnded can be missed when focus changes. Reconcile the bypass with
     -- the physical key each frame so Anti Push cannot stay silently bypassed.
@@ -14420,19 +13670,17 @@ track(RunService.Heartbeat:Connect(function(dt)
             and UserInputService:GetFocusedTextBox()==nil
     end
     if state.antiPushEnabled and state.antiPushStatusLabel then
-        local status
         if state.freezeEnabled then
-            status="Anti Push: paused by Freeze Me"
+            state.antiPushStatusLabel.Text="Anti Push: paused by Freeze Me"
         elseif not hrp or not h then
-            status="Anti Push: waiting for character"
+            state.antiPushStatusLabel.Text="Anti Push: waiting for character"
         elseif state.physicsBypass then
-            status="Anti Push: paused (B held)"
+            state.antiPushStatusLabel.Text="Anti Push: paused (B held)"
         elseif h.SeatPart then
-            status="Anti Push: paused while seated"
+            state.antiPushStatusLabel.Text="Anti Push: paused while seated"
         else
-            status="Anti Push: protecting"
+            state.antiPushStatusLabel.Text="Anti Push: protecting"
         end
-        if state.antiPushStatusLabel.Text~=status then state.antiPushStatusLabel.Text=status end
     end
 
     -- IY-style freeze enforcement. Some games attempt to unanchor the root.
@@ -14573,16 +13821,13 @@ track(RunService.Heartbeat:Connect(function(dt)
     if needsCoordinateRefresh and hrp and state.coordUpdateElapsed>=(state.lowPerformanceMode and 0.25 or 0.1) then
         state.coordUpdateElapsed=0
         local pos = hrp.Position
-        local display = string.format(
+        coordLiveLabel.Text = string.format(
             "X: %.1f   Y: %.1f   Z: %.1f", pos.X, pos.Y, pos.Z
         )
-        if coordLiveLabel.Text~=display then coordLiveLabel.Text=display end
         if not coordBox:IsFocused() and not coordEdited then
-            local text=string.format("%.2f, %.2f, %.2f",pos.X,pos.Y,pos.Z)
-            if coordBox.Text~=text then coordBox.Text=text end
+            coordBox.Text = string.format("%.2f, %.2f, %.2f", pos.X, pos.Y, pos.Z)
         end
     end
-    state.perfApi.finish("Physics / coordinate heartbeat",started)
 end))
 
 -- Anti-AFK (Idled event + periodic fallback)
@@ -14671,7 +13916,7 @@ end)
 --  TOGGLE GUI VISIBILITY — Right-Alt
 -- ════════════════════════════════════════════════════════════
 track(UserInputService.InputBegan:Connect(function(input, processed)
-    if not processed and input.KeyCode==Enum.KeyCode.RightAlt and os.clock()>=(state.shortcutCaptureUntil or 0) then
+    if not processed and input.KeyCode == Enum.KeyCode.RightAlt then
         mainFrame.Visible = not mainFrame.Visible
         for _,detachable in ipairs(detachableWindows) do
             if detachable.window and detachable.window.Parent and detachable.isDetached() then
@@ -14719,7 +13964,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.40] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.39] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.40] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.39] Loaded, but this executor does not expose queue_on_teleport")
 end
