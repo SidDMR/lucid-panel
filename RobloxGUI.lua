@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.39
+--// Lucid Panel v6.0.43
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -226,6 +226,163 @@ local state = {
     targetPlayerName = nil,
 }
 
+-- Local measurements only: public-list ping is never treated as this client's RTT.
+-- One 1 Hz sampler, bounded windows/history, and infrequent independent persistence.
+do
+    local path="LucidPanel/server_latency_"..tostring(LocalPlayer.UserId)..".json"
+    local history={}
+    local listeners={}
+    local networkSamples,dataSamples={},{}
+    local current={}
+    local stopped=false
+    local started=false
+    local startClock=os.clock()
+    local lastRecordClock=-math.huge
+    local lastSaveClock=-math.huge
+    local dirty=false
+    local dataItem=nil
+    local storageStatus=type(writefile)=="function" and "Not saved yet" or "Session only (file API unavailable)"
+    local function finite(value) return type(value)=="number" and value==value and math.abs(value)~=math.huge end
+    local function validPing(value) return finite(value) and value>0 and value<=60000 end
+    local function key(place,job) return tostring(place)..":"..job end
+    local function sanitizeMetric(metric)
+        if type(metric)~="table" or not validPing(metric.median) or not validPing(metric.peak)
+            or metric.peak<metric.median or not finite(metric.count) or metric.count<15 or metric.count>15 then return nil end
+        return {median=metric.median,peak=metric.peak,count=15}
+    end
+    local function accept(record)
+        if type(record)~="table" or not finite(record.placeId) or record.placeId<=0
+            or type(record.jobId)~="string" or #record.jobId==0 or #record.jobId>128
+            or not finite(record.measuredAt) or record.measuredAt>os.time()+60
+            or os.time()-record.measuredAt>7*86400 then return end
+        local network,data=sanitizeMetric(record.network),sanitizeMetric(record.data)
+        if not network and not data then return end
+        history[key(record.placeId,record.jobId)]={placeId=record.placeId,jobId=record.jobId,
+            measuredAt=record.measuredAt,network=network,data=data,
+            playing=finite(record.playing) and math.clamp(math.floor(record.playing),0,1000) or nil,
+            maxPlayers=finite(record.maxPlayers) and math.clamp(math.floor(record.maxPlayers),1,1000) or nil}
+    end
+    local memory=sharedEnvironment.__LUCID_LATENCY_HISTORY_V1
+    if type(memory)=="table" and memory.userId==LocalPlayer.UserId and type(memory.records)=="table" then
+        for _,record in pairs(memory.records) do accept(record) end
+        storageStatus="History retained in this executor session"
+    elseif type(readfile)=="function" then
+        local ok,saved=pcall(function() return HttpService:JSONDecode(readfile(path)) end)
+        if ok and type(saved)=="table" and saved.version==1 and type(saved.records)=="table" then
+            for _,record in pairs(saved.records) do accept(record) end
+            storageStatus=type(writefile)=="function" and "Loaded local history" or "Loaded history; new readings are session only"
+        end
+    end
+    sharedEnvironment.__LUCID_LATENCY_HISTORY_V1={userId=LocalPlayer.UserId,records=history}
+    local function prune()
+        local records={}
+        for id,record in pairs(history) do
+            if os.time()-record.measuredAt>7*86400 then history[id]=nil
+            else table.insert(records,{id=id,at=record.measuredAt}) end
+        end
+        table.sort(records,function(a,b) return a.at>b.at end)
+        for i=201,#records do history[records[i].id]=nil end
+    end
+    prune()
+    local function save()
+        if not dirty or type(writefile)~="function" then return end
+        lastSaveClock=os.clock()
+        local ok,message=pcall(function()
+            if type(makefolder)=="function" and (not isfolder or not isfolder("LucidPanel")) then makefolder("LucidPanel") end
+            local encoded=HttpService:JSONEncode({version=1,records=history})
+            writefile(path,encoded)
+            if type(readfile)=="function" then
+                if readfile(path)~=encoded then error("read-back mismatch") end
+                storageStatus="Saved locally and verified"
+            else storageStatus="Written locally (verification unavailable)" end
+        end)
+        if ok then dirty=false else storageStatus="Session history only; save failed: "..tostring(message):sub(1,70) end
+    end
+    local function summarize(samples)
+        while #samples>0 and os.clock()-samples[1].at>20 do table.remove(samples,1) end
+        if #samples==0 then return nil end
+        local sorted={}
+        for _,sample in ipairs(samples) do table.insert(sorted,sample.value) end
+        table.sort(sorted)
+        local count=#sorted
+        local median=count%2==1 and sorted[(count+1)/2] or (sorted[count/2]+sorted[count/2+1])/2
+        return {median=median,peak=sorted[count],count=count}
+    end
+    local function append(samples,value)
+        if validPing(value) then
+            table.insert(samples,{value=value,at=os.clock()})
+            while #samples>15 do table.remove(samples,1) end
+        end
+    end
+    local function sample()
+        local ok,network=pcall(function() return LocalPlayer:GetNetworkPing()*1000 end)
+        current.network=ok and validPing(network) and network or nil
+        if not dataItem then pcall(function() dataItem=game:GetService("Stats").Network.ServerStatsItem["Data Ping"] end) end
+        local dataOk,data=pcall(function() return dataItem and dataItem:GetValue() end)
+        current.data=dataOk and validPing(data) and data or nil
+        if not dataOk then dataItem=nil end
+        current.warming=os.clock()-startClock<10
+        if not current.warming then
+            append(networkSamples,current.network); append(dataSamples,current.data)
+        end
+        current.networkWindow=summarize(networkSamples); current.dataWindow=summarize(dataSamples)
+        local updated=false
+        if not current.warming and os.clock()-lastRecordClock>=30 and type(game.JobId)=="string" and game.JobId~="" then
+            local networkWindow=current.network and current.networkWindow
+            local dataWindow=current.data and current.dataWindow
+            if (networkWindow and networkWindow.count==15) or (dataWindow and dataWindow.count==15) then
+                local count,capacity
+                pcall(function() count=#Players:GetPlayers(); capacity=Players.MaxPlayers end)
+                history[key(game.PlaceId,game.JobId)]={placeId=game.PlaceId,jobId=game.JobId,measuredAt=os.time(),
+                    network=networkWindow and networkWindow.count==15 and networkWindow or nil,
+                    data=dataWindow and dataWindow.count==15 and dataWindow or nil,playing=count,maxPlayers=capacity}
+                lastRecordClock=os.clock(); dirty=true; updated=true; prune()
+            end
+        end
+        if dirty and os.clock()-lastSaveClock>=60 then save() end
+        for callback in pairs(listeners) do pcall(callback,updated) end
+    end
+    local function age(record) return math.max(0,os.time()-record.measuredAt) end
+    local function ms(value) return validPing(value) and (tostring(math.floor(value+0.5)).." ms") or "--" end
+    state.latencyApi={
+        current=function() return current end,
+        get=function(place,job) return history[key(place,job)] end,
+        records=function(place)
+            local result={}; for _,record in pairs(history) do if record.placeId==place then table.insert(result,record) end end
+            table.sort(result,function(a,b) return a.measuredAt>b.measuredAt end); return result
+        end,
+        fresh=function(record) return type(record)=="table" and age(record)<=1800 end,
+        score=function(record) local metric=record and (record.data or record.network); return metric and metric.median end,
+        age=function(record)
+            local seconds=age(record)
+            if seconds<60 then return "just now" elseif seconds<3600 then return math.floor(seconds/60).."m ago"
+            elseif seconds<86400 then return math.floor(seconds/3600).."h ago" end
+            return math.floor(seconds/86400).."d ago"
+        end,
+        ms=ms,
+        status=function() return storageStatus end,
+        subscribe=function(callback) listeners[callback]=true; return function() listeners[callback]=nil end end,
+        save=save,
+        report=function()
+            local lines={"Lucid latency measurements (local only)","Network: "..ms(current.network).." | Data: "..ms(current.data),
+                "History: "..storageStatus,"15 samples after 10s warm-up; recheck after changing network/VPN.",
+                "Data includes replication delays. Public-list ping is NOT your ping."}
+            for _,record in ipairs(state.latencyApi.records(game.PlaceId)) do
+                table.insert(lines,record.jobId.." | net "..ms(record.network and record.network.median)
+                    .." | data "..ms(record.data and record.data.median).." | peak data "..ms(record.data and record.data.peak)
+                    .." | "..state.latencyApi.age(record))
+                if #lines>=30 then break end
+            end
+            return table.concat(lines,"\n")
+        end,
+        start=function()
+            if started then return end; started=true
+            task.spawn(function() while not stopped do sample(); task.wait(1) end end)
+        end,
+    }
+    addCleanup(function() stopped=true; save(); table.clear(listeners) end)
+end
+
 function state.pushUndo(label,callback)
     if state.undoBusy or type(callback)~="function" then return end
     table.insert(state.undoStack,1,{label=tostring(label or "Change"),callback=callback})
@@ -271,9 +428,11 @@ screenGui:SetAttribute("LucidPlaceId", game.PlaceId)
 screenGui:SetAttribute("LucidJobId", game.JobId)
 track(LocalPlayer.OnTeleport:Connect(function(teleportState)
     if teleportState == Enum.TeleportState.Started then
+        state.latencyApi.save()
         screenGui:SetAttribute("LucidTeleporting", true)
     end
 end))
+state.latencyApi.start()
 
 local notificationHost=create("Frame",{Name="LucidNotifications",Size=UDim2.new(0,280,1,-20),
     Position=UDim2.new(1,-290,0,10),BackgroundTransparency=1,ZIndex=200,Parent=screenGui})
@@ -389,7 +548,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.39",
+    Text                   = "LUCID PANEL  •  v6.0.43",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -730,7 +889,7 @@ state.initializeLucidDock=function()
         Text="",AutoButtonColor=false,Active=true,ZIndex=153,Parent=dock})
     create("UICorner",{CornerRadius=UDim.new(1,0),Parent=dragHandle})
     local stats=create("TextLabel",{Size=UDim2.new(0,138,0,18),Position=UDim2.new(0,8,0,3),Active=true,
-        BackgroundTransparency=1,Text="● FPS --    ● PING --ms",TextColor3=Color3.fromRGB(205,205,215),
+        BackgroundTransparency=1,Text="● FPS --    ● DATA --ms",TextColor3=Color3.fromRGB(205,205,215),
         TextSize=10,Font=Enum.Font.GothamSemibold,TextXAlignment=Enum.TextXAlignment.Left,
         TextYAlignment=Enum.TextYAlignment.Top,RichText=true,ZIndex=151,Parent=dock})
     local executorLabel=create("TextLabel",{Size=UDim2.new(0,82,0,16),Position=UDim2.new(0,8,0,22),Active=true,
@@ -918,8 +1077,6 @@ state.initializeLucidDock=function()
     local frames=0
     local elapsed=0
     local lastStatsText=nil
-    local pingStatsItem=nil
-    pcall(function() pingStatsItem=game:GetService("Stats").Network.ServerStatsItem["Data Ping"] end)
     local function metricHex(value,low,mid,high,higherIsBetter)
         local red=Color3.fromRGB(235,70,80)
         local yellow=Color3.fromRGB(235,190,65)
@@ -941,11 +1098,12 @@ state.initializeLucidDock=function()
         local refreshInterval=state.lowPerformanceMode and 1 or 0.25
         if elapsed<refreshInterval then return end
         local fps=math.floor(frames/elapsed+0.5); frames=0; elapsed=0
-        local ping=0
-        if pingStatsItem then pcall(function() ping=math.floor(pingStatsItem:GetValue()+0.5) end) end
+        local measurement=state.latencyApi.current()
+        local ping=measurement.data or measurement.network
         local fpsColor=metricHex(fps,60,180,300,true)
-        local pingColor=metricHex(ping,1,150,300,false)
-        local nextText=string.format('<font color="%s">● FPS %d</font>    <font color="%s">● PING %dms</font>',fpsColor,fps,pingColor,ping)
+        local pingColor=ping and metricHex(ping,1,150,300,false) or "#A0A0A0"
+        local metric=measurement.data and "DATA" or "NET"
+        local nextText=string.format('<font color="%s">● FPS %d</font>    <font color="%s">● %s %s</font>',fpsColor,fps,pingColor,metric,state.latencyApi.ms(ping):gsub(" ms$","ms"))
         if nextText~=lastStatsText then stats.Text=nextText; lastStatsText=nextText end
     end))
     track(mainFrame:GetPropertyChangedSignal("Visible"):Connect(state.refreshLucidDock))
@@ -7416,6 +7574,11 @@ createToggle("Keep Emote While Moving",nextOrder(),true,function(on)
 end)
 state.emoteSpeedViews={}
 state.emoteReverseViews={}
+state.emoteSpeedStep=function(value)
+    local number=tonumber(value) or 1
+    if number~=number then number=1 end
+    return math.floor(math.clamp(number,0,15)*2+0.5)/2
+end
 state.setEmotePlaybackSpeed=function(value,announce,previousValue)
     local oldSpeed=previousValue==nil and emoteSpeed or previousValue
     emoteSpeed=math.clamp(tonumber(value) or emoteSpeed,0,15)
@@ -8554,7 +8717,7 @@ state.initializeEmoteStudio=function(api)
     end
     local function speedControl(parent,withSlider,afterRow)
         local row=create("Frame",{Size=UDim2.new(1,0,0,withSlider and 52 or 30),BackgroundTransparency=1,
-            LayoutOrder=withSlider and 100000 or nextOrder(),Parent=parent})
+            LayoutOrder=nextOrder(),Parent=parent})
         if afterRow then
             local order=afterRow.LayoutOrder+1
             for _,sibling in ipairs(parent:GetChildren()) do
@@ -8565,16 +8728,25 @@ state.initializeEmoteStudio=function(api)
             row.LayoutOrder=order
         end
         if withSlider then
-            create("TextLabel",{Size=UDim2.new(0,98,0,20),BackgroundTransparency=1,Text="Animation Speed",
+            create("TextLabel",{Size=UDim2.new(0,80,0,20),BackgroundTransparency=1,Text="Emote Speed",
                 TextColor3=Color3.fromRGB(220,215,230),TextSize=10,Font=Enum.Font.Gotham,
                 TextXAlignment=Enum.TextXAlignment.Left,Parent=row})
-            local box=create("TextBox",{Size=UDim2.new(0,40,0,20),Position=UDim2.new(0,98,0,0),
+            local box=create("TextBox",{Size=UDim2.new(0,42,0,20),Position=UDim2.new(0,82,0,0),
                 BackgroundTransparency=1,BorderSizePixel=0,Text=tostring(emoteSpeed),PlaceholderText="0-15",
                 TextColor3=Color3.fromRGB(70,220,125),TextSize=10,Font=Enum.Font.GothamBold,ClearTextOnFocus=false,Parent=row})
             local reset=create("TextButton",{Size=UDim2.new(0,44,0,20),Position=UDim2.new(1,-44,0,0),
                 BackgroundColor3=Color3.fromRGB(43,42,48),BorderSizePixel=0,Text="Reset",TextSize=9,
                 TextColor3=Color3.fromRGB(205,200,215),Font=Enum.Font.Gotham,Parent=row})
             create("UICorner",{CornerRadius=UDim.new(0,5),Parent=reset})
+            for _,step in ipairs({{"-",-0.5,-94},{"+",0.5,-70}}) do
+                local button=create("TextButton",{Size=UDim2.new(0,20,0,20),Position=UDim2.new(1,step[3],0,0),
+                    BackgroundColor3=Color3.fromRGB(43,42,48),BorderSizePixel=0,Text=step[1],TextSize=11,
+                    TextColor3=Color3.fromRGB(205,200,215),Font=Enum.Font.GothamBold,Parent=row})
+                create("UICorner",{CornerRadius=UDim.new(0,5),Parent=button})
+                button.MouseButton1Click:Connect(function()
+                    state.setEmotePlaybackSpeed(state.emoteSpeedStep(emoteSpeed+step[2]),true)
+                end)
+            end
             local slider=create("Frame",{Size=UDim2.new(1,-8,0,16),Position=UDim2.new(0,4,0,28),
                 BackgroundTransparency=1,Active=true,Parent=row})
             local rail=create("Frame",{Size=UDim2.new(1,0,0,5),Position=UDim2.new(0,0,0.5,-2),
@@ -8590,7 +8762,7 @@ state.initializeEmoteStudio=function(api)
             local dragStartSpeed=nil
             local function update(input)
                 local ratio=math.clamp((input.Position.X-slider.AbsolutePosition.X)/math.max(slider.AbsoluteSize.X,1),0,1)
-                state.setEmotePlaybackSpeed(math.floor(ratio*15+0.5))
+                state.setEmotePlaybackSpeed(state.emoteSpeedStep(ratio*15))
             end
             slider.InputBegan:Connect(function(input)
                 if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
@@ -8664,11 +8836,11 @@ state.initializeEmoteStudio=function(api)
     local updateCustomSpeedAccent=function() end
     local function initializeCustomSpeedControl()
         local speedRow=rowFrame(nextOrder(),52)
-        create("TextLabel",{Size=UDim2.new(0,98,0,20),BackgroundTransparency=1,Text="Animation Speed",
+        create("TextLabel",{Size=UDim2.new(0,80,0,20),BackgroundTransparency=1,Text="Emote Speed",
             TextColor3=Color3.fromRGB(220,215,230),TextSize=10,Font=Enum.Font.Gotham,
             TextXAlignment=Enum.TextXAlignment.Left,Parent=speedRow})
-        local speedBox=create("TextBox",{Size=UDim2.new(0,30,0,20),Position=UDim2.new(0,98,0,0),
-            BackgroundTransparency=1,BorderSizePixel=0,Text=tostring(math.floor((tonumber(state.customEmoteSpeed) or 1)+0.5)),
+        local speedBox=create("TextBox",{Size=UDim2.new(0,42,0,20),Position=UDim2.new(0,82,0,0),
+            BackgroundTransparency=1,BorderSizePixel=0,Text=tostring(math.clamp(tonumber(state.customEmoteSpeed) or 1,0,15)),
             PlaceholderText="0-15",TextColor3=Color3.fromRGB(70,220,125),PlaceholderColor3=Color3.fromRGB(105,150,120),
             TextSize=10,Font=Enum.Font.GothamBold,ClearTextOnFocus=false,Parent=speedRow})
         local reset=create("TextButton",{Size=UDim2.new(0,44,0,20),Position=UDim2.new(1,-44,0,0),
@@ -8691,7 +8863,7 @@ state.initializeEmoteStudio=function(api)
             fill.BackgroundColor3=activeCustomDirection==-1 and Color3.fromRGB(215,60,82) or Color3.fromRGB(65,210,120)
         end
         local function setSpeed(value,persist)
-            value=math.floor(math.clamp(tonumber(value) or state.customEmoteSpeed or 1,0,15)+0.5)
+            value=math.clamp(tonumber(value) or state.customEmoteSpeed or 1,0,15)
             state.customEmoteSpeed=value; speedBox.Text=tostring(value)
             local ratio=value/15
             fill.Size=UDim2.new(ratio,0,1,0); knob.Position=UDim2.new(ratio,0,0.5,0)
@@ -8699,9 +8871,16 @@ state.initializeEmoteStudio=function(api)
             if trackItem and activeCustomDirection~=0 then pcall(function() trackItem:AdjustSpeed(activeCustomDirection*value) end) end
             if persist then saveGlobalEmoteFavorites() end
         end
+        for _,step in ipairs({{"-",-0.5,-94},{"+",0.5,-70}}) do
+            local button=create("TextButton",{Size=UDim2.new(0,20,0,20),Position=UDim2.new(1,step[3],0,0),
+                BackgroundColor3=Color3.fromRGB(43,42,48),BorderSizePixel=0,Text=step[1],TextSize=11,
+                TextColor3=Color3.fromRGB(205,200,215),Font=Enum.Font.GothamBold,Parent=speedRow})
+            create("UICorner",{CornerRadius=UDim.new(0,5),Parent=button})
+            button.MouseButton1Click:Connect(function() setSpeed(state.emoteSpeedStep((tonumber(state.customEmoteSpeed) or 1)+step[2]),true) end)
+        end
         local function setFromInput(input)
             local ratio=math.clamp((input.Position.X-slider.AbsolutePosition.X)/math.max(slider.AbsoluteSize.X,1),0,1)
-            setSpeed(ratio*15,false)
+            setSpeed(state.emoteSpeedStep(ratio*15),false)
         end
         slider.InputBegan:Connect(function(input)
             if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
@@ -8910,6 +9089,15 @@ state.initializeEmoteStudio=function(api)
 
     -- PRESETS
     currentSection=state.emoteModuleTabs.presets
+    do
+        local row=rowFrame(nextOrder(),32)
+        local stop=create("TextButton",{Size=UDim2.new(0,76,0,26),Position=UDim2.new(0.5,-38,0,2),
+            BackgroundColor3=Color3.fromRGB(85,48,62),BorderSizePixel=0,Text="Stop Emote",
+            TextColor3=Color3.fromRGB(245,235,240),TextSize=10,Font=Enum.Font.GothamSemibold,Parent=row})
+        create("UICorner",{CornerRadius=UDim.new(0,6),Parent=stop})
+        stop.MouseButton1Click:Connect(stopEmote)
+        speedControl(currentSection,true)
+    end
     state.initializeEmoteCollections()
     sectionLabel("Movement State Presets",nextOrder())
     create("TextLabel",{Size=UDim2.new(1,0,0,36),BackgroundTransparency=1,
@@ -8939,7 +9127,7 @@ state.initializeEmoteStudio=function(api)
         selectedPreset=name; presetSelect.Text="State Preset: "..name; presetName.Text=""; saveGlobalEmoteFavorites()
     end)
     smallButton(currentSection,"Advanced / Sync Tools",function() state.emoteModuleTabs.set("Legacy") end,Color3.fromRGB(65,52,95))
-    speedControl(currentSection); speedControl(state.emoteModuleTabs.favorites,true,state.emoteModuleTabs.favoriteStopRow)
+    speedControl(state.emoteModuleTabs.favorites,true,state.emoteModuleTabs.favoriteStopRow)
     if LocalPlayer.Character then bindStateSpeeds(LocalPlayer.Character) end
     track(LocalPlayer.CharacterAdded:Connect(function(character)
         task.defer(bindStateSpeeds,character); if state.emotePresetEnabled then task.delay(1,applyStates) end
@@ -11813,13 +12001,14 @@ do
     task.defer(function()
         if not screenGui.Parent then return end
         useCategory("Scary Worm Tower 3")
-        sectionLabel("Low-Ping Server Finder",nextOrder())
+        sectionLabel("Measured-Ping Server Finder",nextOrder())
 
-        local filters={maxPing=170,minPlayers=10,maxPlayers=100}
+        local filters={maxPing=170,minPlayers=10,maxPlayers=100,showUnmeasured=true}
         local candidates={}
         local selectedServer=nil
         local searchGeneration=0
-        local pingGeneration=0
+        local historyView=false
+        local sortByMeasured=true
 
         local function panelFilter(label,value)
             local row=rowFrame(nextOrder(),28)
@@ -11829,12 +12018,21 @@ do
             return styledBox(row,{Size=UDim2.new(0.4,0,0,24),Position=UDim2.new(0.6,0,0,2),
                 Text=tostring(value),ClearTextOnFocus=false})
         end
-        local panelPing=panelFilter("Max list ping (ms)",filters.maxPing)
+        local panelPing=panelFilter("Max your ping (ms)",filters.maxPing)
         local panelMin=panelFilter("Minimum players",filters.minPlayers)
         local panelMax=panelFilter("Maximum players",filters.maxPlayers)
         local scanFromPanel=nil
         actionButton("Find Low-Ping Servers",function()
             if scanFromPanel then scanFromPanel() end
+        end)
+        local panelCurrent=create("TextLabel",{Size=UDim2.new(1,0,0,40),BackgroundTransparency=1,
+            Text="Your ping: checking...",TextWrapped=true,TextColor3=Color3.fromRGB(175,205,220),
+            TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
+            LayoutOrder=nextOrder(),Parent=currentSection})
+        actionButton("Copy Ping Measurements",function(button)
+            local ok=type(setclipboard)=="function" and pcall(setclipboard,state.latencyApi.report())
+            button.Text=ok and "Ping report copied" or "Clipboard unavailable"
+            task.delay(2,function() if button.Parent then button.Text="Copy Ping Measurements" end end)
         end)
         actionButton("Copy Game IDs",function(button)
             local ids="PlaceId: "..tostring(game.PlaceId).." | UniverseId: "..tostring(game.GameId)
@@ -11845,15 +12043,15 @@ do
         end)
 
         local panelStatus=create("TextLabel",{Size=UDim2.new(1,0,0,36),BackgroundTransparency=1,
-            Text="Choose filters, then find servers. List ping is not your measured ping.",TextWrapped=true,
+            Text="Unvisited servers are unmeasured. Max ping filters recent personal measurements only.",TextWrapped=true,
             TextColor3=Color3.fromRGB(175,170,190),TextSize=10,Font=Enum.Font.Gotham,
             LayoutOrder=nextOrder(),Parent=currentSection})
-        local panelResults=create("Frame",{Size=UDim2.new(1,0,0,128),BackgroundTransparency=1,
+        local panelResults=create("Frame",{Size=UDim2.new(1,0,0,215),BackgroundTransparency=1,
             LayoutOrder=nextOrder(),Parent=currentSection})
         create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,2),Parent=panelResults})
 
-        local browser=create("Frame",{Name="LucidServerBrowser",Size=UDim2.new(0,460,0,460),
-            Position=UDim2.new(0.5,-230,0.5,-230),BackgroundColor3=Color3.fromRGB(24,22,34),
+        local browser=create("Frame",{Name="LucidServerBrowser",Size=UDim2.new(0,500,0,520),
+            Position=UDim2.new(0.5,-250,0.5,-260),BackgroundColor3=Color3.fromRGB(24,22,34),
             BackgroundTransparency=0.08,BorderSizePixel=0,Active=true,Draggable=true,
             Visible=false,Parent=screenGui})
         create("UICorner",{CornerRadius=UDim.new(0,9),Parent=browser})
@@ -11868,7 +12066,7 @@ do
             Font=Enum.Font.GothamBold,Parent=browser})
         create("UICorner",{CornerRadius=UDim.new(0,5),Parent=closeBrowser})
         local currentPing=create("TextLabel",{Size=UDim2.new(1,-20,0,17),Position=UDim2.fromOffset(10,34),
-            BackgroundTransparency=1,Text="Current server RTT: checking... | Region: unavailable",
+            BackgroundTransparency=1,Text="Your ping: checking...",
             TextColor3=Color3.fromRGB(175,200,220),TextSize=10,Font=Enum.Font.Gotham,
             TextXAlignment=Enum.TextXAlignment.Left,Parent=browser})
 
@@ -11881,25 +12079,37 @@ do
             return styledBox(publicHost,{Size=UDim2.new(0.3,-4,0,24),Position=UDim2.new(x,8,0,72),
                 Text=tostring(value),ClearTextOnFocus=false})
         end
-        local browserPing=browserFilter("Max ping",0,filters.maxPing)
+        local browserPing=browserFilter("Max your ping",0,filters.maxPing)
         local browserMin=browserFilter("Min players",0.33,filters.minPlayers)
         local browserMax=browserFilter("Max players",0.66,filters.maxPlayers)
-        local findBrowser=create("TextButton",{Size=UDim2.new(1,-20,0,25),Position=UDim2.fromOffset(10,102),
+        local sortButton=create("TextButton",{Size=UDim2.new(0.5,-15,0,25),Position=UDim2.fromOffset(10,102),
+            BackgroundColor3=Color3.fromRGB(60,52,85),BorderSizePixel=0,Text="Sort: Your measured first",
+            TextColor3=Color3.new(1,1,1),TextSize=10,Font=Enum.Font.Gotham,Parent=publicHost})
+        local unknownButton=create("TextButton",{Size=UDim2.new(0.5,-15,0,25),Position=UDim2.new(0.5,5,0,102),
+            BackgroundColor3=Color3.fromRGB(60,52,85),BorderSizePixel=0,Text="Unmeasured: Show",
+            TextColor3=Color3.new(1,1,1),TextSize=10,Font=Enum.Font.Gotham,Parent=publicHost})
+        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=sortButton})
+        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=unknownButton})
+        local findBrowser=create("TextButton",{Size=UDim2.new(0.5,-15,0,25),Position=UDim2.fromOffset(10,132),
             BackgroundColor3=Color3.fromRGB(75,57,110),BorderSizePixel=0,Text="Find Servers",
             TextColor3=Color3.new(1,1,1),TextSize=11,Font=Enum.Font.GothamSemibold,Parent=publicHost})
         create("UICorner",{CornerRadius=UDim.new(0,5),Parent=findBrowser})
-        local browserStatus=create("TextLabel",{Size=UDim2.new(1,-20,0,29),Position=UDim2.fromOffset(10,132),
-            BackgroundTransparency=1,Text="List ping is an estimate, not your own RTT.",TextWrapped=true,
+        local visitedButton=create("TextButton",{Size=UDim2.new(0.5,-15,0,25),Position=UDim2.new(0.5,5,0,132),
+            BackgroundColor3=Color3.fromRGB(60,80,85),BorderSizePixel=0,Text="Visited Measurements",
+            TextColor3=Color3.new(1,1,1),TextSize=10,Font=Enum.Font.GothamSemibold,Parent=publicHost})
+        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=visitedButton})
+        local browserStatus=create("TextLabel",{Size=UDim2.new(1,-20,0,44),Position=UDim2.fromOffset(10,162),
+            BackgroundTransparency=1,Text="Roblox list estimates are not your ping. Unvisited servers remain unmeasured.",TextWrapped=true,
             TextColor3=Color3.fromRGB(180,175,200),TextSize=10,Font=Enum.Font.Gotham,
             TextXAlignment=Enum.TextXAlignment.Left,Parent=publicHost})
-        local browserResults=create("ScrollingFrame",{Size=UDim2.new(1,-20,1,-208),
-            Position=UDim2.fromOffset(10,164),BackgroundTransparency=1,BorderSizePixel=0,
+        local browserResults=create("ScrollingFrame",{Size=UDim2.new(1,-20,1,-254),
+            Position=UDim2.fromOffset(10,210),BackgroundTransparency=1,BorderSizePixel=0,
             ScrollBarThickness=4,AutomaticCanvasSize=Enum.AutomaticSize.Y,
             CanvasSize=UDim2.new(),Parent=publicHost})
         create("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,3),Parent=browserResults})
-        local selectedLabel=create("TextLabel",{Size=UDim2.new(1,-160,0,20),Position=UDim2.new(0,10,1,-42),
+        local selectedLabel=create("TextLabel",{Size=UDim2.new(1,-175,0,34),Position=UDim2.new(0,10,1,-42),
             BackgroundTransparency=1,Text="Selected: none",TextColor3=Color3.fromRGB(205,200,225),
-            TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=publicHost})
+            TextSize=9,TextWrapped=true,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=publicHost})
         local joinBrowser=create("TextButton",{Size=UDim2.new(0,135,0,27),Position=UDim2.new(1,-160,1,-37),
             BackgroundColor3=Color3.fromRGB(62,110,78),BorderSizePixel=0,Text="Join Selected",
             TextColor3=Color3.new(1,1,1),TextSize=11,Font=Enum.Font.GothamSemibold,Parent=publicHost})
@@ -12154,25 +12364,24 @@ do
             browserStatus.Text=message
         end
         local function updateCurrentPing()
-            local ok,ping=pcall(function() return LocalPlayer:GetNetworkPing() end)
-            currentPing.Text="Current server RTT: "..(ok and type(ping)=="number"
-                and (tostring(math.floor(ping*1000+0.5)).." ms") or "unavailable")
-                .." | Region: unavailable"
+            local measurement=state.latencyApi.current()
+            local live="Your NET "..state.latencyApi.ms(measurement.network).." | DATA "..state.latencyApi.ms(measurement.data)
+            if currentPing.Text~=live then currentPing.Text=live end
+            local window=measurement.dataWindow or measurement.networkWindow
+            local detail=measurement.warming and "Settling connection (10s); then collecting 15 samples..."
+                or (window and ("15-sample "..(measurement.dataWindow and "data" or "network")..": "
+                    ..state.latencyApi.ms(window.median).." median / "..state.latencyApi.ms(window.peak).." peak ("..window.count.."/15)")
+                    or "Measurements unavailable; no latency is assumed.")
+            local text=live.."\n"..detail
+            if panelCurrent.Text~=text then panelCurrent.Text=text end
         end
         local function setBrowserOpen(visible)
             browser.Visible=visible==true
             state.serverBrowserVisible=browser.Visible
             if state.refreshLucidDock then state.refreshLucidDock() end
-            pingGeneration+=1
             if browser.Visible then
+                updateCurrentPing()
                 if browserTab=="friends" then showFriends(true) end
-                local generation=pingGeneration
-                task.spawn(function()
-                    while browser.Visible and browser.Parent and generation==pingGeneration do
-                        updateCurrentPing()
-                        task.wait(2)
-                    end
-                end)
             end
         end
         state.toggleServerBrowser=function() setBrowserOpen(not browser.Visible) end
@@ -12180,7 +12389,7 @@ do
         registerDetachableWindow(browser,function() return false end,function() return browser.Visible end,
             function() end,setBrowserOpen)
         addCleanup(function()
-            searchGeneration+=1; pingGeneration+=1
+            searchGeneration+=1
             state.serverBrowserVisible=false; state.toggleServerBrowser=nil
             if browser.Parent then browser:Destroy() end
         end)
@@ -12201,29 +12410,71 @@ do
             end
             for index=1,math.min(#candidates,limit) do
                 local server=candidates[index]
-                local row=create("TextButton",{Size=UDim2.new(1,-5,0,22),
+                local record=state.latencyApi.get(game.PlaceId,server.id)
+                local fresh=state.latencyApi.fresh(record)
+                local score=state.latencyApi.score(record)
+                local measured=record and ((fresh and "Your " or "Old ")..(record.data and "data " or "net ")..state.latencyApi.ms(score)) or "Unmeasured"
+                local population=server.historyOnly and ("last seen "..tostring(server.playing).." players")
+                    or (server.playing.."/"..server.maxPlayers.." players")
+                local detail=record and ("Net "..state.latencyApi.ms(record.network and record.network.median)
+                    .." / peak "..state.latencyApi.ms((record.data or record.network).peak).." / "..state.latencyApi.age(record))
+                    or "Join to measure your connection"
+                detail=detail..(server.historyOnly and " • saved, not live"
+                    or (server.listPing and (" • list ~"..server.listPing.." ms (not yours)") or " • list ping unavailable"))
+                local row=create("TextButton",{Size=UDim2.new(1,-5,0,40),
                     BackgroundColor3=server==selectedServer and Color3.fromRGB(62,105,80)
                         or Color3.fromRGB(47,43,59),BorderSizePixel=0,
-                    Text=string.format("~%d ms list • %d/%d players • %s",server.ping,server.playing,
-                        server.maxPlayers,tostring(server.id):sub(1,8)),
+                    Text=measured.." • "..population.." • "..tostring(server.id):sub(1,8).."\n"..detail,
+                    TextWrapped=false,TextTruncate=Enum.TextTruncate.AtEnd,
                     TextColor3=Color3.fromRGB(230,225,240),TextSize=10,Font=Enum.Font.Gotham,
                     TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=index,Parent=parent})
                 create("UICorner",{CornerRadius=UDim.new(0,4),Parent=row})
                 row.MouseButton1Click:Connect(function()
                     selectedServer=server
                     selectedLabel.Text="Selected: "..tostring(server.id):sub(1,8)
-                        .." • "..server.playing.." players • ~"..server.ping.." ms list"
+                        .." • "..measured.."\n"..(record and ("Measured "..state.latencyApi.age(record)) or "Your ping is unknown until joining")
                     renderRows(panelResults,5)
                     renderRows(browserResults,50)
                 end)
             end
         end
+        local function sortCandidates()
+            table.sort(candidates,function(a,b)
+                local ar,br=state.latencyApi.get(game.PlaceId,a.id),state.latencyApi.get(game.PlaceId,b.id)
+                local af,bf=state.latencyApi.fresh(ar),state.latencyApi.fresh(br)
+                if sortByMeasured then
+                    if af~=bf then return af end
+                    if af then
+                        local av,bv=state.latencyApi.score(ar),state.latencyApi.score(br)
+                        if av~=bv then return av<bv end
+                    elseif historyView and ar and br and ar.measuredAt~=br.measuredAt then return ar.measuredAt>br.measuredAt end
+                end
+                local ap,bp=a.listPing or math.huge,b.listPing or math.huge
+                if ap~=bp then return ap<bp end
+                if a.playing~=b.playing then return a.playing>b.playing end
+                return tostring(a.id)<tostring(b.id)
+            end)
+        end
+        local function showVisited(preserveSelection)
+            local selectedId=preserveSelection and selectedServer and selectedServer.id
+            searchGeneration+=1; historyView=true
+            candidates={}; selectedServer=nil; selectedLabel.Text="Selected: none"
+            for _,record in ipairs(state.latencyApi.records(game.PlaceId)) do
+                local server={id=record.jobId,playing=record.playing or 0,maxPlayers=record.maxPlayers or 0,historyOnly=true}
+                table.insert(candidates,server)
+                if server.id==selectedId then selectedServer=server end
+            end
+            if selectedServer then selectedLabel.Text="Selected: "..tostring(selectedServer.id):sub(1,8).." • saved measurement (not live)" end
+            sortCandidates(); renderRows(panelResults,5); renderRows(browserResults,50)
+            setStatus(#candidates.." saved measurement(s). Counts are last seen; servers may have closed. Filters apply to public search, not history. "..state.latencyApi.status())
+        end
         local function searchServers()
             searchGeneration+=1
+            historyView=false
             local generation=searchGeneration
             candidates={}; selectedServer=nil; selectedLabel.Text="Selected: none"
             renderRows(panelResults,5); renderRows(browserResults,50)
-            setStatus("Scanning up to 5 pages of public servers...")
+            setStatus("Scanning up to 5 pages. Unknown personal ping stays unmeasured; Roblox list values are hints only.")
             task.spawn(function()
                 local cursor=nil
                 local seen={}
@@ -12238,40 +12489,45 @@ do
                         return HttpService:JSONDecode(game:HttpGet(url))
                     end)
                     if generation~=searchGeneration or not screenGui.Parent then return end
-                    if not ok or type(response)~="table" then
+                    if not ok or type(response)~="table" or type(response.data)~="table" then
                         failure="Server list request failed"
                         break
                     end
                     for _,server in ipairs(response.data or {}) do
+                        if type(server)=="table" then
                         local ping=tonumber(server.ping)
+                        if not ping or ping~=ping or ping<=0 or ping>60000 then ping=nil end
                         local count=tonumber(server.playing)
                         local capacity=tonumber(server.maxPlayers)
-                        if server.id and server.id~=game.JobId and not seen[server.id]
-                            and ping and ping>0 and ping<=filters.maxPing
-                            and count and capacity and count>=filters.minPlayers
+                        local record=type(server.id)=="string" and state.latencyApi.get(game.PlaceId,server.id)
+                        local fresh=state.latencyApi.fresh(record)
+                        if type(server.id)=="string" and #server.id>0 and #server.id<=128 and server.id~=game.JobId and not seen[server.id]
+                            and ((fresh and state.latencyApi.score(record)<=filters.maxPing) or (not fresh and filters.showUnmeasured))
+                            and count and count==count and capacity and capacity==capacity and capacity>0 and capacity<=1000 and count>=filters.minPlayers
                             and count<=filters.maxPlayers and count<capacity then
                             seen[server.id]=true
-                            table.insert(candidates,{id=server.id,ping=math.floor(ping+0.5),
+                            table.insert(candidates,{id=server.id,listPing=ping and math.floor(ping+0.5) or nil,
                                 playing=count,maxPlayers=capacity})
                         end
+                        end
                     end
-                    cursor=response.nextPageCursor
+                    cursor=type(response.nextPageCursor)=="string" and response.nextPageCursor~="" and response.nextPageCursor or nil
                     if cursor and pages<5 then task.wait(0.2) end
                 until not cursor or pages>=5 or generation~=searchGeneration or not screenGui.Parent
                 if generation~=searchGeneration or not screenGui.Parent then return end
-                table.sort(candidates,function(a,b)
-                    if a.ping==b.ping then return a.playing>b.playing end
-                    return a.ping<b.ping
-                end)
+                sortCandidates()
                 renderRows(panelResults,5)
                 renderRows(browserResults,50)
                 setStatus((failure and (failure.." • ") or "")..#candidates.." matches in "..pages
-                    .." page(s). Select one; listed ping may differ after joining.")
+                    .." page(s). "..(sortByMeasured and "Your recent measurements first." or "Roblox estimates first (not your ping).")
+                    .." Fresh = under 30m; recheck after network/VPN changes. Unknown ping is not guaranteed.")
             end)
         end
         local function joinSelected()
             if not selectedServer then setStatus("Select a server from the list first."); return end
-            setStatus("Joining "..tostring(selectedServer.id):sub(1,8).."...")
+            if selectedServer.id==game.JobId then setStatus("You are already in this server."); return end
+            state.latencyApi.save()
+            setStatus("Joining "..tostring(selectedServer.id):sub(1,8)..(selectedServer.historyOnly and " (saved server may have closed)..." or "..."))
             local ok,err=pcall(function()
                 TeleportService:TeleportToPlaceInstance(game.PlaceId,selectedServer.id,LocalPlayer)
             end)
@@ -12282,6 +12538,18 @@ do
             searchServers()
         end)
         joinBrowser.MouseButton1Click:Connect(joinSelected)
+        visitedButton.MouseButton1Click:Connect(function() showVisited() end)
+        sortButton.MouseButton1Click:Connect(function()
+            sortByMeasured=not sortByMeasured
+            sortButton.Text=sortByMeasured and "Sort: Your measured first" or "Sort: Roblox estimate"
+            sortCandidates(); renderRows(panelResults,5); renderRows(browserResults,50)
+            setStatus(sortButton.Text..". Roblox estimates are not your connection; old measurements are not guaranteed.")
+        end)
+        unknownButton.MouseButton1Click:Connect(function()
+            filters.showUnmeasured=not filters.showUnmeasured
+            unknownButton.Text=filters.showUnmeasured and "Unmeasured: Show" or "Unmeasured: Hide"
+            readFilters(browserPing,browserMin,browserMax); searchServers()
+        end)
         scanFromPanel=function()
             setBrowserTab("public")
             readFilters(panelPing,panelMin,panelMax)
@@ -12289,6 +12557,22 @@ do
         end
         actionButton("Join Selected Server",joinSelected)
         actionButton("Open Server Browser",function() setBrowserOpen(true) end)
+        actionButton("Visited Server Measurements",function()
+            setBrowserTab("public"); setBrowserOpen(true); showVisited()
+        end)
+        local function shown(object)
+            while object and object~=screenGui do
+                if object:IsA("GuiObject") and not object.Visible then return false end
+                object=object.Parent
+            end
+            return object==screenGui and screenGui.Enabled
+        end
+        local unsubscribe=state.latencyApi.subscribe(function(updated)
+            if browser.Visible or shown(panelCurrent) then updateCurrentPing() end
+            if updated and historyView and (browser.Visible or shown(panelResults)) then showVisited(true) end
+        end)
+        addCleanup(unsubscribe)
+        updateCurrentPing()
     end)
 end
 
@@ -12528,7 +12812,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.39 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.43 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -13964,7 +14248,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.39] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.43] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.39] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.43] Loaded, but this executor does not expose queue_on_teleport")
 end
