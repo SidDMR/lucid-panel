@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.43
+--// Lucid Panel v6.0.44
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -122,6 +122,7 @@ local state = {
     jumpHeightValue    = 7.2,
     noclipEnabled      = false,
     airWalkEnabled     = false,
+    airWalkPlatformMode = false,
     characterRecoveryLoopEnabled = false,
     freezeEnabled      = false,
     freezeRoot         = nil,
@@ -548,7 +549,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.43",
+    Text                   = "LUCID PANEL  •  v6.0.44",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -2313,7 +2314,22 @@ sectionLabel("Air Walk  (E up, Q down)", nextOrder())
 
 local _, fireAirWalk = createToggle("Enable Air Walk", nextOrder(), false, function(on)
     state.airWalkEnabled = on
+    if on and state.airWalkPlatformMode and state.noclipEnabled then
+        toggleRegistry["Noclip"](false)
+    end
+    if state.airWalkPlatformApi then state.airWalkPlatformApi.reset() end
 end)
+createToggle("Use Air Walk Platform", nextOrder(), false, function(on)
+    state.airWalkPlatformMode = on
+    if on and state.airWalkEnabled and state.noclipEnabled then
+        toggleRegistry["Noclip"](false)
+    end
+    if state.airWalkPlatformApi then state.airWalkPlatformApi.reset() end
+end)
+create("TextLabel", {Size=UDim2.new(1,0,0,36),BackgroundTransparency=1,
+    Text="Enable Air Walk, then choose Platform for a solid floor. E/Q changes height; Noclip must stay off.",
+    TextColor3=Color3.fromRGB(165,180,195),TextSize=10,Font=Enum.Font.Gotham,
+    TextWrapped=true,TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=nextOrder(),Parent=currentSection})
 
 -- IY freeze used on self: anchor the character root and restore its prior
 -- anchored state when disabled instead of blindly forcing it false.
@@ -4998,8 +5014,85 @@ local function ensurePlatform()
     airPlatformY = root.Position.Y + AIR_BASE_OFFSET
 end
 
-local function repairPlatform()
+-- Optional physical floor: leave ordinary walking/jumping to the Humanoid.
+-- Keep all new runtime bookkeeping out of profile values and root locals.
+do
+    local boundRoot, lastPosition, lastFootOffset
+    local api = {}
+    state.airWalkPlatformApi = api
+    function api.reset()
+        destroyPlatform()
+        boundRoot, lastPosition, lastFootOffset = nil, nil, nil
+    end
+    local function footOffset(character, root, humanoid)
+        local offset = root.Size.Y * 0.5 + math.max(humanoid.HipHeight, 0)
+        if humanoid.RigType == Enum.HumanoidRigType.R6 then
+            local leg = character:FindFirstChild("Left Leg") or character:FindFirstChild("Right Leg")
+            offset = offset + (leg and leg.Size.Y or 2)
+        end
+        return offset
+    end
+    function api.step(dt)
+        local character = LocalPlayer.Character
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        if not root or not humanoid or humanoid.Health <= 0 then
+            if airPlatform then api.reset() end
+            return
+        end
+        -- Do not put a collider into a vehicle, flight, ragdoll or anchored pose.
+        -- Rebase at the current feet when ordinary movement resumes.
+        local motionState = humanoid:GetState()
+        if state.noclipEnabled or state.flyEnabled or state.loopGotoEnabled or root.Anchored
+            or humanoid.Sit or humanoid.SeatPart or humanoid.PlatformStand
+            or motionState == Enum.HumanoidStateType.Physics
+            or motionState == Enum.HumanoidStateType.Ragdoll then
+            if airPlatform then api.reset() end
+            return
+        end
+        local offset = footOffset(character, root, humanoid)
+        local rebase = boundRoot ~= root or not airPlatform or airPlatform.Parent ~= workspace
+            or lastFootOffset ~= offset or (lastPosition and (root.Position-lastPosition).Magnitude > 64)
+        ensurePlatform()
+        if not airPlatform then return end
+        if airPlatform.Parent ~= workspace then airPlatform.Parent = workspace end
+        if rebase then
+            airPlatform.CanCollide = false
+            -- Half the 0.5-stud thickness plus a small non-penetrating gap.
+            airPlatformY = root.Position.Y - offset - 0.3
+        end
+        local direction = 0
+        if not UserInputService:GetFocusedTextBox() then
+            direction = (airEDown and 1 or 0) - (airQDown and 1 or 0)
+        end
+        if direction ~= 0 then
+            local delta = direction * 10 * math.clamp(tonumber(dt) or 0, 0, 0.1)
+            airPlatformY = airPlatformY + delta
+            root.CFrame = root.CFrame + Vector3.new(0, delta, 0)
+            local velocity = root.AssemblyLinearVelocity
+            root.AssemblyLinearVelocity = Vector3.new(velocity.X, 0, velocity.Z)
+        end
+        if airPlatform.Size.X ~= 8 or airPlatform.Size.Y ~= 0.5 or airPlatform.Size.Z ~= 8 then
+            airPlatform.Size = Vector3.new(8, 0.5, 8)
+        end
+        if not airPlatform.Anchored then airPlatform.Anchored = true end
+        if airPlatform.Transparency ~= 0.85 then airPlatform.Transparency = 0.85 end
+        local position = airPlatform.CFrame.Position
+        if position.X ~= root.Position.X or position.Y ~= airPlatformY or position.Z ~= root.Position.Z then
+            airPlatform.CFrame = CFrame.new(root.Position.X, airPlatformY, root.Position.Z)
+        end
+        if not airPlatform.CanCollide then airPlatform.CanCollide = true end
+        boundRoot, lastPosition, lastFootOffset = root, root.Position, offset
+    end
+    addCleanup(api.reset)
+end
+
+local function repairPlatform(_, dt)
     if not state.airWalkEnabled then return end
+    if state.airWalkPlatformMode then
+        state.airWalkPlatformApi.step(dt)
+        return
+    end
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not char or not root then return end
@@ -5050,6 +5143,8 @@ track(UserInputService.InputEnded:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.Q then airQDown = false end
     if input.KeyCode == Enum.KeyCode.E then airEDown = false end
 end))
+track(UserInputService.WindowFocusReleased:Connect(function() airQDown, airEDown = false, false end))
+track(UserInputService.TextBoxFocused:Connect(function() airQDown, airEDown = false, false end))
 
 useCategory("Player")
 sectionLabel("Character Recovery", nextOrder())
@@ -12812,7 +12907,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.43 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.44 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -14070,7 +14165,10 @@ track(RunService.Heartbeat:Connect(function(dt)
     enforceNoclip()
 
     -- Air Walk
-    if state.airWalkEnabled then
+    if state.airWalkEnabled and state.airWalkPlatformMode then
+        -- The solid-floor mode is updated before physics by repairPlatform.
+        -- No root-height/velocity lock here: normal grounding must stay intact.
+    elseif state.airWalkEnabled then
         if not hrp or not h then
             destroyPlatform()
         else
@@ -14248,7 +14346,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.43] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.44] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.43] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.44] Loaded, but this executor does not expose queue_on_teleport")
 end
