@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.44
+--// Lucid Panel v6.0.45
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -228,7 +228,7 @@ local state = {
 }
 
 -- Local measurements only: public-list ping is never treated as this client's RTT.
--- One 1 Hz sampler, bounded windows/history, and infrequent independent persistence.
+-- One 2 Hz sampler; quick saves at five readings, refined saves at fifteen.
 do
     local path="LucidPanel/server_latency_"..tostring(LocalPlayer.UserId)..".json"
     local history={}
@@ -248,8 +248,9 @@ do
     local function key(place,job) return tostring(place)..":"..job end
     local function sanitizeMetric(metric)
         if type(metric)~="table" or not validPing(metric.median) or not validPing(metric.peak)
-            or metric.peak<metric.median or not finite(metric.count) or metric.count<15 or metric.count>15 then return nil end
-        return {median=metric.median,peak=metric.peak,count=15}
+            or metric.peak<metric.median or not finite(metric.count) or metric.count%1~=0
+            or metric.count<5 or metric.count>15 then return nil end
+        return {median=metric.median,peak=metric.peak,count=metric.count}
     end
     local function accept(record)
         if type(record)~="table" or not finite(record.placeId) or record.placeId<=0
@@ -297,7 +298,8 @@ do
                 storageStatus="Saved locally and verified"
             else storageStatus="Written locally (verification unavailable)" end
         end)
-        if ok then dirty=false else storageStatus="Session history only; save failed: "..tostring(message):sub(1,70) end
+        if ok then dirty=false; current.persisted=true
+        else storageStatus="Session history only; save failed: "..tostring(message):sub(1,70) end
     end
     local function summarize(samples)
         while #samples>0 and os.clock()-samples[1].at>20 do table.remove(samples,1) end
@@ -322,22 +324,32 @@ do
         local dataOk,data=pcall(function() return dataItem and dataItem:GetValue() end)
         current.data=dataOk and validPing(data) and data or nil
         if not dataOk then dataItem=nil end
-        current.warming=os.clock()-startClock<10
+        current.warming=os.clock()-startClock<2
         if not current.warming then
             append(networkSamples,current.network); append(dataSamples,current.data)
         end
         current.networkWindow=summarize(networkSamples); current.dataWindow=summarize(dataSamples)
         local updated=false
-        if not current.warming and os.clock()-lastRecordClock>=30 and type(game.JobId)=="string" and game.JobId~="" then
+        if not current.warming and type(game.JobId)=="string" and game.JobId~="" then
             local networkWindow=current.network and current.networkWindow
             local dataWindow=current.data and current.dataWindow
-            if (networkWindow and networkWindow.count==15) or (dataWindow and dataWindow.count==15) then
+            networkWindow=networkWindow and networkWindow.count>=5 and networkWindow or nil
+            dataWindow=dataWindow and dataWindow.count>=5 and dataWindow or nil
+            local previous=history[key(game.PlaceId,game.JobId)]
+            local function improved(window,old)
+                return window and (not old or (old.count<15 and window.count==15))
+            end
+            local upgrade=previous and (improved(networkWindow,previous.network) or improved(dataWindow,previous.data))
+            if (networkWindow or dataWindow) and (os.clock()-lastRecordClock>=30 or upgrade) then
                 local count,capacity
                 pcall(function() count=#Players:GetPlayers(); capacity=Players.MaxPlayers end)
                 history[key(game.PlaceId,game.JobId)]={placeId=game.PlaceId,jobId=game.JobId,measuredAt=os.time(),
-                    network=networkWindow and networkWindow.count==15 and networkWindow or nil,
-                    data=dataWindow and dataWindow.count==15 and dataWindow or nil,playing=count,maxPlayers=capacity}
+                    network=networkWindow,data=dataWindow,playing=count,maxPlayers=capacity}
                 lastRecordClock=os.clock(); dirty=true; updated=true; prune()
+                current.recorded=true; current.persisted=false
+                -- First quick record and quality upgrades reach disk immediately.
+                -- Ordinary refreshes retain the existing write throttle.
+                if lastSaveClock==-math.huge or upgrade then save() end
             end
         end
         if dirty and os.clock()-lastSaveClock>=60 then save() end
@@ -354,6 +366,10 @@ do
         end,
         fresh=function(record) return type(record)=="table" and age(record)<=1800 end,
         score=function(record) local metric=record and (record.data or record.network); return metric and metric.median end,
+        quality=function(record)
+            local metric=record and (record.data or record.network)
+            return metric and (metric.count<15 and "Quick" or "Full") or "Unmeasured"
+        end,
         age=function(record)
             local seconds=age(record)
             if seconds<60 then return "just now" elseif seconds<3600 then return math.floor(seconds/60).."m ago"
@@ -366,19 +382,20 @@ do
         save=save,
         report=function()
             local lines={"Lucid latency measurements (local only)","Network: "..ms(current.network).." | Data: "..ms(current.data),
-                "History: "..storageStatus,"15 samples after 10s warm-up; recheck after changing network/VPN.",
+                "History: "..storageStatus,"Quick save: 5 readings after 2s settling (~4s total); full: 15 readings (~9s).",
+                "Quick readings are provisional. Recheck after changing network/VPN.",
                 "Data includes replication delays. Public-list ping is NOT your ping."}
             for _,record in ipairs(state.latencyApi.records(game.PlaceId)) do
                 table.insert(lines,record.jobId.." | net "..ms(record.network and record.network.median)
                     .." | data "..ms(record.data and record.data.median).." | peak data "..ms(record.data and record.data.peak)
-                    .." | "..state.latencyApi.age(record))
+                    .." | "..state.latencyApi.quality(record).." ("..(record.data or record.network).count.." samples) | "..state.latencyApi.age(record))
                 if #lines>=30 then break end
             end
             return table.concat(lines,"\n")
         end,
         start=function()
             if started then return end; started=true
-            task.spawn(function() while not stopped do sample(); task.wait(1) end end)
+            task.spawn(function() while not stopped do sample(); task.wait(0.5) end end)
         end,
     }
     addCleanup(function() stopped=true; save(); table.clear(listeners) end)
@@ -549,7 +566,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.44",
+    Text                   = "LUCID PANEL  •  v6.0.45",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -12120,7 +12137,7 @@ do
         actionButton("Find Low-Ping Servers",function()
             if scanFromPanel then scanFromPanel() end
         end)
-        local panelCurrent=create("TextLabel",{Size=UDim2.new(1,0,0,40),BackgroundTransparency=1,
+        local panelCurrent=create("TextLabel",{Size=UDim2.new(1,0,0,64),BackgroundTransparency=1,
             Text="Your ping: checking...",TextWrapped=true,TextColor3=Color3.fromRGB(175,205,220),
             TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,
             LayoutOrder=nextOrder(),Parent=currentSection})
@@ -12461,12 +12478,16 @@ do
         local function updateCurrentPing()
             local measurement=state.latencyApi.current()
             local live="Your NET "..state.latencyApi.ms(measurement.network).." | DATA "..state.latencyApi.ms(measurement.data)
-            if currentPing.Text~=live then currentPing.Text=live end
+            local record=measurement.recorded and state.latencyApi.get(game.PlaceId,game.JobId)
+            local badge=record and (measurement.persisted and ("Saved: "..state.latencyApi.quality(record)) or "Recorded; not saved") or "Measuring..."
+            if currentPing.Text~=live.." | "..badge then currentPing.Text=live.." | "..badge end
             local window=measurement.dataWindow or measurement.networkWindow
-            local detail=measurement.warming and "Settling connection (10s); then collecting 15 samples..."
-                or (window and ("15-sample "..(measurement.dataWindow and "data" or "network")..": "
+            local detail=measurement.warming and "Settling connection (2s); quick save in about 4s total..."
+                or (window and ((window.count<5 and "Collecting quick reading" or (window.count<15 and "Quick reading" or "Full reading")).." "..(measurement.dataWindow and "data" or "network")..": "
                     ..state.latencyApi.ms(window.median).." median / "..state.latencyApi.ms(window.peak).." peak ("..window.count.."/15)")
                     or "Measurements unavailable; no latency is assumed.")
+            if window and window.count<5 then detail=detail.."; needs 5 valid readings to save" end
+            detail=detail.."\n"..state.latencyApi.status()
             local text=live.."\n"..detail
             if panelCurrent.Text~=text then panelCurrent.Text=text end
         end
@@ -12508,7 +12529,7 @@ do
                 local record=state.latencyApi.get(game.PlaceId,server.id)
                 local fresh=state.latencyApi.fresh(record)
                 local score=state.latencyApi.score(record)
-                local measured=record and ((fresh and "Your " or "Old ")..(record.data and "data " or "net ")..state.latencyApi.ms(score)) or "Unmeasured"
+                local measured=record and ((fresh and "Your " or "Old ")..(record.data and "data " or "net ")..state.latencyApi.ms(score).." ("..state.latencyApi.quality(record)..")") or "Unmeasured"
                 local population=server.historyOnly and ("last seen "..tostring(server.playing).." players")
                     or (server.playing.."/"..server.maxPlayers.." players")
                 local detail=record and ("Net "..state.latencyApi.ms(record.network and record.network.median)
@@ -12907,7 +12928,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.44 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.45 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -14346,7 +14367,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.44] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.45] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.44] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.45] Loaded, but this executor does not expose queue_on_teleport")
 end
