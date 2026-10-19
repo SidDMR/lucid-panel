@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.45
+--// Lucid Panel v6.0.48
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -566,7 +566,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.45",
+    Text                   = "LUCID PANEL  •  v6.0.48",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -2307,6 +2307,140 @@ local _, fireNoclip = createToggle("Noclip", nextOrder(), false, function(on)
     if not on then restoreNoclipCollisions() end
 end)
 addCleanup(restoreNoclipCollisions)
+
+-- Pair-specific player ghosting: never change avatar/map CanCollide or groups.
+do
+local function initializePlayerCollisionDisabler()
+    local enabled,pending,generation=false,false,0
+    local folder,folderLink
+    local records,owners,edges,listeners={},{},{},{}
+    local schedule=function() end
+    sectionLabel("Player Collision",nextOrder())
+    local toggleOrder=nextOrder()
+    local status=create("TextLabel",{Size=UDim2.new(1,0,0,32),BackgroundTransparency=1,
+        Text="Off — keeps floor/wall collision; not weapon immunity.",TextWrapped=true,
+        TextColor3=Color3.fromRGB(165,180,195),TextSize=10,Font=Enum.Font.Gotham,
+        TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=nextOrder(),Parent=currentSection})
+    local function disconnectAll(links)
+        for _,link in pairs(links) do link:Disconnect() end
+        table.clear(links)
+    end
+    local function clearCharacter(record)
+        disconnectAll(record.charLinks)
+        for part,link in pairs(record.parts) do link:Disconnect(); if owners[part]==record then owners[part]=nil end end
+        table.clear(record.parts); record.character=nil
+    end
+    local function valid(part)
+        local record=owners[part]
+        return record and record.character and record.player.Character==record.character
+            and part.Parent and part:IsDescendantOf(record.character) and record.character:IsDescendantOf(workspace)
+    end
+    local function reconcile()
+        if not folder or folder.Parent~=workspace then
+            if folderLink then folderLink:Disconnect() end
+            if folder then folder:Destroy() end
+            table.clear(edges)
+            folder=Instance.new("Folder"); folder.Name="LucidPlayerCollision"; folder.Parent=workspace
+            folderLink=folder.AncestryChanged:Connect(schedule)
+        end
+        for localPart,peers in pairs(edges) do
+            for otherPart,constraint in pairs(peers) do
+                if not valid(localPart) or not valid(otherPart) or not constraint.Parent
+                    or owners[localPart].player~=LocalPlayer or owners[otherPart].player==LocalPlayer then
+                    constraint:Destroy(); peers[otherPart]=nil
+                end
+            end
+            if not next(peers) then edges[localPart]=nil end
+        end
+        local ownParts,otherParts={},{}
+        for part,record in pairs(owners) do
+            if part.CanCollide and valid(part) then
+                table.insert(record.player==LocalPlayer and ownParts or otherParts,part)
+            end
+        end
+        for _,localPart in ipairs(ownParts) do
+            local peers=edges[localPart] or {}; edges[localPart]=peers
+            for _,otherPart in ipairs(otherParts) do
+                if not peers[otherPart] then
+                    local constraint=Instance.new("NoCollisionConstraint")
+                    constraint.Name="LucidPlayerPair"; constraint.Part0=localPart; constraint.Part1=otherPart
+                    constraint.Enabled=true; constraint.Parent=folder; peers[otherPart]=constraint
+                end
+            end
+        end
+        local count=0; for _,peers in pairs(edges) do for _ in pairs(peers) do count+=1 end end
+        status.Text=records[LocalPlayer] and records[LocalPlayer].character
+            and ("Local player collision disabled — "..count.." pair links. Floors/walls unchanged.")
+            or "Enabled — waiting for your character."
+    end
+    schedule=function()
+        if not enabled or pending then return end
+        pending=true; local token=generation
+        task.defer(function()
+            if not enabled or token~=generation then return end
+            pending=false; reconcile()
+        end)
+    end
+    local function bindCharacter(record,character)
+        clearCharacter(record); record.character=character
+        if not character then schedule(); return end
+        local function add(part)
+            if not part:IsA("BasePart") or record.parts[part] then return end
+            owners[part]=record
+            record.parts[part]=part:GetPropertyChangedSignal("CanCollide"):Connect(function()
+                -- Keep existing links when collision is temporarily off (Noclip,
+                -- animation/controller changes), avoiding destroy/recreate churn.
+                if part.CanCollide then schedule() end
+            end)
+            schedule()
+        end
+        table.insert(record.charLinks,character.DescendantAdded:Connect(add))
+        table.insert(record.charLinks,character.DescendantRemoving:Connect(function(part)
+            if record.parts[part] then
+                record.parts[part]:Disconnect(); record.parts[part]=nil
+                if owners[part]==record then owners[part]=nil end
+                schedule()
+            end
+        end))
+        table.insert(record.charLinks,character.AncestryChanged:Connect(schedule))
+        for _,part in ipairs(character:GetDescendants()) do add(part) end
+        schedule()
+    end
+    local function bindPlayer(player)
+        if records[player] then return end
+        local record={player=player,parts={},charLinks={},playerLinks={}}; records[player]=record
+        table.insert(record.playerLinks,player.CharacterAdded:Connect(function(character) bindCharacter(record,character) end))
+        table.insert(record.playerLinks,player.CharacterRemoving:Connect(function(character)
+            if record.character==character then bindCharacter(record,nil) end
+        end))
+        bindCharacter(record,player.Character)
+    end
+    local function removePlayer(player)
+        local record=records[player]; if not record then return end
+        clearCharacter(record); disconnectAll(record.playerLinks); records[player]=nil; schedule()
+    end
+    local function setEnabled(on)
+        if enabled==on then return end
+        enabled=on; generation+=1; pending=false
+        if on then
+            table.insert(listeners,Players.PlayerAdded:Connect(bindPlayer))
+            table.insert(listeners,Players.PlayerRemoving:Connect(removePlayer))
+            for _,player in ipairs(Players:GetPlayers()) do bindPlayer(player) end
+            schedule()
+        else
+            disconnectAll(listeners)
+            for player in pairs(records) do removePlayer(player) end
+            table.clear(owners); table.clear(edges)
+            if folderLink then folderLink:Disconnect(); folderLink=nil end
+            if folder then folder:Destroy(); folder=nil end
+            status.Text="Off — keeps floor/wall collision; not weapon immunity."
+        end
+    end
+    createToggle("Disable Player Collision",toggleOrder,false,setEnabled)
+    addCleanup(function() setEnabled(false) end)
+end
+initializePlayerCollisionDisabler()
+end
 
 sectionLabel("Anti-Fling", nextOrder())
 createToggle("Enable Anti-Fling", nextOrder(), false, function(on)
@@ -12928,7 +13062,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.45 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.48 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -13008,6 +13142,282 @@ do
     end)
     addCleanup(function() setMonitor(false) end)
 end
+-- Received-chat history only. No chat callback replacement, remote interception,
+-- historical backfill, automatic file export or chat-permission workarounds.
+do
+local function initializeChatLog()
+    local function createChatLogStore(onChange)
+        local records, ids = {}, {}
+        local paused = false
+        local api = {}
+        local function limited(text, limit)
+            text = tostring(text or "")
+            local ok, offset = pcall(utf8.offset, text, limit+1)
+            if ok then return offset and (text:sub(1,offset-1).."...") or text end
+            return text:sub(1,limit)
+        end
+        function api.append(userId, username, displayName, channel, text, messageId)
+            if paused or type(text)~="string" or text=="" then return end
+            local id = type(messageId)=="string" and messageId~="" and messageId or nil
+            if id and ids[id] then return end
+            local record = {userId=userId, username=limited(username,96), displayName=limited(displayName,96),
+                channel=limited(channel,96), text=limited(text,2000), id=id, stamp=os.date("%H:%M:%S")}
+            record.search=(record.username.." "..record.displayName.." "..record.channel.." "..record.text):lower()
+            table.insert(records,record)
+            if id then ids[id]=true end
+            if #records>500 then local old=table.remove(records,1); if old.id then ids[old.id]=nil end end
+            onChange()
+        end
+        function api.receive(message)
+            if not message then return end
+            local source=message.TextSource
+            -- Sending/failed local echoes are not confirmed, filtered chat.
+            if source and message.Status~=Enum.TextChatMessageStatus.Success then return end
+            local userId=source and source.UserId
+            local player=type(userId)=="number" and Players:GetPlayerByUserId(userId)
+            local username=player and player.Name or (userId and ("User "..tostring(userId)) or "System")
+            api.append(userId,username,player and player.DisplayName or username,
+                message.TextChannel and message.TextChannel.Name or "System",message.Text,message.MessageId)
+        end
+        function api.matches(query)
+            query=tostring(query or ""):lower()
+            local result={}
+            for _,record in ipairs(records) do
+                if query=="" or record.search:find(query,1,true) then table.insert(result,record) end
+            end
+            return result
+        end
+        function api.format(record)
+            local name=record.displayName==record.username and record.username or (record.displayName.." (@"..record.username..")")
+            return "["..record.stamp.."] ["..record.channel.."] "..name..": "..record.text
+        end
+        function api.copyText(query)
+            local lines={}
+            for _,record in ipairs(api.matches(query)) do table.insert(lines,api.format(record)) end
+            return table.concat(lines,"\n")
+        end
+        function api.clear() table.clear(records); table.clear(ids); onChange() end
+        function api.pause(value) paused=value==true; onChange() end
+        function api.isPaused() return paused end
+        function api.count() return #records end
+        return api
+    end
+
+    local opened,pinned,minimized,disposed=false,false,false,false
+    local captureAvailable=true
+    local pending,dirtyFilter,wantBottom=false,true,false
+    local filtered,pool={},{}
+    local selected=nil
+    local requestRefresh=function() end
+    local store=createChatLogStore(function() requestRefresh(true,true) end)
+    local window=create("Frame",{Name="LucidChatLog",Size=UDim2.fromOffset(540,470),Position=UDim2.new(0.5,-270,0.5,-235),
+        BackgroundColor3=Color3.fromRGB(23,21,32),BorderSizePixel=0,Visible=false,Active=true,Parent=screenGui})
+    create("UICorner",{CornerRadius=UDim.new(0,8),Parent=window})
+    local title=create("Frame",{Size=UDim2.new(1,0,0,34),BackgroundColor3=Color3.fromRGB(39,32,58),BorderSizePixel=0,Active=true,Parent=window})
+    create("TextLabel",{Size=UDim2.new(1,-130,1,0),Position=UDim2.fromOffset(10,0),BackgroundTransparency=1,
+        Text="Chat Log",TextColor3=Color3.fromRGB(230,220,250),TextSize=13,Font=Enum.Font.GothamSemibold,
+        TextXAlignment=Enum.TextXAlignment.Left,Parent=title})
+    local function button(parent,text,width,x,y)
+        local b=create("TextButton",{Size=UDim2.fromOffset(width,24),Position=UDim2.fromOffset(x,y),
+            BackgroundColor3=Color3.fromRGB(55,47,73),BorderSizePixel=0,Text=text,TextSize=10,
+            TextColor3=Color3.fromRGB(230,225,240),Font=Enum.Font.Gotham,Parent=parent})
+        create("UICorner",{CornerRadius=UDim.new(0,5),Parent=b}); return b
+    end
+    local close=button(title,"X",28,0,5); close.Position=UDim2.new(1,-33,0,5)
+    local mini=button(title,"-",28,0,5); mini.Position=UDim2.new(1,-65,0,5)
+    local pin=button(title,"Pin",42,0,5); pin.Position=UDim2.new(1,-111,0,5)
+    local body=create("Frame",{Position=UDim2.fromOffset(10,40),Size=UDim2.new(1,-20,1,-50),BackgroundTransparency=1,Parent=window})
+    local pause=button(body,"Pause",60,0,0)
+    local clear=button(body,"Clear",52,66,0)
+    local copy=button(body,"Copy Filtered",94,124,0)
+    local copySelected=button(body,"Copy Selected",98,224,0)
+    local saveTxt=button(body,"Save TXT",70,328,0)
+    local search=styledBox(body,{Size=UDim2.new(1,0,0,26),Position=UDim2.fromOffset(0,30),Text="",PlaceholderText="Search player, channel or message"})
+    local status=create("TextLabel",{Size=UDim2.new(1,0,0,18),Position=UDim2.fromOffset(0,59),BackgroundTransparency=1,
+        Text="Waiting for received chat...",TextSize=10,TextColor3=Color3.fromRGB(175,165,200),Font=Enum.Font.Gotham,
+        TextXAlignment=Enum.TextXAlignment.Left,Parent=body})
+    local list=create("ScrollingFrame",{Position=UDim2.fromOffset(0,81),Size=UDim2.new(1,0,1,-195),BackgroundColor3=Color3.fromRGB(28,25,39),
+        BorderSizePixel=0,ScrollBarThickness=5,CanvasSize=UDim2.fromOffset(0,0),Parent=body})
+    local detail=create("ScrollingFrame",{Position=UDim2.new(0,0,1,-106),Size=UDim2.new(1,0,0,84),BackgroundColor3=Color3.fromRGB(32,28,44),
+        BorderSizePixel=0,ScrollBarThickness=4,AutomaticCanvasSize=Enum.AutomaticSize.Y,CanvasSize=UDim2.fromOffset(0,0),Parent=body})
+    local detailText=create("TextLabel",{Position=UDim2.fromOffset(5,3),Size=UDim2.new(1,-14,0,0),AutomaticSize=Enum.AutomaticSize.Y,
+        BackgroundTransparency=1,RichText=false,Text="Select a message to read it in full.",TextSize=11,Font=Enum.Font.Gotham,
+        TextWrapped=true,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,
+        TextColor3=Color3.fromRGB(225,220,235),Parent=detail})
+    create("TextLabel",{Position=UDim2.new(0,0,1,-18),Size=UDim2.new(1,-16,0,18),BackgroundTransparency=1,
+        Text="Max 500 retained. Save TXT exports the search results to LucidPanel/ChatLogs/.",TextSize=9,
+        TextColor3=Color3.fromRGB(160,150,180),Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=body})
+    local resize=makeResizableWindow(window,420,360)
+    local expandedSize=window.Size
+    local function setPinned(value) pinned=value==true; pin.Text=pinned and "Pinned" or "Pin" end
+    local function setOpen(value)
+        opened=value==true; window.Visible=opened and not state.photoModeEnabled
+        if opened then
+            if minimized then window.Size=expandedSize else expandedSize=window.Size end
+            minimized=false; body.Visible=true; resize.Visible=true; mini.Text="-"
+            requestRefresh(true,true)
+        end
+    end
+    requestRefresh=function(rebuild,follow)
+        dirtyFilter=dirtyFilter or rebuild==true
+        if not window.Visible or minimized or disposed then return end
+        local bottom=list.CanvasPosition.Y>=math.max(0,list.CanvasSize.Y.Offset-list.AbsoluteSize.Y)-10
+        wantBottom=wantBottom or (follow==true and bottom)
+        if pending then return end
+        pending=true
+        task.defer(function()
+            pending=false
+            if disposed or not window.Visible or minimized then return end
+            if dirtyFilter then filtered=store.matches(search.Text); dirtyFilter=false end
+            list.CanvasSize=UDim2.fromOffset(0,#filtered*64)
+            if wantBottom then
+                wantBottom=false
+                local y=math.max(0,#filtered*64-list.AbsoluteSize.Y)
+                if list.CanvasPosition.Y~=y then list.CanvasPosition=Vector2.new(0,y) end
+            end
+            local clampedY=math.clamp(list.CanvasPosition.Y,0,math.max(0,#filtered*64-list.AbsoluteSize.Y))
+            if list.CanvasPosition.Y~=clampedY then list.CanvasPosition=Vector2.new(0,clampedY) end
+            status.Text=(not captureAvailable and "Chat API unavailable" or (store.isPaused() and "Paused" or "Recording"))
+                .." | "..store.count().."/500 retained | "..#filtered.." matches"
+            local first=math.max(1,math.floor(list.CanvasPosition.Y/64)+1)
+            local needed=math.min(50,math.ceil(list.AbsoluteSize.Y/64)+2)
+            for i=1,needed do
+                if not pool[i] then
+                    local row=create("TextButton",{Size=UDim2.new(1,-8,0,60),BackgroundColor3=Color3.fromRGB(39,34,53),BorderSizePixel=0,
+                        RichText=false,TextSize=11,Font=Enum.Font.Gotham,TextWrapped=true,TextTruncate=Enum.TextTruncate.AtEnd,
+                        TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,
+                        TextColor3=Color3.fromRGB(225,220,235),Parent=list})
+                    local slot={row=row}; pool[i]=slot
+                    row.MouseButton1Click:Connect(function()
+                        selected=slot.record; detailText.Text=selected and store.format(selected) or "Select a message."
+                        detail.CanvasPosition=Vector2.new(0,0)
+                    end)
+                end
+                local slot=pool[i]; local index=first+i-1; slot.record=filtered[index]
+                slot.row.Visible=slot.record~=nil
+                if slot.record then slot.row.Position=UDim2.fromOffset(3,(index-1)*64); slot.row.Text=store.format(slot.record) end
+            end
+            for i=needed+1,#pool do pool[i].row.Visible=false; pool[i].record=nil end
+        end)
+    end
+    local function copyText(text)
+        local ok=type(setclipboard)=="function" and pcall(setclipboard,text)
+        notifyLucid(ok and "Chat Log copied" or "Copy unavailable",ok and "Copied to clipboard (no file saved)." or "Clipboard API unavailable or failed.")
+    end
+    local exporting=false
+    local function saveTextFile()
+        if exporting then return false,"An export is already in progress." end
+        if type(writefile)~="function" then return false,"Executor file API unavailable." end
+        local query=search.Text
+        local entries=store.matches(query)
+        if #entries==0 then return false,"No retained messages match the current search." end
+        exporting=true
+        local ok,result,verified=pcall(function()
+            for _,folder in ipairs({"LucidPanel","LucidPanel/ChatLogs"}) do
+                if type(isfolder)=="function" then
+                    if not isfolder(folder) then
+                        if type(makefolder)~="function" then error("Folder creation API unavailable") end
+                        makefolder(folder)
+                    end
+                elseif type(makefolder)=="function" then
+                    -- Some executors raise on an existing folder. The write
+                    -- below still reports missing-folder/permission failures.
+                    pcall(makefolder,folder)
+                end
+            end
+            local stamp=os.date("!%Y%m%d_%H%M%S")
+            local job=tostring(game.JobId):gsub("[^%w%-]",""):sub(1,8)
+            if job=="" then job="local" end
+            local unique=HttpService:GenerateGUID(false):gsub("[^%w]","")
+            local path="LucidPanel/ChatLogs/chat_"..tostring(game.PlaceId):gsub("[^%w]","").."_"..job.."_"..stamp.."_"..unique..".txt"
+            if type(isfile)=="function" and isfile(path) then error("Export already exists; try again") end
+            local lines={"Lucid Chat Log","Exported (UTC): "..os.date("!%Y-%m-%d %H:%M:%S"),
+                "PlaceId: "..tostring(game.PlaceId),"JobId: "..tostring(game.JobId),
+                "Search: "..string.format("%q",query),"Messages: "..#entries,
+                "Received messages only; up to 500 retained. No earlier/unavailable chat.",""}
+            for _,entry in ipairs(entries) do table.insert(lines,store.format(entry)) end
+            local text=table.concat(lines,"\n").."\n"
+            writefile(path,text)
+            local canVerify=type(readfile)=="function"
+            if canVerify and readfile(path)~=text then error("Saved-file verification failed") end
+            return path,canVerify
+        end)
+        exporting=false
+        if not ok then return false,tostring(result):sub(1,200) end
+        return true,result,verified
+    end
+    local function exportTextFile()
+        local ok,result,verified=saveTextFile()
+        notifyLucid(ok and "Chat Log saved" or "Chat Log save failed",
+            ok and (result..(verified and " (verified)" or " (written; verification unavailable)")) or result)
+        return ok,result
+    end
+    pause.MouseButton1Click:Connect(function() store.pause(not store.isPaused()); pause.Text=store.isPaused() and "Resume" or "Pause" end)
+    clear.MouseButton1Click:Connect(function() selected=nil; detailText.Text="Select a message to read it in full."; store.clear() end)
+    copy.MouseButton1Click:Connect(function() copyText(store.copyText(search.Text)) end)
+    copySelected.MouseButton1Click:Connect(function() if selected then copyText(store.format(selected)) else notifyLucid("Chat Log","Select a message first.") end end)
+    saveTxt.MouseButton1Click:Connect(exportTextFile)
+    track(search:GetPropertyChangedSignal("Text"):Connect(function() list.CanvasPosition=Vector2.new(0,0); requestRefresh(true,false) end))
+    track(list:GetPropertyChangedSignal("CanvasPosition"):Connect(function() requestRefresh(false,false) end))
+    track(list:GetPropertyChangedSignal("AbsoluteSize"):Connect(function() requestRefresh(false,false) end))
+    track(window:GetPropertyChangedSignal("Visible"):Connect(function() if window.Visible then requestRefresh(true,false) end end))
+    pin.MouseButton1Click:Connect(function() setPinned(not pinned) end)
+    close.MouseButton1Click:Connect(function() setOpen(false) end)
+    mini.MouseButton1Click:Connect(function()
+        if not minimized then expandedSize=window.Size end
+        minimized=not minimized; body.Visible=not minimized; resize.Visible=not minimized
+        window.Size=minimized and UDim2.new(0,expandedSize.X.Offset,0,34) or expandedSize
+        mini.Text=minimized and "+" or "-"; if not minimized then requestRefresh(true,false) end
+    end)
+    -- Title-only dragging leaves the search, selection and scroll inputs alone.
+    local drag,startPointer,startPosition
+    title.InputBegan:Connect(function(input)
+        if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+            drag=input; startPointer=input.Position; startPosition=window.Position
+        end
+    end)
+    track(UserInputService.InputChanged:Connect(function(input)
+        if drag and (input==drag or input.UserInputType==Enum.UserInputType.MouseMovement) then
+            local delta=input.Position-startPointer
+            window.Position=UDim2.new(startPosition.X.Scale,startPosition.X.Offset+delta.X,startPosition.Y.Scale,startPosition.Y.Offset+delta.Y)
+        end
+    end))
+    track(UserInputService.InputEnded:Connect(function(input) if input==drag then drag=nil end end))
+    track(UserInputService.WindowFocusReleased:Connect(function() drag=nil end))
+    local legacyConnections={}
+    local legacyOk,legacy=pcall(function() return TextChatService.ChatVersion==Enum.ChatVersion.LegacyChatService end)
+    if legacyOk and legacy then
+        local function bind(player)
+            if legacyConnections[player] then return end
+            legacyConnections[player]=player.Chatted:Connect(function(text)
+                store.append(player.UserId,player.Name,player.DisplayName,"Legacy",text)
+            end)
+        end
+        for _,player in ipairs(Players:GetPlayers()) do bind(player) end
+        track(Players.PlayerAdded:Connect(bind))
+        track(Players.PlayerRemoving:Connect(function(player)
+            if legacyConnections[player] then legacyConnections[player]:Disconnect(); legacyConnections[player]=nil end
+        end))
+    else
+        local ok,connection=pcall(function()
+            return TextChatService.MessageReceived:Connect(function(message) if not disposed then store.receive(message) end end)
+        end)
+        captureAvailable=ok
+        if ok then track(connection) end
+    end
+    registerDetachableWindow(window,function() return pinned end,function() return opened end,setPinned,setOpen)
+    state.chatLogApi={open=function() setOpen(true) end,close=function() setOpen(false) end,save=exportTextFile}
+    sectionLabel("Chat Log",nextOrder())
+    actionButton("Open Chat Log",function() setOpen(true) end)
+    addCleanup(function()
+        disposed=true; store.pause(true)
+        for _,connection in pairs(legacyConnections) do connection:Disconnect() end
+        table.clear(legacyConnections); state.chatLogApi=nil; if window.Parent then window:Destroy() end
+    end)
+end
+initializeChatLog()
+end
+
 sectionLabel("Notification Center",nextOrder())
 local notificationHistoryLabel=create("TextLabel",{Size=UDim2.new(1,0,0,112),BackgroundColor3=Color3.fromRGB(28,26,38),
     BorderSizePixel=0,Text="No notifications yet",TextColor3=Color3.fromRGB(205,200,218),TextSize=10,Font=Enum.Font.Code,
@@ -13287,7 +13697,7 @@ state.initializeCommandConsole=function()
         ra="reanim",fe="fogend",dx="dex",udx="undex",res="restore",ld="lgdir",gl="getlink",gml="getmobilelink",gls="getlinks",
         cf="camerafollow",ucf="unfixcamera",tgt="target",ut="untarget",rd="respawndelay",svp="saveprofile",ggi="getgameid",
         hs="hitsize",kc="killcount",kcc="killcount",diag="diagnostics",
-        st="servertime",
+        st="servertime",logs="chatlog",chatlogs="chatlog",noplayers="disableplayercollision",
     }
     local function buildCommandCatalog()
         local catalog={
@@ -13328,6 +13738,10 @@ state.initializeCommandConsole=function()
             {command="!getmobilelink",description="Copy a direct Roblox-app link to this server"},
             {command="!getlinks",description="Copy HTTPS and mobile links to this server"},
             {command="!help",description="Show a compact command summary"},
+            {command="!chatlog",description="Open received-chat history (!logs / !chatlogs); search, copy, pause and clear"},
+            {command="!chatlog save",description="Save current Chat Log search results as a timestamped TXT file in LucidPanel/ChatLogs"},
+            {command="!noplayers [on|off]",description="Disable your collisions with player avatars; keep map collision (not weapon immunity)"},
+            {command="!unchatlog",description="Close the Chat Log window; keep recording received messages"},
             {command="!killcount",description="Share this session's confirmed kill count in public chat (!kc / !kcc)"},
             {command="!kcc",description="Send: kill count in this server <count>"},
             {command="!kcpt",description="Send: numero de kills pegas nesse server <count>"},
@@ -13622,6 +14036,14 @@ state.initializeCommandConsole=function()
             local ok=pcall(setclipboard,webLink.."\n"..mobileLink)
             finish(ok,ok and ("HTTPS + mobile links copied • Job ID: "..tostring(game.JobId)) or "Could not copy server links")
             if ok then notifyLucid("Both server links copied","HTTPS and Roblox app formats",Color3.fromRGB(55,215,235)) end
+            return
+        elseif command=="chatlog" or command=="unchatlog" then
+            if not state.chatLogApi then finish(false,"Chat Log unavailable"); return end
+            if command=="chatlog" and normalize(rest)=="save" then
+                local ok,message=state.chatLogApi.save(); finish(ok,message); return
+            end
+            if command=="unchatlog" then state.chatLogApi.close() else state.chatLogApi.open() end
+            finish(true,command=="unchatlog" and "Chat Log closed; recording continues" or "Chat Log opened • received messages only")
             return
         elseif command=="help" or command=="commands" then
             finish(true,"!goto !loopgoto !sync !waypoint !espall !noclip !fly !freecam !walkspeed !fogend …")
@@ -14367,7 +14789,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.45] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.48] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.45] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.48] Loaded, but this executor does not expose queue_on_teleport")
 end
