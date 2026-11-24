@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.52
+--// Lucid Panel v6.0.54
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -566,7 +566,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.52",
+    Text                   = "LUCID PANEL  •  v6.0.54",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -8360,12 +8360,14 @@ state.refreshNormalEmoteReverseAccents=function()
     end
 end
 local loadEmoteResults
-local function createEmoteResult(id,name,badge,parent)
+local function createEmoteResult(id,name,parent,isEquipped)
     local row=create("Frame",{Size=UDim2.new(1,-4,0,30),BackgroundTransparency=1,Parent=parent or emoteResults})
     local unavailable=state.unavailableEmoteIds[tostring(id)]==true
+    local prefix=isEquipped and "E  " or ""
+    local unavailableText=prefix.."Unavailable — "..name
     local button=create("TextButton",{Size=UDim2.new(1,-94,0,28),BackgroundColor3=Color3.fromRGB(45,40,62),
-        BorderSizePixel=0,Text=unavailable and ("Unavailable — "..name)
-            or ((badge and (badge.."  ") or "")..(state.emoteAliases[tostring(id)] or name)),
+        BorderSizePixel=0,Text=unavailable and unavailableText
+            or (prefix..(state.emoteAliases[tostring(id)] or name)),
         TextColor3=unavailable and Color3.fromRGB(220,120,135) or Color3.fromRGB(230,225,240),TextSize=11,
         Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,Parent=row})
     create("UIPadding",{PaddingLeft=UDim.new(0,8),Parent=button})
@@ -8400,10 +8402,10 @@ local function createEmoteResult(id,name,badge,parent)
     state.emoteReverseViews[reverse]=refreshReverse; refreshReverse()
     button.MouseButton1Click:Connect(function()
         if state.unavailableEmoteIds[tostring(id)] then
-            button.Text="Unavailable — "..name; button.TextColor3=Color3.fromRGB(220,120,135); return
+            button.Text=unavailableText; button.TextColor3=Color3.fromRGB(220,120,135); return
         end
         if playEmote(id,name)==false then
-            button.Text="Unavailable — "..name; button.TextColor3=Color3.fromRGB(220,120,135)
+            button.Text=unavailableText; button.TextColor3=Color3.fromRGB(220,120,135)
         end
     end)
     reverse.MouseButton1Click:Connect(function() reverseNormalEmote(id,name) end)
@@ -8663,7 +8665,7 @@ state.initializeEmoteCollections=function()
                 TextSize=10,TextColor3=Color3.fromRGB(180,170,195),Font=Enum.Font.Gotham,Parent=entries})
         end
         for _,item in ipairs(sorted) do
-            if item.id then createEmoteResult(item.id,item.name,nil,entries)
+            if item.id then createEmoteResult(item.id,item.name,entries)
             else
                 local source=state.emoteCustoms[item.customKey]
                 local row=create("Frame",{Size=UDim2.new(1,-4,0,30),BackgroundTransparency=1,Parent=entries})
@@ -8767,7 +8769,7 @@ state.initializePlayerEmoteBrowser=function()
             if state.emoteSearch.rank(item.name,query) then table.insert(matches,item) end
         end
         state.emoteSearch.sort(matches,query)
-        for _,item in ipairs(matches) do createEmoteResult(item.id,item.name,item.equipped and "[Equipped]" or "[Owned]") end
+        for _,item in ipairs(matches) do createEmoteResult(item.id,item.name,nil,item.equipped) end
         status.Text=query=="" and librarySummary
             or (#matches>0 and ("Player emotes: "..#matches) or "No emotes match this filter.")
     end
@@ -13162,7 +13164,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.52 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.54 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -14903,7 +14905,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.52] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.54] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.52] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.54] Loaded, but this executor does not expose queue_on_teleport")
 end
