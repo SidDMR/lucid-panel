@@ -1,5 +1,5 @@
 --// Roblox GUI — Lucid Panel v6
---// Lucid Panel v6.0.48
+--// Lucid Panel v6.0.52
 --// Features: Opacity, Hip Height, WalkSpeed Lock, JumpHeight Lock,
 --//           Coordinates (view/edit/copy), Noclip, Anti-AFK, AutoClick, Air Walk
 --// Execute with any Roblox script executor
@@ -566,7 +566,7 @@ state.mainTitle=create("TextLabel", {
     Size                   = UDim2.new(1, -10, 1, 0),
     Position               = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text                   = "LUCID PANEL  •  v6.0.48",
+    Text                   = "LUCID PANEL  •  v6.0.52",
     TextColor3             = Color3.fromRGB(200, 180, 255),
     TextSize               = 16,
     Font                   = Enum.Font.GothamBold,
@@ -7844,9 +7844,54 @@ end
 emoteSpeedBox.FocusLost:Connect(function()
     state.setEmotePlaybackSpeed(emoteSpeedBox.Text,true)
 end)
-local emoteStatus=create("TextLabel",{Size=UDim2.new(1,0,0,22),BackgroundTransparency=1,
-    Text="Search to load emotes",TextColor3=Color3.fromRGB(160,150,180),TextSize=10,
-    Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=nextOrder(),Parent=currentSection})
+local emoteStatus
+do
+    local statusRow=rowFrame(nextOrder(),22)
+    emoteStatus=create("TextLabel",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,
+        Text="Search to load emotes",TextColor3=Color3.fromRGB(160,150,180),TextSize=10,
+        Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=statusRow})
+    local favorite=create("TextButton",{Name="FavoriteCurrentEmote",Size=UDim2.new(0,22,1,0),
+        BackgroundTransparency=1,Text="☆",TextSize=16,Font=Enum.Font.GothamBold,Visible=false,Parent=statusRow})
+    local function currentPlayingItem()
+        if emoteSyncActive or not emoteTrack or not emoteTrack.IsPlaying then return end
+        local status=emoteStatus.Text
+        if status:match("^Playing") or status:match("^Reversed:") then return state.emoteCurrent end
+    end
+    table.insert(state.emoteSpeedViews,function(speed)
+        if currentPlayingItem() then
+            emoteStatus.Text=emoteStatus.Text:gsub("  |  [%d%.]+x$","  |  "..string.format("%.1fx",speed))
+        end
+    end)
+    state.refreshPlayingEmoteFavorite=function()
+        local item=currentPlayingItem()
+        local isFavorite=item and state.emoteFavorites[tostring(item.id)]~=nil
+        favorite.Visible=item~=nil
+        emoteStatus.Size=UDim2.new(1,item and -26 or 0,1,0)
+        emoteStatus.TextTruncate=item and Enum.TextTruncate.AtEnd or Enum.TextTruncate.None
+        favorite.Position=UDim2.fromOffset(math.min(emoteStatus.TextBounds.X+4,math.max(0,statusRow.AbsoluteSize.X-22)),0)
+        favorite.Text=isFavorite and "★" or "☆"
+        favorite.TextColor3=isFavorite and Color3.fromRGB(255,215,55) or Color3.fromRGB(155,145,175)
+    end
+    for _,property in ipairs({"Text","TextBounds"}) do
+        track(emoteStatus:GetPropertyChangedSignal(property):Connect(state.refreshPlayingEmoteFavorite))
+    end
+    track(statusRow:GetPropertyChangedSignal("AbsoluteSize"):Connect(state.refreshPlayingEmoteFavorite))
+    local stoppedConnection
+    state.watchPlayingEmoteFavorite=function(playingTrack)
+        if stoppedConnection then stoppedConnection:Disconnect(); stoppedConnection=nil end
+        if playingTrack then
+            stoppedConnection=playingTrack.Stopped:Connect(state.refreshPlayingEmoteFavorite)
+        end
+        state.refreshPlayingEmoteFavorite()
+    end
+    addCleanup(function()
+        if stoppedConnection then stoppedConnection:Disconnect() end
+    end)
+    favorite.Activated:Connect(function()
+        local item=currentPlayingItem()
+        if item then state.toggleAssetEmoteFavorite(item.id,item.name) end
+    end)
+end
 local emoteTabRow=rowFrame(nextOrder(),28)
 local browseEmotesButton=create("TextButton",{Size=UDim2.new(0.49,0,0,26),BackgroundColor3=Color3.fromRGB(78,55,135),
     BorderSizePixel=0,Text="Browse",TextColor3=Color3.new(1,1,1),TextSize=11,Font=Enum.Font.GothamSemibold,Parent=emoteTabRow})
@@ -7903,6 +7948,7 @@ stopEmote=function()
     state.emotePlaybackPaused=false
     emoteResumeBusy=false
     emoteStatus.Text="Emote stopped"
+    state.watchPlayingEmoteFavorite(nil)
     if state.refreshNormalEmoteReverseAccents then state.refreshNormalEmoteReverseAccents() end
 end
 state.emoteModuleTabs.favoriteStopRow=create("Frame",{Size=UDim2.new(1,0,0,32),BackgroundTransparency=1,
@@ -7968,11 +8014,13 @@ local function playEmote(assetId,name,direction)
                     if not track.IsPlaying then track:Play(0.03,1,emoteSpeed) end
                     if track.TimePosition<=0.03 and track.Length>0 then track.TimePosition=math.max(track.Length-0.001,0) end
                     track:AdjustSpeed(-emoteSpeed)
+                    state.refreshPlayingEmoteFavorite()
                 end)
             end
         end)
     end
     emoteStatus.Text=(direction<0 and "Reversed: " or "Playing: ")..name.."  |  "..string.format("%.1fx",emoteSpeed)
+    state.watchPlayingEmoteFavorite(track)
     if state.refreshNormalEmoteReverseAccents then state.refreshNormalEmoteReverseAccents() end
     if state.emoteAdvancedOnPlayed then task.defer(state.emoteAdvancedOnPlayed,state.emoteCurrent,track) end
     return true
@@ -7991,6 +8039,7 @@ local function reverseNormalEmote(assetId,name)
         emoteTrack:AdjustSpeed(direction*emoteSpeed)
     end)
     emoteStatus.Text=(direction<0 and "Reversed: " or "Playing forward: ")..tostring(name).."  |  "..string.format("%.1fx",emoteSpeed)
+    state.refreshPlayingEmoteFavorite()
     if state.refreshNormalEmoteReverseAccents then state.refreshNormalEmoteReverseAccents() end
     return true
 end
@@ -8027,6 +8076,7 @@ track(RunService.Heartbeat:Connect(function(dt)
                         or (normalDirection<0 and -emoteSpeed or emoteSpeed)
                     emoteTrack:AdjustSpeed(desired)
                 end)
+                state.refreshPlayingEmoteFavorite()
             end
             emoteResumeBusy=false
         end)
@@ -8171,13 +8221,29 @@ state.updateCurrentSyncEmote=function(id,name)
     currentSyncFavorite.Text=favorite and "★" or "☆"
     currentSyncFavorite.TextColor3=favorite and Color3.fromRGB(255,215,55) or Color3.fromRGB(155,145,175)
 end
+state.emoteFavoriteResultViews=setmetatable({},{__mode="k"})
+state.toggleAssetEmoteFavorite=function(id,name)
+    local key=tostring(id)
+    local isFavorite=state.emoteFavorites[key]==nil
+    state.emoteFavorites[key]=isFavorite and {id=id,name=name} or nil
+    saveGlobalEmoteFavorites()
+    state.refreshPlayingEmoteFavorite()
+    local synced=state.currentSyncEmote
+    if synced and tostring(synced.id)==key then state.updateCurrentSyncEmote(synced.id,synced.name) end
+    for star,view in pairs(state.emoteFavoriteResultViews) do
+        if star.Parent and view.id==key then
+            if view.isFavorites and not isFavorite then
+                star.Parent:Destroy()
+            else
+                star.Text=isFavorite and "★" or "☆"
+                star.TextColor3=isFavorite and Color3.fromRGB(255,215,55) or Color3.fromRGB(155,145,175)
+            end
+        end
+    end
+end
 currentSyncFavorite.MouseButton1Click:Connect(function()
     local item=state.currentSyncEmote
-    if not item then return end
-    local key=tostring(item.id)
-    if state.emoteFavorites[key] then state.emoteFavorites[key]=nil
-    else state.emoteFavorites[key]={id=item.id,name=item.name} end
-    saveGlobalEmoteFavorites(); state.updateCurrentSyncEmote(item.id,item.name)
+    if item then state.toggleAssetEmoteFavorite(item.id,item.name) end
 end)
 currentSection=state.emoteModuleTabs.main
 
@@ -8314,6 +8380,7 @@ local function createEmoteResult(id,name,badge,parent)
         TextColor3=state.emoteFavorites[tostring(id)] and Color3.fromRGB(255,215,55) or Color3.fromRGB(155,145,175),
         TextSize=17,Font=Enum.Font.GothamBold,Parent=row})
     create("UICorner",{CornerRadius=UDim.new(0,5),Parent=star})
+    state.emoteFavoriteResultViews[star]={id=tostring(id),isFavorites=emoteView=="favorites" and row.Parent==emoteResults}
     local context=create("TextButton",{Size=UDim2.new(0,26,0,28),Position=UDim2.new(1,-60,0,0),
         BackgroundColor3=Color3.fromRGB(40,36,52),BorderSizePixel=0,Text="...",
         TextColor3=Color3.fromRGB(210,200,230),TextSize=13,Font=Enum.Font.GothamBold,Parent=row})
@@ -8341,12 +8408,7 @@ local function createEmoteResult(id,name,badge,parent)
     end)
     reverse.MouseButton1Click:Connect(function() reverseNormalEmote(id,name) end)
     star.MouseButton1Click:Connect(function()
-        local key=tostring(id)
-        if state.emoteFavorites[key] then state.emoteFavorites[key]=nil else state.emoteFavorites[key]={id=id,name=name} end
-        saveGlobalEmoteFavorites()
-        star.Text=state.emoteFavorites[key] and "★" or "☆"
-        star.TextColor3=state.emoteFavorites[key] and Color3.fromRGB(255,215,55) or Color3.fromRGB(155,145,175)
-        if emoteView=="favorites" and row.Parent==emoteResults then row:Destroy() end
+        state.toggleAssetEmoteFavorite(id,name)
     end)
 end
 
@@ -8659,7 +8721,7 @@ end
 state.initializePlayerEmoteBrowser=function()
     local previousSection=currentSection
     currentSection=state.emoteModuleTabs.player
-    sectionLabel("Player Emote Library",nextOrder())
+    local libraryHeading=sectionLabel("Player Emote Library",nextOrder())
     local playerRow=rowFrame(nextOrder(),30)
     local playerBox=styledBox(playerRow,{Size=UDim2.new(1,-72,0,26),Text="",PlaceholderText="In-game username/display name"})
     local loadButton=create("TextButton",{Size=UDim2.new(0,64,0,26),Position=UDim2.new(1,-64,0,0),
@@ -8684,7 +8746,7 @@ state.initializePlayerEmoteBrowser=function()
         TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,
         LayoutOrder=nextOrder(),Parent=currentSection})
     local function findPlayer(query)
-        query=tostring(query or ""):match("^%s*(.-)%s*$"):lower()
+        query=tostring(query or ""):match("^%s*(.-)%s*$"):gsub("^@",""):lower()
         if query=="" then return LocalPlayer end
         for _,player in ipairs(Players:GetPlayers()) do
             if player.Name:lower()==query or player.DisplayName:lower()==query then return player end
@@ -8693,6 +8755,8 @@ state.initializePlayerEmoteBrowser=function()
             if player.Name:lower():sub(1,#query)==query or player.DisplayName:lower():sub(1,#query)==query then return player end
         end
     end
+    local librarySummary
+    local requestGeneration=0
     local function renderPlayerEmotes()
         emoteRequestGeneration+=1
         emoteLoading=false; emoteSearchButton.Text="Search"
@@ -8704,11 +8768,42 @@ state.initializePlayerEmoteBrowser=function()
         end
         state.emoteSearch.sort(matches,query)
         for _,item in ipairs(matches) do createEmoteResult(item.id,item.name,item.equipped and "[Equipped]" or "[Owned]") end
-        status.Text=#matches>0 and ("Player emotes: "..#matches) or "No emotes match this filter."
+        status.Text=query=="" and librarySummary
+            or (#matches>0 and ("Player emotes: "..#matches) or "No emotes match this filter.")
     end
-    local function loadPlayerEmotes()
-        local player=findPlayer(playerBox.Text)
-        if not player then status.Text="Player not found in this server."; return end
+    local function loadPlayerEmotes(query,openLibrary)
+        local player=findPlayer(query)
+        if not player then status.Text="Player not found in this server."; return false,status.Text end
+        requestGeneration+=1
+        local generation=requestGeneration
+        state.playerEmoteBrowserResults=nil
+        librarySummary=nil
+        if openLibrary then
+            local meta=categoryMeta.Emotes
+            local scroll=content
+            if meta.body.Parent~=meta.wrapper then
+                meta.revealDock(); scroll=meta.body.Parent
+            else
+                mainFrame.Visible=true
+                minimized=false; content.Visible=true; mainResizeHandle.Visible=true
+                mainFrame.Size=mainExpandedSize; minimizeBtn.Text="-"
+                searchBox.Text=""; state.mainNavigation.select("Tools")
+                meta.setOpen(true)
+                if state.refreshLucidDock then state.refreshLucidDock() end
+            end
+            state.emoteModuleTabs.set("Player")
+            filterBox.Text=""
+            task.defer(function()
+                if not libraryHeading.Parent or not scroll.Parent or state.emoteModuleTabs.active~="Player" then return end
+                local offset=libraryHeading.AbsolutePosition.Y-scroll.AbsolutePosition.Y+scroll.CanvasPosition.Y-6
+                scroll.CanvasPosition=Vector2.new(0,math.max(0,offset))
+            end)
+        end
+        if state.emoteModuleTabs.active=="Player" then
+            emoteRequestGeneration+=1
+            emoteLoading=false; emoteSearchButton.Text="Search"
+            clearEmoteResults(); emoteResults.Parent=state.emoteModuleTabs.player
+        end
         playerBox.Text=player.Name; loadButton.Text="Loading..."; status.Text="Loading "..player.Name.."'s emotes..."
         task.spawn(function()
             local results={}
@@ -8739,10 +8834,11 @@ state.initializePlayerEmoteBrowser=function()
                 local url="https://inventory.roblox.com/v2/users/"..player.UserId.."/inventory/61?limit=100&sortOrder=Asc"
                 if cursor then url=url.."&cursor="..HttpService:UrlEncode(cursor) end
                 local ok,body=pcall(function() return game:HttpGet(url,true) end)
+                if generation~=requestGeneration or not status.Parent then return end
                 if not ok or type(body)~="string" or body:sub(1,1)~="{" then inventoryOpen=false; break end
                 local decodedOk,decoded=pcall(function() return HttpService:JSONDecode(body) end)
-                if not decodedOk or type(decoded)~="table" then inventoryOpen=false; break end
-                for _,entry in ipairs(decoded.data or {}) do
+                if not decodedOk or type(decoded)~="table" or type(decoded.data)~="table" then inventoryOpen=false; break end
+                for _,entry in ipairs(decoded.data) do
                     local id=entry.assetId or entry.AssetId or (type(entry.asset)=="table" and (entry.asset.id or entry.asset.assetId))
                     if id and not byId[tostring(id)] then
                         local item={id=id,name=tostring(entry.name or entry.Name or (type(entry.asset)=="table" and entry.asset.name) or ("Emote "..id)),equipped=false}
@@ -8760,17 +8856,20 @@ state.initializePlayerEmoteBrowser=function()
             for _,item in ipairs(results) do if item.equipped then equippedCount=equippedCount+1 end end
             local ownedCount=#results-equippedCount
             loadButton.Text="Load"
-            status.Text=string.format("%s — %d equipped, %d unequipped%s",player.Name,equippedCount,ownedCount,
+            librarySummary=string.format("%s — %d equipped, %d unequipped%s",player.Name,equippedCount,ownedCount,
                 inventoryOpen and "" or " | inventory private/unavailable")
-            renderPlayerEmotes()
+            status.Text=librarySummary
+            if state.emoteModuleTabs.active=="Player" then renderPlayerEmotes() end
         end)
+        return true,"Loading "..player.Name.."'s emotes"
     end
+    state.loadPlayerEmoteLibrary=function(query) return loadPlayerEmotes(query,true) end
     state.emoteModuleTabs.PlayerButton.MouseButton1Click:Connect(function()
         state.emoteModuleTabs.set("Player"); emoteResults.Parent=state.emoteModuleTabs.player
         if state.playerEmoteBrowserResults then renderPlayerEmotes() end
     end)
-    loadButton.MouseButton1Click:Connect(loadPlayerEmotes)
-    playerBox.FocusLost:Connect(function(enterPressed) if enterPressed then loadPlayerEmotes() end end)
+    loadButton.MouseButton1Click:Connect(function() loadPlayerEmotes(playerBox.Text) end)
+    playerBox.FocusLost:Connect(function(enterPressed) if enterPressed then loadPlayerEmotes(playerBox.Text) end end)
     state.emoteSearch.bind(filterBox,renderPlayerEmotes,function()
         return state.emoteModuleTabs.active=="Player" and state.playerEmoteBrowserResults~=nil
     end)
@@ -12137,20 +12236,21 @@ do
         actionButton("Level 1 Open",function()
             clickTowerOpen(-173.103,80.518,"Level 1 Open")
         end)
-        state.towerDoorAutoInterval=math.clamp(tonumber(state.towerDoorAutoInterval) or 2.5,0.5,5)
+        local minDoorInterval,maxDoorInterval=0.1,5
+        state.towerDoorAutoInterval=math.clamp(tonumber(state.towerDoorAutoInterval) or 2.5,minDoorInterval,maxDoorInterval)
         local intervalRow=rowFrame(nextOrder(),30)
         create("TextLabel",{Size=UDim2.new(1,-83,1,0),BackgroundTransparency=1,
-            Text="Auto-open interval (0.5–5s)",TextColor3=Color3.fromRGB(220,210,235),
+            Text=string.format("Auto-open interval (%.1f–%gs)",minDoorInterval,maxDoorInterval),TextColor3=Color3.fromRGB(220,210,235),
             TextSize=11,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=intervalRow})
         local intervalBox=styledBox(intervalRow,{Size=UDim2.new(0,74,0,25),
             Position=UDim2.new(1,-74,0.5,-12),Text=string.format("%.1f",state.towerDoorAutoInterval)})
         state.refreshTowerDoorIntervalBox=function()
-            state.towerDoorAutoInterval=math.clamp(tonumber(state.towerDoorAutoInterval) or 2.5,0.5,5)
+            state.towerDoorAutoInterval=math.clamp(tonumber(state.towerDoorAutoInterval) or 2.5,minDoorInterval,maxDoorInterval)
             if intervalBox.Parent then intervalBox.Text=string.format("%.1f",state.towerDoorAutoInterval) end
         end
         intervalBox.FocusLost:Connect(function()
             local value=tonumber(intervalBox.Text)
-            if value then state.towerDoorAutoInterval=math.clamp(value,0.5,5) end
+            if value then state.towerDoorAutoInterval=value end
             state.refreshTowerDoorIntervalBox()
         end)
         local doorLoopTokens={level3=0,level1=0}
@@ -13062,7 +13162,7 @@ actionButton("Unload Dex++",function(button)
 end,Color3.fromRGB(105,48,62))
 sectionLabel("Live Character Report", nextOrder())
 create("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-    Text="Lucid Panel v6.0.48 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
+    Text="Lucid Panel v6.0.52 | Modular UI",TextColor3=Color3.fromRGB(170,155,220),
     TextSize=10,Font=Enum.Font.GothamSemibold,LayoutOrder=nextOrder(),Parent=currentSection})
 local diagnosticsLabel = create("TextLabel", { Size=UDim2.new(1,0,0,108), BackgroundColor3=Color3.fromRGB(35,33,48),
     BorderSizePixel=0, Text="Waiting for character...", TextColor3=Color3.fromRGB(205,205,220), TextSize=11,
@@ -13693,7 +13793,7 @@ state.initializeCommandConsole=function()
     }
     local shortCommandAliases={
         hlp="help",op="open",pnl="panel",gt="goto",lg="loopgoto",ulg="unloopgoto",rt="return",
-        sy="sync",dsy="desync",sem="stopemote",ssy="stopsync",us="unspec",em="emote",
+        sy="sync",dsy="desync",sem="stopemote",ssy="stopsync",us="unspec",em="emote",espd="emotespeed",
         ra="reanim",fe="fogend",dx="dex",udx="undex",res="restore",ld="lgdir",gl="getlink",gml="getmobilelink",gls="getlinks",
         cf="camerafollow",ucf="unfixcamera",tgt="target",ut="untarget",rd="respawndelay",svp="saveprofile",ggi="getgameid",
         hs="hitsize",kc="killcount",kcc="killcount",diag="diagnostics",
@@ -13777,6 +13877,9 @@ state.initializeCommandConsole=function()
             {command="!ssh <player>",description="Add a player to Super Special highlights"},
             {command="!sshc <#RRGGBB>",description="Set the Super Special highlight color"},
             {command="!sync <player>",description="Synchronize with a player's current emote"},
+            {command="!loademt <player>",description="Load an in-server player's emote library"},
+            {command="!emotespeed <num>",description="Set emote playback speed (0–15×)"},
+            {command="!espd <num>",description="Short for !emotespeed <num>"},
             {command="!unspec",description="Stop spectating and return the camera to your character"},
             {command="!unloopgoto",description="Disable loop goto"},
             {command="!unfixcamera",description="Stop automatic camera aiming"},
@@ -14114,6 +14217,17 @@ state.initializeCommandConsole=function()
         elseif command=="sshc" then setNamedHighlightColor(state.pinkHighlightApi,rest,"SSHC"); return
         elseif command=="hphc" then setNamedHighlightColor(state.blackHighlightApi,rest,"HPHC"); return
         elseif command=="ehc" then setNamedHighlightColor(state.orangeHighlightApi,rest,"EHC"); return
+        elseif command=="emotespeed" then
+            local speed=tonumber(rest)
+            if not speed or speed~=speed or math.abs(speed)==math.huge then
+                finish(false,"Use: !emotespeed <num> (0–15x)"); return
+            end
+            state.setEmotePlaybackSpeed(speed,true)
+            finish(true,"Emote speed: "..tostring(state.emoteSpeed).."x"); return
+        elseif command=="loademt" then
+            if rest=="" then finish(false,"Use: !loademt <player>"); return end
+            local ok,message=state.loadPlayerEmoteLibrary(rest)
+            finish(ok,message); return
         elseif command=="sync" then
             if rest=="" then finish(false,"Use: !sync <player>")
             else state.emoteCommandApi.setSyncName(rest); state.emoteCommandApi.beginSync(); finish(true,"Syncing with "..rest) end
@@ -14789,7 +14903,7 @@ if type(state.queueTeleport) == "function" then
 end
 
 if state.teleportQueueReady then
-    print("[Lucid Panel v6.0.48] Loaded - teleport auto-execute queued | Right-Alt to toggle")
+    print("[Lucid Panel v6.0.52] Loaded - teleport auto-execute queued | Right-Alt to toggle")
 else
-    warn("[Lucid Panel v6.0.48] Loaded, but this executor does not expose queue_on_teleport")
+    warn("[Lucid Panel v6.0.52] Loaded, but this executor does not expose queue_on_teleport")
 end
